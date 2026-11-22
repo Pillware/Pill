@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 // External crates
 use pill_engine::{AssetImport, AssetImportError, AssetManager, Handle, MetadataPolicy, World};
-use pill_master_renderer_data::{
+use pill_rendering::{
     config::pbr_pipeline, AssetLoader, Material, Mesh, Texture, TextureImportSettings, TextureType,
 };
 

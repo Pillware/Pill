@@ -17,7 +17,7 @@
 
 // External crates
 use pill_engine::{Entity, Query, World};
-use pill_master_renderer_data::{CameraComponent, MeshRendererComponent, TransformComponent};
+use pill_rendering::{CameraComponent, MeshRendererComponent, TransformComponent};
 
 // Current crate
 use crate::{

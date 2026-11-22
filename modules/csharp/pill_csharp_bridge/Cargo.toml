@@ -25,7 +25,7 @@ tracing = "0.1"
 [dev-dependencies]
 # The tests bind real renderer components (`MeshRendererComponent`) through the
 # renderer data crate - the one place anything here names it.
-renderer_data_dependency_graph = { package = "pill_master_renderer_data", path = "../../extensions/pill_master_renderer/modules/runtime/data" }
+renderer_data_dependency_graph = { package = "pill_rendering", path = "../../extensions/rendering/pill_rendering_core/modules/runtime/data" }
 
 [features]
 # The reloading posture: polling the collectible loader, applying a changed

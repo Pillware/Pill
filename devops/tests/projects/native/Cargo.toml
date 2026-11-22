@@ -17,7 +17,7 @@ pill_core = { path = "../../../../modules/engine/pill_core" }
 # renderer is the host's; a project that linked it would carry wgpu in its own
 # DLL. `default-features = false` documents that this edge chooses its
 # features explicitly (the crate declares no defaults today).
-pill_master_renderer_data = { path = "../../../../modules/extensions/pill_master_renderer/modules/runtime/data", default-features = false }
+pill_rendering = { path = "../../../../modules/extensions/rendering/pill_rendering_core/modules/runtime/data", default-features = false }
 # Linked directly so the project can name the `Spline` type. See the note in
 # `init` about why this crate must not also be loaded as a module.
 # `default-features = false` is a defensive no-op: the crate declares no

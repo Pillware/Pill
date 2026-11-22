@@ -354,7 +354,10 @@ def area_checks(paths: Sequence[str]) -> List[Check]:
 
     # The renderer's data crate and GPU module: boundaries plus the asset
     # reload path that recooks shaders and reattaches the renderer.
-    if has("modules/extensions/pill_master_renderer/**"):
+    if has(
+        "modules/extensions/rendering/pill_renderer/**",
+        "modules/extensions/rendering/pill_rendering_core/**",
+    ):
         selected.append(verify_check("renderer-boundaries", "renderer changed"))
         selected.append(suite_check("test_hot_reload_assets.py", "renderer or shader data changed"))
         selected.append(suite_check("test_shader_recompile.py", "renderer or shader data changed"))

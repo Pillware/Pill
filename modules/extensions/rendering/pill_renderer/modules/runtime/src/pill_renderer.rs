@@ -10,12 +10,12 @@
 //! - Fill each frame from the world ([`frame`], the `rendering` system).
 //! - Install the renderer on an engine through [`register`], which adds that
 //!   system. The components and assets are not registered here:
-//!   `pill_master_renderer_data` registers them itself.
+//!   `pill_rendering` registers them itself.
 //!
 //! # Design
 //!
 //! The data a renderer draws with - assets, components, the default pipelines
-//! and their WGSL - lives in `pill_master_renderer_data`; the contract between
+//! and their WGSL - lives in `pill_rendering`; the contract between
 //! host and renderer - the frame, the backend trait, the camera - lives in
 //! `pill_renderer_api`. Neither links wgpu, and both are re-exported here.
 //! This crate is the only renderer crate that links wgpu, which is what lets a
@@ -94,9 +94,9 @@ use pill_engine::{pill_module, Engine};
 // The contract and the data crates are re-exported here - their items and
 // their module names - so this crate's own paths (`crate::api`,
 // `crate::assets`, `crate::components`, `crate::config`) resolve.
-pub use pill_master_renderer_data::components::*;
-pub use pill_master_renderer_data::{assets, components, config};
-pub use pill_master_renderer_data::{
+pub use pill_rendering::components::*;
+pub use pill_rendering::{assets, components, config};
+pub use pill_rendering::{
     AssetLoader, Material, MaterialBuilder, MaterialParameter, Mesh, MeshVertex, PassKind,
     PassTarget, PipelinePass, RenderPass, RenderingPipeline, Shader, ShaderBuilder,
     ShaderParameterSlot, ShaderParameterType, ShaderTextureSlot, Texture, TextureType,
@@ -125,7 +125,7 @@ pub use resources::RenderingManager;
 /// and the next generation registers its own after the reload removed the
 /// previous one.
 ///
-/// Registers no data: `pill_master_renderer_data`'s own `register` declares the
+/// Registers no data: `pill_rendering`'s own `register` declares the
 /// components, asset types, resources and default pipeline before this module
 /// loads, and doing it here would point the asset types' tables at this image,
 /// which reloads most often.

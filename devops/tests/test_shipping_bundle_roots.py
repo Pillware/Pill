@@ -52,9 +52,9 @@ from core.projects import NATIVE_PROJECT_ROOT  # noqa: E402
 
 GENERATOR_PATH = DEVOPS_ROOT / "tools" / "generate_shipping_bundle.py"
 PROJECT_ROOT = NATIVE_PROJECT_ROOT
-RENDERER = "pill_master_renderer"
-DATA_CRATE_NAME = RENDERER + "_data"
-DATA_CRATE = REPOSITORY_ROOT / "modules" / "extensions" / "pill_master_renderer" / "modules" / "runtime" / "data"
+RENDERER = "pill_renderer"
+DATA_CRATE_NAME = "pill_rendering"
+DATA_CRATE = REPOSITORY_ROOT / "modules" / "extensions" / "rendering" / "pill_rendering_core" / "modules" / "runtime" / "data"
 BUNDLE_DIRECTORY = REPOSITORY_ROOT / "build" / "pill_shipping_bundle"
 
 

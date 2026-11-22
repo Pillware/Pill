@@ -143,8 +143,11 @@ CSHARP_BRIDGE_CRATE_DIRECTORY = Path("modules") / "csharp" / "pill_csharp_bridge
 # the first static module in every shipping build, headless included; a windowed
 # build also links the GPU module and hands the host its entry points as
 # `StaticRenderer`.
-DEFAULT_RENDERER = "pill_master_renderer"
+DEFAULT_RENDERER = "pill_renderer"
 NO_RENDERER = "none"
+# Renderer names a settings file may still carry from before the rename, and
+# the crate each one now selects.
+RENDERER_ALIASES = {"pill_master_renderer": DEFAULT_RENDERER}
 # The manifest key, under `[package.metadata.pill]`, through which a renderer
 # names its data crate. Two renderers can share one.
 RENDERER_DATA_TAG = "renderer_data"
@@ -346,13 +349,17 @@ def load_module_list(project_root: Path) -> list:
 def load_renderer(project_root: Path):
     """Returns the renderer the project selects, or None for `renderer: none`.
 
-    Reads the settings file's `renderer:` key; absent means DEFAULT_RENDERER.
+    Reads the settings file's `renderer:` key; absent means DEFAULT_RENDERER,
+    and a name the renderer carried before the rename selects the crate it is
+    an old name of.
     """
     settings_path = project_root / PROJECT_SETTINGS_FILE_NAME
     with settings_path.open(encoding="utf-8") as handle:
         data = yaml.safe_load(handle) or {}
     name = str(data.get("renderer") or DEFAULT_RENDERER).strip()
-    return None if name == NO_RENDERER else name
+    if name == NO_RENDERER:
+        return None
+    return RENDERER_ALIASES.get(name, name)
 
 
 # The log levels the `logging:` section accepts, as `pill_player::LoggingSettings`

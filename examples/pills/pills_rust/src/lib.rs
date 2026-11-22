@@ -37,7 +37,7 @@ use std::path::{Path, PathBuf};
 use pill_engine::{
     pill_project, AssetImport, AssetLoader, AssetManager, Engine, Handle, MetadataPolicy, World,
 };
-use pill_master_renderer_data::{
+use pill_rendering::{
     config::pbr_pipeline, Material, Mesh, Texture, TextureImportSettings, TextureType,
 };
 
@@ -60,7 +60,7 @@ pub use game::{CameraMovementComponent, CurlNoiseComponent, DemoState, PILL_COUN
 pub fn init(engine: &mut Engine) -> u32 {
     // Registers the renderer's data and installs its PBR chain, which is where
     // the pill material's shader comes from.
-    pill_master_renderer_data::register(engine);
+    pill_rendering::register(engine);
     game::register(engine.world_mut());
 
     let (mesh, material) = match load_assets(engine.world_mut()) {

@@ -413,8 +413,8 @@ mod tests {
     /// An extension's module and one folder inside it, as the host lists them.
     fn listing_with_a_module() -> Vec<AssetListing> {
         let mut assets = listing();
-        assets.push(module_row("pill_master_renderer_data", ""));
-        assets.push(module_row("pill_master_renderer_data", "materials"));
+        assets.push(module_row("pill_rendering", ""));
+        assets.push(module_row("pill_rendering", "materials"));
         assets
     }
 
@@ -444,20 +444,20 @@ mod tests {
             .iter()
             .map(|row| row.key())
             .collect();
-        assert_eq!(modules, vec!["extensions/pill_master_renderer_data"]);
+        assert_eq!(modules, vec!["extensions/pill_rendering"]);
 
-        let inside: Vec<String> = children(&assets, "extensions/pill_master_renderer_data")
+        let inside: Vec<String> = children(&assets, "extensions/pill_rendering")
             .iter()
             .map(|row| row.key())
             .collect();
         assert_eq!(
             inside,
-            vec!["extensions/pill_master_renderer_data/materials".to_string()]
+            vec!["extensions/pill_rendering/materials".to_string()]
         );
 
         // A browser opened inside a module's tree keeps the folder it lists.
         let mut browser = ProjectBrowser::default();
-        assert!(browser.open("extensions/pill_master_renderer_data/materials"));
+        assert!(browser.open("extensions/pill_rendering/materials"));
         assert!(!browser.settle(&assets));
     }
 
@@ -478,20 +478,20 @@ mod tests {
     /// segment opens that root.
     #[test]
     fn the_breadcrumb_names_the_root_the_folder_belongs_to() {
-        let segments = breadcrumb("extensions/pill_master_renderer_data/materials");
+        let segments = breadcrumb("extensions/pill_rendering/materials");
         let paths: Vec<&str> = segments.iter().map(|(path, _)| path.as_str()).collect();
         let labels: Vec<&str> = segments.iter().map(|(_, label)| label.as_str()).collect();
         assert_eq!(
             paths,
             vec![
                 "extensions",
-                "extensions/pill_master_renderer_data",
-                "extensions/pill_master_renderer_data/materials",
+                "extensions/pill_rendering",
+                "extensions/pill_rendering/materials",
             ]
         );
         assert_eq!(
             labels,
-            vec!["extensions", "pill_master_renderer_data", "materials"]
+            vec!["extensions", "pill_rendering", "materials"]
         );
         assert_eq!(
             breadcrumb(EXTENSIONS_ROOT),

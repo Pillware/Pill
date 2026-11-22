@@ -10,14 +10,14 @@
 // The managed counterpart of a Rust project's `assets.import(...)` calls,
 // written the same way: the startup takes `ResMut<AssetManager>` and imports
 // the renderer's own `Texture` and `Mesh` types, which the renderer data crate
-// mirrors to C# (`generated/pill_master_renderer_data_Components.g.cs`). The
+// mirrors to C# (`generated/pill_rendering_Components.g.cs`). The
 // decoding and the `.meta` handling happen in that crate's Rust code; this
 // file names paths and a policy only. A startup runs once for the life of the
 // host, so it needs no guard against importing twice - and an import of a
 // loaded path would return the loaded asset anyway.
 
 // The renderer's asset types, generated from their Rust declarations.
-using pill_master_renderer_data;
+using pill_rendering;
 
 namespace TracyLive;
 

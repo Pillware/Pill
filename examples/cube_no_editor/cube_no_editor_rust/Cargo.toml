@@ -15,4 +15,4 @@ pill_engine = { path = "../../../modules/engine/pill_engine" }
 # The master renderer's data only - components, assets, pipelines. The GPU
 # renderer is the host's (or the web build's); `default-features = false`, as
 # for every extension, keeps its module exports out of this project's DLL.
-pill_master_renderer_data = { path = "../../../modules/extensions/pill_master_renderer/modules/runtime/data", default-features = false }
+pill_rendering = { path = "../../../modules/extensions/rendering/pill_rendering_core/modules/runtime/data", default-features = false }

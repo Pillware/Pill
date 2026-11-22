@@ -438,7 +438,7 @@ STEPS: List[Step] = [
             [
                 "cargo", "clippy", "--target", "wasm32-unknown-unknown",
                 "-p", "pill_player", "--features", "rendering",
-                "-p", "pill_master_renderer",
+                "-p", "pill_renderer",
                 "--", "-D", "warnings",
             ],
             # The browser frontends, game and editor, so both stay wasm-clean.

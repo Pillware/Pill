@@ -52,7 +52,7 @@ beside the project's files, the editor shows it under the `extensions` root and
 offers no create, rename, move, delete or settings write there, and a file the
 module declares that goes missing stops the host naming the module and the
 path (`test_module_resource_assert.py` drives exactly that). The engine's
-default material, `pill_master_renderer_data`'s
+default material, `pill_rendering`'s
 `res/materials/pill.pbr.material`, is the resource the editor and the suite both
 show.
 

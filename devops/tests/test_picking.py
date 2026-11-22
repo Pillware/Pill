@@ -64,7 +64,7 @@ STARTUP_TIMEOUT = 600
 ANSWER_TIMEOUT = 60
 
 # `rendering` is required, not a preference: the project links
-# `pill_master_renderer`, so the project build resolves the wgpu graph, and the
+# `pill_rendering`, so the project build resolves the wgpu graph, and the
 # host's engine dylibs must match the resolution every spawned build gets. The
 # suite picks the entity the renderer's pick buffer answers with, so it is also
 # the posture that carries the renderer at all.

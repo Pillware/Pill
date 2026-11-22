@@ -47,7 +47,7 @@ use pill_engine::*;
 // `TransformComponent` is the shared placement row, registered by the renderer
 // data crate this project depends on; `MeshRendererComponent` is that
 // renderer's own idea of a thing to draw.
-use pill_master_renderer_data::{
+use pill_rendering::{
     CameraComponent, DirectionalLightComponent, Material, Mesh, MeshRendererComponent, RenderPass,
     RenderingManager, RenderingPipeline, Shader, TransformComponent,
 };
@@ -164,7 +164,7 @@ pub fn register(engine: &mut Engine) -> u32 {
     // uses the same concrete asset types as this DLL. RenderFrame is a shared
     // resource, so the host-side GPU backend reads the extracted data through
     // the engine's stable cross-artifact resource identity.
-    pill_master_renderer_data::register(engine);
+    pill_rendering::register(engine);
     // The entity-reference test subject: its layout is what gives the
     // Inspector a reference row to draw (W-0048 Stage 6).
     follow_target::register(engine.world_mut());
@@ -806,7 +806,7 @@ mod tests {
         assert_eq!(imported, chain);
         assert_eq!(
             assets.get(chain).expect("the chain is loaded").passes,
-            vec![pill_master_renderer_data::PipelinePass::new(pass)]
+            vec![pill_rendering::PipelinePass::new(pass)]
         );
     }
 }

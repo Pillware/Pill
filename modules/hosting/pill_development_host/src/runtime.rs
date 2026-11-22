@@ -63,7 +63,7 @@ use crate::{HostConfig, ProjectModuleBackend, ProjectModuleConfig};
 // =============================================================================
 
 /// The renderer data crate's development shader reload export; see
-/// `pill_master_renderer_data::shader_hot_reload`.
+/// `pill_rendering::shader_hot_reload`.
 #[cfg(feature = "rendering")]
 const SHADER_CHANGED_EXPORT: &str = "pill_render_data_shader_changed";
 

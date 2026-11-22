@@ -15,13 +15,13 @@ DESCRIPTION
     the module-init `catch_unwind`, for a resource that went missing later.
 
     This suite proves the failing startup end to end, on the one real module
-    resource: `pill_master_renderer_data` requires
+    resource: `pill_rendering` requires
     `res/materials/pill.pbr.material`, the PBR chain's default material.
 
       1. The file is moved aside and the headless dev host is started on
          `devops/tests/projects/native`.
       2. The host must exit non-zero, and its output must carry
-         `module 'pill_master_renderer_data' requires its resource
+         `module 'pill_rendering' requires its resource
          'materials/pill.pbr.material', which is missing at` - the module and the
          path, which is what makes the failure diagnosable. The declaration
          asserts inside the module's init, so the loader reports the panic and
@@ -67,12 +67,13 @@ PROJECT_ROOT = NATIVE_PROJECT_ROOT
 # Headless: the assert fires while the modules load, before any window exists.
 HOST_POSTURE = HOST_DEV_HOT_PATCH
 
-MODULE_NAME = "pill_master_renderer_data"
+MODULE_NAME = "pill_rendering"
 RESOURCE_NAME = "materials/pill.pbr.material"
 MATERIAL_FILE = (
     MODULES_ROOT
     / "extensions"
-    / "pill_master_renderer"
+    / "rendering"
+    / "pill_rendering_core"
     / "modules"
     / "runtime"
     / "data"

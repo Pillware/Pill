@@ -1,5 +1,5 @@
 [package]
-name = "pill_master_renderer"
+name = "pill_renderer"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,9 +9,12 @@ workspace = true
 # `cdylib` for the host to load and reload as a module; `rlib` for its tests
 # and a shipping build that links it statically.
 [lib]
+# Named after the crate rather than `lib.rs`, so the debugger's file-name
+# fallback has one candidate.
+path = "src/pill_renderer.rs"
 # `rlib` only: the artifact the host loads is built by the generated
-# `host_module_pill_master_renderer` wrapper, which links this crate as a
-# library; `pill_development_host` reaches the same hashed build through
+# `host_module_pill_renderer` wrapper, which links this crate as a library;
+# `pill_development_host` reaches the same hashed build through
 # `renderer_dependency_graph`.
 crate-type = ["rlib"]
 
@@ -40,12 +43,13 @@ pill_renderer_api = { path = "../../../../../rendering/pill_renderer_api" }
 # the shared draw data the `ui` module paints with this module's own device
 # (D8). The renderer names no UI library: `pill_ui_frame` carries the lists.
 pill_ui_frame = { path = "../../../../../rendering/pill_ui_frame" }
-# This renderer's data crate: its components, assets, pipelines and shaders.
-# Everything wgpu-free that is specific to the master renderer lives there.
-pill_master_renderer_data = { path = "../data" }
+# The rendering data this crate draws: its components, assets, pipelines and
+# shaders. Everything wgpu-free a renderer needs lives there, shared with any
+# other renderer that names the same crate.
+pill_rendering = { path = "../../../pill_rendering_core/modules/runtime/data" }
 
 [package.metadata.pill]
 # The data crate this renderer draws with: its components, asset types and
 # materials. Naming it here rather than deriving `<renderer>_data` is what lets
 # two renderers share one data crate.
-renderer_data = "pill_master_renderer_data"
+renderer_data = "pill_rendering"

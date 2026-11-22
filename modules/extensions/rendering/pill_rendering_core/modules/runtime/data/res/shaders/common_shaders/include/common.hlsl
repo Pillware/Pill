@@ -1,7 +1,7 @@
 // Shared bind-group definitions used by every default shader. Edit here, not
 // per-shader. The Rust-side counterparts live in the GPU module's own crate:
-// `pill_master_renderer/src/resources/engine_parameters.rs` (EngineParams) and
-// `pill_master_renderer/src/resources/renderer_camera.rs` (CameraParams); any
+// `pill_renderer/src/resources/engine_parameters.rs` (EngineParams) and
+// `pill_renderer/src/resources/renderer_camera.rs` (CameraParams); any
 // field change must be mirrored on both sides.
 
 // `EngineParametersData` carries the fog pair and nothing else, in that order.

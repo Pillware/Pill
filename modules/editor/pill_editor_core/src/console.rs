@@ -35,7 +35,7 @@ pub const CONSOLE_LINES_MAX: usize = 2000;
 /// The engine's crates are all named `pill_*`, and its tracing roots are
 /// `engine::…` and `profile::…`. A target is split at its first `::`, and the
 /// first part is matched against these prefixes. So
-/// `pill_master_renderer_data::scene` and `pill_engine::asset::AssetManager`
+/// `pill_rendering::scene` and `pill_engine::asset::AssetManager`
 /// are the engine's, while a project's `circus_demo::game` is the game's.
 ///
 /// The rule has one edge case: a project crate whose name starts with `pill_`
@@ -330,7 +330,7 @@ mod tests {
             "pill_development_host::loader",
             "pill_editor_core::menu",
             "pill_editor::runner",
-            "pill_master_renderer_data::scene",
+            "pill_rendering::scene",
             "pill_renderer_api::limits",
             "profile::coarse",
         ] {

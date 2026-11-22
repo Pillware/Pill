@@ -152,17 +152,25 @@
        ===================================================================== -->
 
   <!-- The modules the project loads, read from `project_settings.yaml` the way
-       the host reads it (`pill_development_host::config`): the renderer's data crate
-       `<renderer>_data` first - `renderer:` absent means the master renderer,
-       `none` means no renderer - then every name under `modules:`, in either
+       the host reads it (`pill_development_host::config`): the renderer's data
+       crate first - `renderer:` absent means `pill_renderer`, `none` means no
+       renderer, and `pill_master_renderer` is the name older settings carry -
+       then every name under `modules:`, in either
        YAML list style. Property functions return escaped text, which is why
        the results are unescaped before they become paths. -->
   <PropertyGroup Condition="'$(PillExtensionMirrors)' == 'true' And Exists('$(PillProjectSettings)')">
     <_PillSettingsText>$([System.IO.File]::ReadAllText('$(PillProjectSettings)'))</_PillSettingsText>
 
     <_PillRenderer>$([System.Text.RegularExpressions.Regex]::Match($(_PillSettingsText), '(?m)^renderer:[ \t]*["'']?([A-Za-z0-9_]+)').Groups[1].Value)</_PillRenderer>
-    <_PillRenderer Condition="'$(_PillRenderer)' == ''">pill_master_renderer</_PillRenderer>
-    <_PillRendererData Condition="'$(_PillRenderer)' != 'none'">$(_PillRenderer)_data</_PillRendererData>
+    <_PillRenderer Condition="'$(_PillRenderer)' == ''">pill_renderer</_PillRenderer>
+    <_PillRenderer Condition="'$(_PillRenderer)' == 'pill_master_renderer'">pill_renderer</_PillRenderer>
+
+    <!-- The data crate is the one the renderer names in its own manifest
+         (`renderer_data` under `[package.metadata.pill]`). A renderer crate
+         sits either inside a group folder or directly under `extensions/`. -->
+    <_PillRendererManifest Condition="Exists('$(PillEngineRoot)extensions/rendering/$(_PillRenderer)/modules/runtime/Cargo.toml')">$(PillEngineRoot)extensions/rendering/$(_PillRenderer)/modules/runtime/Cargo.toml</_PillRendererManifest>
+    <_PillRendererManifest Condition="'$(_PillRendererManifest)' == '' And Exists('$(PillEngineRoot)extensions/$(_PillRenderer)/modules/runtime/Cargo.toml')">$(PillEngineRoot)extensions/$(_PillRenderer)/modules/runtime/Cargo.toml</_PillRendererManifest>
+    <_PillRendererData Condition="'$(_PillRendererManifest)' != ''">$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(_PillRendererManifest)')), 'renderer_data[ \t]*=[ \t]*"([A-Za-z0-9_]+)"').Groups[1].Value)</_PillRendererData>
 
     <_PillModuleSection>$([System.Text.RegularExpressions.Regex]::Match($(_PillSettingsText), '(?m)^modules:[^\r\n]*(?:\r?\n[ \t]*-[^\r\n]*)*').Value)</_PillModuleSection>
     <_PillModules>$([System.Text.RegularExpressions.Regex]::Replace($(_PillModuleSection), '#[^\r\n]*|^modules:|[\[\]"'' \t]', '', System.Text.RegularExpressions.RegexOptions.Multiline))</_PillModules>
@@ -174,9 +182,11 @@
 
     <_PillExtensions>$(PillEngineRoot)extensions/</_PillExtensions>
     <!-- A mirror is `<crate>/generated/<module>_Components.g.cs`, and the
-         crate sits under `<extension>/modules/` (one level deeper for the
-         master renderer's data crate), so `**` spans those levels. -->
+         crate sits under `<extension>/modules/` or, inside a group folder,
+         under `<group>/<extension>/modules/`, so `**` spans those levels in
+         both layouts. -->
     <_PillMirrorGlobs Condition="'$(_PillModules)' != ''">$([MSBuild]::Unescape('$(_PillExtensions)*/modules/**/generated/$(_PillModules.Replace(';', '_Components.g.cs;$(_PillExtensions)*/modules/**/generated/'))_Components.g.cs'))</_PillMirrorGlobs>
+    <_PillMirrorGlobs Condition="'$(_PillModules)' != ''">$(_PillMirrorGlobs);$([MSBuild]::Unescape('$(_PillExtensions)*/*/modules/**/generated/$(_PillModules.Replace(';', '_Components.g.cs;$(_PillExtensions)*/*/modules/**/generated/'))_Components.g.cs'))</_PillMirrorGlobs>
   </PropertyGroup>
 
   <!-- The mirrors are derived from each module's real registered layout by the

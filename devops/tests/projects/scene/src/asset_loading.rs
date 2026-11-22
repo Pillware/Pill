@@ -30,7 +30,7 @@
 
 // External crates
 use pill_engine::{AssetManager, Handle, World};
-use pill_master_renderer_data::{AssetLoader, Material, Mesh, Texture};
+use pill_rendering::{AssetLoader, Material, Mesh, Texture};
 use std::path::{Path, PathBuf};
 
 /// The handles [`load`] returns: the one mesh every model draws and the

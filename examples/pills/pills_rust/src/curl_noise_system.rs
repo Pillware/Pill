@@ -18,7 +18,7 @@
 // External crates
 use glam::Vec3;
 use pill_engine::{pill_hot, system, Query, Res, SystemError, Time};
-use pill_master_renderer_data::TransformComponent;
+use pill_rendering::TransformComponent;
 
 // Current crate
 use pills_rust::{CurlNoiseComponent, DemoState};

@@ -19,7 +19,7 @@
 //! Each asset type is plain data plus a declaration. A game builds it, the
 //! `AssetManager` owns it, and the renderer reads it while building a frame.
 //! The GPU side - caches, pipelines and bind groups - lives in the GPU module
-//! (`pill_master_renderer`), which links this crate. [`asset_key`] puts a
+//! (`pill_renderer`), which links this crate. [`asset_key`] puts a
 //! handle's generation above its index, so one `u64` tells a cache which asset
 //! is meant and which version of it a resource was built from.
 

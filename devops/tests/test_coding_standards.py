@@ -42,7 +42,7 @@ EXAMPLE USAGE
   python devops/tests/test_coding_standards.py modules/engine/pill_core/src/lib.rs \
       devops/tests/projects/native/src/lib.rs --report local/lint.json
   python devops/tests/test_coding_standards.py --root modules \
-      --exclude modules/extensions/pill_master_renderer
+      --exclude modules/extensions/rendering
 
   Exit status: 0 when every checked file complies, 1 when at least one
   violation is reported, 2 on a usage error.
@@ -191,7 +191,7 @@ USE_CRATE_ROOTS = frozenset({"crate", "super", "self"})
 # tracked as follow-up work, and the order rule above keeps gating every
 # crate in the meantime.
 IMPORT_GROUP_CONTENT_SCOPE = (
-    "modules/extensions/pill_master_renderer/",
+    "modules/extensions/rendering/",
     "modules/rendering/",
     "modules/hosting/pill_player/",
 )
@@ -2421,7 +2421,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  test_coding_standards.py --root modules/engine/pill_engine/src\n"
             "  test_coding_standards.py modules/engine/pill_core/src/lib.rs\n"
             "  test_coding_standards.py --root modules --exclude "
-            "modules/extensions/pill_master_renderer\n"
+            "modules/extensions/rendering\n"
         ),
     )
     parser.add_argument(

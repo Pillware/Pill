@@ -29,7 +29,7 @@ use pill_engine::{
     component, pill_hot, system, tracing, Handle, Input, KeyCode, Query, Res, ResMut, Resource,
     SystemError, World,
 };
-use pill_master_renderer_data::{
+use pill_rendering::{
     CameraComponent, Material, Mesh, MeshRendererComponent, TransformComponent,
 };
 use pill_project_ui::GameUi;

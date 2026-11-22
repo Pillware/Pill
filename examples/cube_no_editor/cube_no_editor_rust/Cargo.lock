@@ -244,7 +244,7 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "pill_engine",
- "pill_master_renderer_data",
+ "pill_rendering",
 ]
 
 [[package]]
@@ -830,7 +830,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "pill_master_renderer_data"
+name = "pill_rendering"
 version = "0.1.0"
 dependencies = [
  "bytemuck",

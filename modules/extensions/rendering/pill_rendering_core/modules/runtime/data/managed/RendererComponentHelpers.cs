@@ -2,7 +2,7 @@
 //
 // Responsibilities
 // - Give gameplay code readable accessors for the generated structs in
-//   `generated/pill_master_renderer_data_Components.g.cs`: vectors and
+//   `generated/pill_rendering_Components.g.cs`: vectors and
 //   quaternions instead of numbered array elements.
 // - Keep the "no mesh, no material" and placement shorthands the gameplay
 //   projects rely on.
@@ -34,8 +34,8 @@ namespace pill_master_renderer
         /// </summary>
         public static MeshRendererComponent None => new()
         {
-            Mesh = global::TracyLive.Handle<global::pill_master_renderer_data.Mesh>.Invalid,
-            Material = global::TracyLive.Handle<global::pill_master_renderer_data.Material>.Invalid,
+            Mesh = global::TracyLive.Handle<global::pill_rendering.Mesh>.Invalid,
+            Material = global::TracyLive.Handle<global::pill_rendering.Material>.Invalid,
         };
 
         /// <summary>A renderer drawing <paramref name="mesh"/> with <paramref name="material"/>.</summary>
@@ -45,8 +45,8 @@ namespace pill_master_renderer
         /// inside this struct <c>Mesh</c> and <c>Material</c> name its fields.
         /// </remarks>
         public static MeshRendererComponent From(
-            global::TracyLive.Handle<global::pill_master_renderer_data.Mesh> mesh,
-            global::TracyLive.Handle<global::pill_master_renderer_data.Material> material) => new()
+            global::TracyLive.Handle<global::pill_rendering.Mesh> mesh,
+            global::TracyLive.Handle<global::pill_rendering.Material> material) => new()
         {
             Mesh = mesh,
             Material = material,

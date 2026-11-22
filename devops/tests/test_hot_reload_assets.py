@@ -21,7 +21,7 @@ DESCRIPTION
       2. broken source - the image is overwritten with bytes that are not an
          image. The host must log that the reimport failed and keep the loaded
          value; restoring the bytes must reimport it again.
-      3. reload, then import - `pill_master_renderer_data` is rebuilt and
+      3. reload, then import - `pill_rendering` is rebuilt and
          reloaded (a comment edit), which also reloads the project that links
          it. A metadata edit after that must still reimport, through the
          import registry entries the reloaded images registered: the entries
@@ -72,7 +72,7 @@ METADATA_FILE = SOURCE_FILE.with_name(SOURCE_FILE.name + ".meta")
 MATERIAL_NAME = "materials/teapot.material"
 MATERIAL_FILE = PROJECT_ROOT / "res" / MATERIAL_NAME
 DATA_CRATE_ROOT = (
-    MODULES_ROOT / "extensions" / "pill_master_renderer" / "modules" / "runtime" / "data" / "src" / "pill_master_renderer_data.rs"
+    MODULES_ROOT / "extensions" / "rendering" / "pill_rendering_core" / "modules" / "runtime" / "data" / "src" / "pill_rendering.rs"
 )
 
 # Headless dev host: the project draws nothing here, and the asset path under

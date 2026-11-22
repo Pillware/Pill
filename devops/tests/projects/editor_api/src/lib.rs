@@ -20,7 +20,7 @@
 
 // External crates
 use pill_engine::*;
-use pill_master_renderer_data::TransformComponent;
+use pill_rendering::TransformComponent;
 
 // =============================================================================
 // Components

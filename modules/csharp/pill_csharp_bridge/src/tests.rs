@@ -70,7 +70,7 @@ use pill_engine::common_components::TransformComponent;
 // (see `modules/hosting/pill_development_host/Cargo.toml`). Only this module's
 // code names it, to bind the real renderer components and call its asset
 // functions.
-use renderer_data_dependency_graph as pill_master_renderer_data;
+use renderer_data_dependency_graph as pill_rendering;
 use renderer_data_dependency_graph::MeshRendererComponent;
 
 // =============================================================================
@@ -128,7 +128,7 @@ fn test_stable_id(name: &str) -> StableComponentId {
 /// bindings. Nothing here names a component type.
 fn shared_component_bindings(engine: &mut Engine) -> ComponentBindings {
     let sequence = engine.world().component_registration_sequence();
-    pill_master_renderer_data::register(engine);
+    pill_rendering::register(engine);
     let registered_names = engine.world().registered_component_names_since(sequence);
     let exposed_components = exposed_components_from_names(engine.world(), &registered_names);
     module_native_bindings(engine, &exposed_components)
@@ -635,10 +635,10 @@ fn a_managed_handle_field_is_recorded_with_its_registered_asset_type() {
     let mut engine = Engine::new();
     engine
         .world_mut()
-        .register_imported_asset::<pill_master_renderer_data::Mesh>();
+        .register_imported_asset::<pill_rendering::Mesh>();
     let shared = shared_component_bindings(&mut engine);
     let stable_id = stable_component_id("Project.MeshReferenceInCSharp");
-    let mesh_path = std::any::type_name::<pill_master_renderer_data::Mesh>();
+    let mesh_path = std::any::type_name::<pill_rendering::Mesh>();
     let manifest = serde_json::json!([{
         "stable_id_low": stable_id.0 as u64,
         "stable_id_high": (stable_id.0 >> 64) as u64,
@@ -3201,10 +3201,10 @@ fn a_managed_resource_publishes_its_field_layout() {
 
 /// The qualified name that `#[pill_mirror_object]` records for the renderer's
 /// mesh.
-const MESH_TYPE: &str = "pill_master_renderer_data::Mesh";
+const MESH_TYPE: &str = "pill_rendering::Mesh";
 
 /// The qualified name of the renderer's pipeline resource.
-const RENDERING_MANAGER_TYPE: &str = "pill_master_renderer_data::RenderingManager";
+const RENDERING_MANAGER_TYPE: &str = "pill_rendering::RenderingManager";
 
 /// The address of one mirrored function in this binary's own table.
 fn mirrored(type_name: &str, method: &str) -> usize {
@@ -3315,7 +3315,7 @@ fn the_renderer_data_mirrors_reach_the_static_table() {
 #[test]
 fn a_native_resource_needs_a_declared_access() {
     let mut engine = Engine::new();
-    pill_master_renderer_data::register(&mut engine);
+    pill_rendering::register(&mut engine);
     let shared_name = pill_engine::asset::ASSET_MANAGER_SHARED_NAME;
     // Step 1: outside a managed invocation every request is refused.
     assert_eq!(
@@ -3365,7 +3365,7 @@ fn a_native_resource_needs_a_declared_access() {
 #[test]
 fn a_mesh_loads_through_its_mirrored_trampolines() {
     let mut engine = Engine::new();
-    pill_master_renderer_data::register(&mut engine);
+    pill_rendering::register(&mut engine);
     let shared_name = pill_engine::asset::ASSET_MANAGER_SHARED_NAME;
     let declared = [native_resource_write(shared_name)];
     let bindings = ComponentBindings::default();
@@ -3400,7 +3400,7 @@ fn a_mesh_loads_through_its_mirrored_trampolines() {
         .get_resource::<pill_engine::AssetManager>()
         .expect("the engine inserts the store");
     let handle = assets
-        .handle_by_name::<pill_master_renderer_data::Mesh>(name)
+        .handle_by_name::<pill_rendering::Mesh>(name)
         .expect("the mesh is stored under its name");
     assert_eq!((handle.index(), handle.generation()), (index, generation));
 }
@@ -3429,11 +3429,11 @@ fn a_failed_mirrored_call_reports_its_message() {
 #[test]
 fn the_render_pipeline_clears_through_its_mirrored_method() {
     let mut engine = Engine::new();
-    pill_master_renderer_data::register(&mut engine);
+    pill_rendering::register(&mut engine);
     let shared_name = "pill_master_renderer::RenderingManager";
     let manager = engine
         .world()
-        .get_resource::<pill_master_renderer_data::RenderingManager>()
+        .get_resource::<pill_rendering::RenderingManager>()
         .expect("register inserts the manager");
     assert!(
         manager.pipeline().is_some(),
@@ -3455,7 +3455,7 @@ fn the_render_pipeline_clears_through_its_mirrored_method() {
 
     let manager = engine
         .world()
-        .get_resource::<pill_master_renderer_data::RenderingManager>()
+        .get_resource::<pill_rendering::RenderingManager>()
         .expect("register inserts the manager");
     assert!(
         manager.pipeline().is_none(),
@@ -3474,8 +3474,8 @@ fn the_render_pipeline_clears_through_its_mirrored_method() {
 fn a_component_registered_twice_is_exposed_once() {
     let mut engine = Engine::new();
     let sequence = engine.world().component_registration_sequence();
-    pill_master_renderer_data::register(&mut engine);
-    pill_master_renderer_data::register(&mut engine);
+    pill_rendering::register(&mut engine);
+    pill_rendering::register(&mut engine);
     let registered_names = engine.world().registered_component_names_since(sequence);
 
     let exposed_components = exposed_components_from_names(engine.world(), &registered_names);

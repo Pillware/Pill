@@ -16,7 +16,7 @@
 //! the world rather than the frontend's own log.
 
 use pill_engine::{system, Input, MouseButton, Query, Res, SystemError};
-use pill_master_renderer_data::{CameraComponent, TransformComponent};
+use pill_rendering::{CameraComponent, TransformComponent};
 
 /// How far one wheel line moves the camera, in world units.
 const ZOOM_STEP: f32 = 0.5;

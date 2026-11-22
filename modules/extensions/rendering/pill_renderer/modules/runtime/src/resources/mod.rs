@@ -43,4 +43,4 @@ pub(crate) use renderer_shader::check_slot_shape;
 pub(crate) use renderer_shader::RendererShaderHandle;
 pub(crate) use renderer_texture::RendererTextureHandle;
 
-pub use pill_master_renderer_data::RenderingManager;
+pub use pill_rendering::RenderingManager;

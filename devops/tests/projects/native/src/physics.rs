@@ -11,7 +11,7 @@
 use crate::settings::*;
 use crate::{PhysicsState, SimulationTime};
 use pill_engine::*;
-use pill_master_renderer_data::TransformComponent;
+use pill_rendering::TransformComponent;
 
 impl Default for PhysicsState {
     /// The first ball's spawn state, for callers that need any valid state

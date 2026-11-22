@@ -563,7 +563,7 @@ version = "0.1.0"
 dependencies = [
  "pill_core",
  "pill_engine",
- "pill_master_renderer_data",
+ "pill_rendering",
  "pill_spline",
  "serde",
  "tracing",
@@ -722,7 +722,7 @@ name = "pill_hot_scan"
 version = "0.1.0"
 
 [[package]]
-name = "pill_master_renderer_data"
+name = "pill_rendering"
 version = "0.1.0"
 dependencies = [
  "bytemuck",

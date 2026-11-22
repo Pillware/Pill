@@ -24,7 +24,7 @@ using System.Runtime.InteropServices;
 // The renderer's components, generated from their Rust registration.
 using pill_master_renderer;
 // The renderer's asset types, their builders and their store operations.
-using pill_master_renderer_data;
+using pill_rendering;
 // The ECS vocabulary (`Query`, `Commands`, the attribute types) and `Handle`.
 using TracyLive;
 

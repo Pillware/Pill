@@ -1,31 +1,32 @@
 [package]
-name = "pill_master_renderer_data"
+name = "pill_rendering"
 version = "0.1.0"
 edition = "2021"
 
 [lints]
 workspace = true
 
-# The master renderer's data: what a game says to this renderer. Components,
-# assets, the pipelines and their shaders, pipeline selection, and the C# mirror
-# of it all. Never links wgpu: projects, the host and headless builds link this,
-# and only the GPU module (`pill_master_renderer`) links the graphics stack.
+# The rendering data a game draws with: components, assets, the pipelines and
+# their shaders, pipeline selection, and the C# mirror of it all. Never links
+# wgpu: projects, the host and headless builds link this, and only a renderer
+# crate (`pill_renderer`) links the graphics stack. Two renderers can share it,
+# because each names it in its own manifest (`renderer_data`).
 [lib]
 # Named after the crate rather than `lib.rs`, like every extension, so the
 # debugger's file-name fallback has one candidate.
-path = "src/pill_master_renderer_data.rs"
+path = "src/pill_rendering.rs"
 # `rlib` only: the artifact the host loads is built by the generated
-# `host_module_pill_master_renderer_data` wrapper, which links this crate as a
-# library, and the GPU module links the same build.
+# `host_module_pill_rendering` wrapper, which links this crate as a library,
+# and the renderers link the same build.
 crate-type = ["rlib"]
 
 [dependencies]
-pill_core = { path = "../../../../../engine/pill_core" }
-pill_core_macros = { path = "../../../../../engine/pill_core_macros" }
-pill_engine = { path = "../../../../../engine/pill_engine" }
+pill_core = { path = "../../../../../../engine/pill_core" }
+pill_core_macros = { path = "../../../../../../engine/pill_core_macros" }
+pill_engine = { path = "../../../../../../engine/pill_engine" }
 # The renderer contract: the frame vocabulary the assets are written in
 # (pass kinds and targets, material parameters) and the camera.
-pill_renderer_api = { path = "../../../../../rendering/pill_renderer_api" }
+pill_renderer_api = { path = "../../../../../../rendering/pill_renderer_api" }
 trait_type_map = { git = "https://github.com/MattSzymonski/Trait-Type-Map", rev = "25343a9eac856445b0fa8266df5b000326d1574b" }
 
 serde = { version = "1", features = ["derive"] }
@@ -61,4 +62,4 @@ serde_json = "1"
 [build-dependencies]
 # Turns `shaders/**/*.hlsl` into the WGSL this crate embeds, so a shader that
 # is not committed is still the one that compiles.
-pill_assets = { path = "../../../../../assets/pill_assets" }
+pill_assets = { path = "../../../../../../assets/pill_assets" }

@@ -437,7 +437,7 @@ fn confirm_staged_artifacts(
 
 /// How many directory levels below the workspace root a member manifest can
 /// sit. Five is the depth of
-/// `extensions/pill_master_renderer/modules/runtime/data`, the deepest member
+/// `extensions/rendering/pill_rendering_core/modules/runtime/data`, the deepest member
 /// layout this search has to reach.
 const MEMBER_SEARCH_DEPTH: usize = 5;
 

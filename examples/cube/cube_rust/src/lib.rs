@@ -12,7 +12,7 @@
 //! The file-authored twin of `cube_no_editor`: the same camera and the same
 //! cube, spun around the same axes, but neither the mesh nor the material is
 //! built in code. The material names the renderer's PBR shader by guid, so it
-//! can only be imported after `pill_master_renderer_data::register` has
+//! can only be imported after `pill_rendering::register` has
 //! installed that chain.
 //!
 //! `init` runs again on every hot reload, against the live world. Both setup
@@ -28,7 +28,7 @@ use pill_engine::{
     pill_project, system, AssetLoader, AssetManager, Engine, Handle, Query, Res, SystemError, Time,
     World,
 };
-use pill_master_renderer_data::{
+use pill_rendering::{
     CameraComponent, Material, Mesh, MeshRendererComponent, TransformComponent,
 };
 
@@ -53,7 +53,7 @@ pub fn init(engine: &mut Engine) -> u32 {
     // Step 1: Register the renderer's data and point the asset store at this
     // project's `res`. The material names the PBR shader by guid, so the chain
     // has to be installed before the material is imported.
-    pill_master_renderer_data::register(engine);
+    pill_rendering::register(engine);
     AssetLoader::set_root(res_directory());
 
     // Step 2: Load the mesh and the material.

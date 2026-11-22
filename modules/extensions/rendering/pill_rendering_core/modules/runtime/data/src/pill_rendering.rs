@@ -1,21 +1,23 @@
-//! The master renderer's data: the assets, components and pipeline choice a
-//! game draws with, and no graphics stack behind any of it.
+//! The rendering data: the assets, components and pipeline choice a game draws
+//! with, and no graphics stack behind any of it.
 //!
 //! # Responsibilities
 //!
 //! - Define the assets a project draws from ([`Mesh`], [`Texture`], [`Shader`],
 //!   [`Material`], [`RenderPass`], [`RenderingPipeline`]) and the [`components`]
 //!   that place them in the world.
-//! - Define this renderer's pipelines and their shaders ([`config`]), and the
+//! - Define the renderers' pipelines and their shaders ([`config`]), and the
 //!   resource a game selects one in ([`RenderingManager`]).
 //! - Register all of it with an engine through [`register`], and install the
 //!   default pipeline.
 //!
 //! # Design
 //!
-//! This crate never depends on wgpu or winit. It is one of the master
-//! renderer's two crates: this one holds the data, `pill_master_renderer` holds
-//! the GPU code and is the only renderer crate that links the graphics stack.
+//! This crate never depends on wgpu or winit. It is the data half of a
+//! renderer pair: this one holds the data, and a renderer crate
+//! (`pill_renderer`) holds the GPU code and is the only renderer crate that
+//! links the graphics stack. Each renderer names this crate in its own manifest
+//! (`renderer_data`), so two renderers can share it.
 //! That split lets a headless build store a game's cameras, meshes and lights
 //! without linking a renderer, and lets the GPU module be reloaded without
 //! registering any data of its own.
@@ -76,7 +78,7 @@ pub use rendering_manager::RenderingManager;
 // =============================================================================
 
 /// The name the host knows this module by, which is its crate name.
-pub const MODULE_NAME: &str = "pill_master_renderer_data";
+pub const MODULE_NAME: &str = "pill_rendering";
 
 /// Registers the renderer's components, asset types and resources with an
 /// engine and installs its default pipeline, then returns zero.
@@ -86,7 +88,7 @@ pub const MODULE_NAME: &str = "pill_master_renderer_data";
 /// kept tables calling into an image that is no longer mapped.
 ///
 /// It registers no system. Filling the frame and drawing it belong to the GPU
-/// module (`pill_master_renderer`), and a headless engine has neither.
+/// module (`pill_renderer`), and a headless engine has neither.
 ///
 /// The components go in through [`register_components`]. The six asset types
 /// declare themselves, so the tables that hold their values point at code in
@@ -188,7 +190,7 @@ pub fn register(engine: &mut Engine) -> u32 {
 /// function exists because a statically linked build loads the module once and
 /// calls this entry point alone, so it defers to [`register`].
 ///
-/// The generated `host_module_pill_master_renderer_data` wrapper carries it as
+/// The generated `host_module_pill_rendering` wrapper carries it as
 /// `pill_module_init` for the host.
 #[pill_module(register = register)]
 pub fn init(engine: &mut Engine) -> u32 {

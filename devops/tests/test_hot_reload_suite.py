@@ -204,7 +204,7 @@ def last_probe_midpoint(output: str) -> Tuple[float, float]:
 # This suite measures the plain reload transaction, so it pins the reload-only
 # posture to keep the patch fast path out of the host it drives. `rendering`
 # stays ON because session B drives `devops/tests/projects/native`, which links
-# `pill_master_renderer`: a host without it resolves `pill_core` differently
+# `pill_rendering`: a host without it resolves `pill_core` differently
 # from that project and the project DLL fails to load with "The specified
 # procedure could not be found" (os error 127).
 HOST_POSTURE = HOST_DEV_RENDERING

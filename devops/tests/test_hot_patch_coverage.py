@@ -448,7 +448,7 @@ def plan_edit(crate: Crate) -> bool:
 # test.
 #
 # `rendering` is required rather than optional: devops/tests/projects/native links
-# `pill_master_renderer`, so a host without it resolves `pill_core` differently
+# `pill_rendering`, so a host without it resolves `pill_core` differently
 # from the project and the project DLL fails to load with "The specified
 # procedure could not be found" (os error 127), the same reason the cascade
 # suite pins it.

@@ -36,7 +36,7 @@
 //!   image is still mapped, which ends the registration.
 //!
 //! Several binaries can register one type: a project calls
-//! `pill_master_renderer_data::register` in its own `init`, and so does the data
+//! `pill_rendering::register` in its own `init`, and so does the data
 //! crate's own module. Each keeps its own registration, and the newest live one
 //! is used. A project that stops registering a type therefore falls back to the
 //! module's registration instead of losing the type.

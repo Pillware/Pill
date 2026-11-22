@@ -19,7 +19,7 @@ using System.Numerics;
 using pill_master_renderer;
 // The renderer's assets, builders and pipeline resource, generated from their
 // Rust declarations.
-using pill_master_renderer_data;
+using pill_rendering;
 // The ECS vocabulary (`Query`, `Commands`, `Res`) and `Handle`.
 using TracyLive;
 

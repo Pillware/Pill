@@ -172,7 +172,7 @@ impl RendererResourceStorage {
             device,
             queue,
             "default_color",
-            Some(pill_master_renderer_data::DEFAULT_COLOR_TEXTURE),
+            Some(pill_rendering::DEFAULT_COLOR_TEXTURE),
             TextureType::Color,
             &[255, 255, 255, 255],
         )?);
@@ -180,7 +180,7 @@ impl RendererResourceStorage {
             device,
             queue,
             "default_normal",
-            Some(pill_master_renderer_data::DEFAULT_NORMAL_TEXTURE),
+            Some(pill_rendering::DEFAULT_NORMAL_TEXTURE),
             TextureType::Normal,
             &[128, 128, 255, 255],
         )?);
@@ -226,7 +226,7 @@ impl RendererResourceStorage {
         texel_bytes: &[u8],
     ) -> Result<RendererTexture> {
         if let Some(path) = path {
-            match pill_master_renderer_data::load_shipped_texture(path, texture_type) {
+            match pill_rendering::load_shipped_texture(path, texture_type) {
                 Ok(texture) => {
                     return RendererTexture::new_texture(
                         device,

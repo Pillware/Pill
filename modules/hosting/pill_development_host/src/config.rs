@@ -33,6 +33,7 @@ use std::sync::OnceLock;
 
 // External crates
 use pill_core::error::ConfigError;
+use pill_core::telemetry::telemetry_target;
 use pill_csharp_bridge::CSharpModuleConfig;
 use toml_edit::{value, DocumentMut, Item, Table, Value};
 
@@ -257,11 +258,15 @@ const PROJECT_ASSET_DIRECTORY: &str = "res";
 const DEFAULT_EDITOR_THEME: &str = "editor/editor.theme";
 
 /// The renderer a project draws with when its settings name none.
-const DEFAULT_RENDERER: &str = "pill_master_renderer";
+const DEFAULT_RENDERER: &str = "pill_renderer";
 
 /// The `renderer:` value that selects no renderer at all: neither its data
 /// crate nor its GPU module loads.
 const NO_RENDERER: &str = "none";
+
+/// Renderer names a settings file may still carry from before the rename, and
+/// the crate each one now selects. A project keeps loading without an edit.
+const RENDERER_ALIASES: &[(&str, &str)] = &[("pill_master_renderer", DEFAULT_RENDERER)];
 
 /// Manifest key, under `[package.metadata.pill]`, through which a renderer
 /// names the data crate it draws with: `renderer_data = "pill_rendering"`.
@@ -603,7 +608,9 @@ pub struct HostConfig {
     pub first_load_optional: Vec<String>,
 
     /// The renderer's GPU module, from the settings' `renderer:` key
-    /// (`pill_master_renderer` when absent); `None` for `renderer: none`.
+    /// (`pill_renderer` when absent, and the name `pill_master_renderer` still
+    /// selects it); `None` for `renderer: none`, and always `pill_renderer` in
+    /// the editor posture.
     ///
     /// Only a windowed host loads it. Its data crate ([`Self::renderer_data`])
     /// is among [`Self::extensions`] in every build, headless included, so a
@@ -811,8 +818,22 @@ impl HostConfig {
         // copy of a module.
         let extensions_root = workspace_root.join(EXTENSION_DIRECTORY);
         validate_extension_crate_names(&extensions_root)?;
-        let renderer =
-            Self::resolve_renderer(project_settings.renderer.as_deref(), &extensions_root)?;
+        // The editor always draws with the default renderer: `renderer:` is a
+        // standalone and shipping choice, and honouring `none` here would leave
+        // the editor with no viewport.
+        let renderer_setting = Self::renderer_setting_for_posture(
+            load_editor_crates,
+            project_settings.renderer.as_deref(),
+        );
+        if renderer_setting != project_settings.renderer.as_deref() {
+            tracing::info!(
+                target: telemetry_target::EDITOR,
+                named = project_settings.renderer.as_deref().unwrap_or_default(),
+                used = renderer_setting.unwrap_or_default(),
+                "the editor ignores the project's `renderer:` setting"
+            );
+        }
+        let renderer = Self::resolve_renderer(renderer_setting, &extensions_root)?;
         let module_names = Self::module_names_with_renderer_data(
             renderer
                 .as_ref()
@@ -974,10 +995,24 @@ impl HostConfig {
         Ok(Some(path.to_string()))
     }
 
+    /// The `renderer:` value a posture resolves: the editor ignores the
+    /// project's key and always draws with [`DEFAULT_RENDERER`], while every
+    /// other posture uses the key as written (an absent key included).
+    fn renderer_setting_for_posture(
+        load_editor_crates: bool,
+        setting: Option<&str>,
+    ) -> Option<&str> {
+        if load_editor_crates {
+            return Some(DEFAULT_RENDERER);
+        }
+        setting
+    }
+
     /// Resolve the settings' `renderer:` value to the renderer and the data
     /// crate it draws with.
     ///
-    /// Absent means [`DEFAULT_RENDERER`]; [`NO_RENDERER`] means none. A named
+    /// Absent means [`DEFAULT_RENDERER`]; [`NO_RENDERER`] means none; a name in
+    /// [`RENDERER_ALIASES`] selects the crate it is an old name of. A named
     /// renderer must be an extension crate under `extensions/`, its manifest
     /// must name its data crate ([`RENDERER_DATA_TAG`]), and that crate must be
     /// an extension crate too. Anything else is a configuration error here
@@ -993,15 +1028,20 @@ impl HostConfig {
         setting: Option<&str>,
         extensions_root: &Path,
     ) -> Result<Option<RendererSelection>, ConfigError> {
-        let renderer_name = setting.map(str::trim).unwrap_or(DEFAULT_RENDERER);
-        if renderer_name == NO_RENDERER {
+        let named = setting.map(str::trim).unwrap_or(DEFAULT_RENDERER);
+        if named == NO_RENDERER {
             return Ok(None);
         }
-        if !is_valid_module_directory_name(renderer_name) {
+        if !is_valid_module_directory_name(named) {
             return Err(ConfigError::InvalidExtensionName {
-                name: renderer_name.to_string(),
+                name: named.to_string(),
             });
         }
+        let renderer_name = RENDERER_ALIASES
+            .iter()
+            .find(|(old_name, _)| *old_name == named)
+            .map(|(_, current_name)| *current_name)
+            .unwrap_or(named);
         let Some(location) = find_extension_crate(extensions_root, renderer_name) else {
             return Err(ConfigError::ExtensionDirectoryMissing {
                 name: renderer_name.to_string(),
@@ -1525,7 +1565,7 @@ struct ProjectSettingsFile {
     /// is the selected renderer's data crate, which loads first by convention.
     modules: Vec<String>,
     /// The renderer the project draws with: the name of its GPU module under
-    /// `extensions/` (`pill_master_renderer` when absent), or `none`. The data
+    /// `extensions/` (`pill_renderer` when absent), or `none`. The data
     /// crate its manifest names through `renderer_data` loads in every build.
     renderer: Option<String>,
     /// What the development host does with the project's source assets.
@@ -2254,10 +2294,10 @@ pub(crate) fn extension_crate_locations(extensions_root: &Path) -> Vec<Extension
 /// (`pill_audio_editor`). A grouped extension spells only its own directory, so
 /// `extensions/rendering/pill_renderer/modules/runtime` holds `pill_renderer`.
 /// A path therefore names the crate it holds, and the conventional path a
-/// missing crate falls back to resolves to a real directory. The master
-/// renderer's nested runtime crates are exempt, because
-/// `extensions/pill_master_renderer/modules/runtime` groups two crates whose
-/// names cannot both equal the folder name.
+/// missing crate falls back to resolves to a real directory. A nested runtime
+/// crate is exempt, because the folder it sits in cannot name it too:
+/// `extensions/rendering/pill_rendering_core/modules/runtime` holds
+/// `data` (`pill_rendering`) beside the `core` crate to come.
 ///
 /// # Errors
 ///
@@ -3462,37 +3502,32 @@ serde = { version = "1", features = ["derive"] }
     }
 
     /// A crate is found in the folder of its own name first, and otherwise in
-    /// whichever folder holds it - the master renderer's folder holds its data
-    /// crate too. Bookkeeping folders (`_...`) are never searched.
+    /// whichever folder holds it - the rendering data crate sits one level
+    /// below its folder's `modules/runtime`. Bookkeeping folders (`_...`) are
+    /// never searched.
     #[test]
     fn finds_crates_in_their_extension_folders() {
         let root = temp_root().join("find_extension_crate");
         let _ = std::fs::remove_dir_all(&root);
+        seed_runtime_crate(&root, "pill_renderer", "pill_renderer");
         seed_crate_at(
             &root,
-            "pill_master_renderer",
-            "modules/runtime/gpu",
-            "pill_master_renderer",
-        );
-        seed_crate_at(
-            &root,
-            "pill_master_renderer",
+            "pill_rendering_core",
             "modules/runtime/data",
-            "pill_master_renderer_data",
+            "pill_rendering",
         );
         seed_crate_at(&root, "_workspace_anchor", "modules/runtime", "pill_hidden");
 
         assert_eq!(
-            folder_holding(&root, "pill_master_renderer").as_deref(),
-            Some("pill_master_renderer")
+            folder_holding(&root, "pill_renderer").as_deref(),
+            Some("pill_renderer")
         );
         assert_eq!(
-            folder_holding(&root, "pill_master_renderer_data").as_deref(),
-            Some("pill_master_renderer"),
-            "a second crate in a folder is found by scanning the folders"
+            folder_holding(&root, "pill_rendering").as_deref(),
+            Some("pill_rendering_core"),
+            "a crate nested under another folder's runtime is found by scanning"
         );
-        let data_location =
-            find_extension_crate(&root, "pill_master_renderer_data").expect("the data crate");
+        let data_location = find_extension_crate(&root, "pill_rendering").expect("the data crate");
         assert_eq!(data_location.directory_in_folder, "modules/runtime/data");
         assert_eq!(folder_holding(&root, "pill_hidden"), None);
         assert_eq!(folder_holding(&root, "pill_absent"), None);
@@ -3559,14 +3594,15 @@ serde = { version = "1", features = ["derive"] }
 
     /// The index names a crate by the package its manifest declares, and every
     /// path the host derives follows the directory the crate sits in - here the
-    /// renderer's folder, which names only one of its two crates. The generated
-    /// wrappers and the examples are not crates of the extension.
+    /// renderer's folder, whose data crate sits one level below its
+    /// `modules/runtime`. The generated wrappers and the examples are not
+    /// crates of the extension.
     #[test]
     fn a_crate_is_found_by_its_package_name_whatever_its_directory() {
         let root = temp_root().join("package_name_not_directory");
         let _ = std::fs::remove_dir_all(&root);
-        let write_crate = |directory_in_folder: &str, package_name: &str| {
-            let directory = root.join("pill_master_renderer").join(directory_in_folder);
+        let write_crate = |folder: &str, directory_in_folder: &str, package_name: &str| {
+            let directory = root.join(folder).join(directory_in_folder);
             std::fs::create_dir_all(&directory).unwrap();
             std::fs::write(
                 directory.join("Cargo.toml"),
@@ -3574,36 +3610,36 @@ serde = { version = "1", features = ["derive"] }
             )
             .unwrap();
         };
-        write_crate("modules/runtime/gpu", "pill_master_renderer");
-        write_crate("modules/runtime/data", "pill_master_renderer_data");
+        write_crate("pill_renderer", "modules/runtime", "pill_renderer");
         write_crate(
-            "generated/host_module_pill_master_renderer",
-            "host_module_pill_master_renderer",
+            "pill_rendering_core",
+            "modules/runtime/data",
+            "pill_rendering",
         );
-        std::fs::create_dir_all(
-            root.join("pill_master_renderer")
-                .join("examples")
-                .join("demo"),
-        )
-        .unwrap();
+        write_crate(
+            "pill_renderer",
+            "generated/host_module_pill_renderer",
+            "host_module_pill_renderer",
+        );
+        std::fs::create_dir_all(root.join("pill_renderer").join("examples").join("demo")).unwrap();
 
-        let gpu = find_extension_crate(&root, "pill_master_renderer").expect("the gpu crate");
-        assert_eq!(gpu.folder, "pill_master_renderer");
-        assert_eq!(gpu.directory_in_folder, "modules/runtime/gpu");
-        assert!(!gpu.is_editor_crate);
-        let configuration = ExtensionConfig::workspace_member(&gpu);
-        assert_eq!(configuration.name, "pill_master_renderer");
+        let renderer = find_extension_crate(&root, "pill_renderer").expect("the renderer crate");
+        assert_eq!(renderer.folder, "pill_renderer");
+        assert_eq!(renderer.directory_in_folder, "modules/runtime");
+        assert!(!renderer.is_editor_crate);
+        let configuration = ExtensionConfig::workspace_member(&renderer);
+        assert_eq!(configuration.name, "pill_renderer");
         assert_eq!(
             configuration.crate_directory,
-            "extensions/pill_master_renderer/modules/runtime/gpu"
+            "extensions/pill_renderer/modules/runtime"
         );
         assert_eq!(
             configuration.watch_directory,
-            "extensions/pill_master_renderer/modules/runtime/gpu/src"
+            "extensions/pill_renderer/modules/runtime/src"
         );
 
-        let data =
-            find_extension_crate(&root, "pill_master_renderer_data").expect("the data crate");
+        let data = find_extension_crate(&root, "pill_rendering").expect("the data crate");
+        assert_eq!(data.folder, "pill_rendering_core");
         assert_eq!(data.directory_in_folder, "modules/runtime/data");
         assert!(
             !data.is_editor_crate,
@@ -3617,7 +3653,7 @@ serde = { version = "1", features = ["derive"] }
             "the crate in `modules/editor` is the folder's editor crate"
         );
         assert_eq!(
-            find_extension_crate(&root, "host_module_pill_master_renderer"),
+            find_extension_crate(&root, "host_module_pill_renderer"),
             None,
             "a generated wrapper is not an extension crate"
         );
@@ -3848,60 +3884,83 @@ serde = { version = "1", features = ["derive"] }
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// The renderer's data crate may share the GPU module's folder: nested
-    /// runtime crates are exempt from the folder-names-the-crate rule, because
-    /// one folder cannot name both.
+    /// The rendering data crate sits one level below its folder's
+    /// `modules/runtime` (`pill_rendering_core/modules/runtime/data`), so it is
+    /// a nested runtime crate and exempt from the folder-names-the-crate rule:
+    /// one folder cannot name both it and the folder's own crate.
     #[test]
-    fn a_renderer_with_both_crates_in_one_folder_resolves() {
-        let root = temp_root().join("renderer_one_folder");
+    fn a_nested_runtime_crate_is_exempt_from_the_folder_rule() {
+        let root = temp_root().join("renderer_nested_crate");
         let _ = std::fs::remove_dir_all(&root);
         seed_crate_at(
             &root,
-            "pill_master_renderer",
-            "modules/runtime/gpu",
-            "pill_master_renderer",
-        );
-        seed_crate_at(
-            &root,
-            "pill_master_renderer",
+            "pill_rendering_core",
             "modules/runtime/data",
-            "pill_master_renderer_data",
+            "pill_rendering",
         );
-        let gpu_manifest = root.join("pill_master_renderer/modules/runtime/gpu/Cargo.toml");
-        let mut manifest = std::fs::read_to_string(&gpu_manifest).unwrap();
-        manifest
-            .push_str("\n[package.metadata.pill]\nrenderer_data = \"pill_master_renderer_data\"\n");
-        std::fs::write(&gpu_manifest, manifest).unwrap();
+        seed_runtime_crate(&root, "pill_renderer", "pill_renderer");
+        tag_renderer_data(&root, "pill_renderer", "pill_rendering");
         assert_eq!(
             HostConfig::resolve_renderer(None, &root).unwrap(),
             Some(RendererSelection {
-                renderer: "pill_master_renderer".to_string(),
-                data_crate: "pill_master_renderer_data".to_string(),
+                renderer: "pill_renderer".to_string(),
+                data_crate: "pill_rendering".to_string(),
             })
         );
         assert!(
             validate_extension_crate_names(&root).is_ok(),
-            "the renderer's nested crates are exempt from the folder rule"
+            "a nested runtime crate is exempt from the folder rule"
         );
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// No `renderer:` key selects the master renderer, whose data crate comes
+    /// No `renderer:` key selects the default renderer, whose data crate comes
     /// from its manifest's tag.
     #[test]
-    fn an_absent_renderer_key_selects_the_master_renderer() {
-        let root = extensions_root_with_renderer(
-            "renderer_default",
-            "pill_master_renderer",
-            "pill_master_renderer_data",
-        );
+    fn an_absent_renderer_key_selects_the_default_renderer() {
+        let root =
+            extensions_root_with_renderer("renderer_default", "pill_renderer", "pill_rendering");
         assert_eq!(
             HostConfig::resolve_renderer(None, &root).unwrap(),
             Some(RendererSelection {
-                renderer: "pill_master_renderer".to_string(),
-                data_crate: "pill_master_renderer_data".to_string(),
+                renderer: "pill_renderer".to_string(),
+                data_crate: "pill_rendering".to_string(),
             })
         );
+    }
+
+    /// The name the renderer carried before the rename still selects it, so a
+    /// project keeps loading without an edit.
+    #[test]
+    fn the_old_renderer_name_selects_the_renderer() {
+        let root =
+            extensions_root_with_renderer("renderer_alias", "pill_renderer", "pill_rendering");
+        assert_eq!(
+            HostConfig::resolve_renderer(Some("pill_master_renderer"), &root).unwrap(),
+            Some(RendererSelection {
+                renderer: "pill_renderer".to_string(),
+                data_crate: "pill_rendering".to_string(),
+            })
+        );
+    }
+
+    /// The editor posture draws with the default renderer whatever the project
+    /// names, `none` included; every other posture uses the key as written.
+    #[test]
+    fn the_editor_posture_ignores_the_renderer_key() {
+        assert_eq!(
+            HostConfig::renderer_setting_for_posture(true, Some("none")),
+            Some("pill_renderer")
+        );
+        assert_eq!(
+            HostConfig::renderer_setting_for_posture(true, None),
+            Some("pill_renderer")
+        );
+        assert_eq!(
+            HostConfig::renderer_setting_for_posture(false, Some("none")),
+            Some("none")
+        );
+        assert_eq!(HostConfig::renderer_setting_for_posture(false, None), None);
     }
 
     /// `renderer: none` selects no renderer, and needs no renderer crates.
@@ -3948,12 +4007,12 @@ serde = { version = "1", features = ["derive"] }
     fn the_renderer_data_crate_loads_first_and_once() {
         let listed = vec![
             "pill_spline".to_string(),
-            "pill_master_renderer_data".to_string(),
+            "pill_rendering".to_string(),
             "pill_audio".to_string(),
         ];
         assert_eq!(
-            HostConfig::module_names_with_renderer_data(Some("pill_master_renderer_data"), &listed),
-            ["pill_master_renderer_data", "pill_spline", "pill_audio"]
+            HostConfig::module_names_with_renderer_data(Some("pill_rendering"), &listed),
+            ["pill_rendering", "pill_spline", "pill_audio"]
         );
         assert_eq!(
             HostConfig::module_names_with_renderer_data(None, &listed),

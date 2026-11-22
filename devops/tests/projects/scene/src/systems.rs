@@ -6,7 +6,7 @@
 
 use crate::TagAlphaComponent;
 use pill_engine::{system, Query, Res, SystemError, Time};
-use pill_master_renderer_data::TransformComponent;
+use pill_rendering::TransformComponent;
 
 /// Rotates each tagged model around its local Y axis at 90 degrees per second.
 #[system(name = "scene_rotation", order = 510)]

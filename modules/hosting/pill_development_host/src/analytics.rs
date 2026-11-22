@@ -1779,7 +1779,7 @@ mod tests {
     #[test]
     fn startup_report_layout() {
         let mut extension =
-            ModuleAnalytics::new("pill_master_renderer_data", ModuleKind::Extension);
+            ModuleAnalytics::new("pill_rendering", ModuleKind::Extension);
         extension.build_wall_ms = 5830;
         extension.load_ms = 178.2;
         extension.artifact_bytes = 3 * 1024 * 1024;
@@ -1839,7 +1839,7 @@ mod tests {
                 .to_string()
         };
         assert_eq!(
-            row_of("pill_master_renderer_data").len(),
+            row_of("pill_rendering").len(),
             row_of("project ").len(),
             "rows differ in width: {report}"
         );

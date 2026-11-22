@@ -32,7 +32,7 @@ use pill_engine::{
     pill_project, system, AssetImport, AssetLoader, AssetManager, Engine, Handle, MetadataPolicy,
     Query, Res, SystemError, Time, World,
 };
-use pill_master_renderer_data::{
+use pill_rendering::{
     config::simple_pipeline, CameraComponent, Material, Mesh, MeshRendererComponent,
     RenderingManager, Shader, TransformComponent,
 };
@@ -60,7 +60,7 @@ pub fn init(engine: &mut Engine) -> u32 {
     // Step 1: Register the renderer's data and point the asset loader at the
     // project's `res`. The model is read from there and nothing is written
     // back.
-    pill_master_renderer_data::register(engine);
+    pill_rendering::register(engine);
     AssetLoader::set_root(res_directory());
 
     // Step 2: Build the mesh and the material.

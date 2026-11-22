@@ -616,7 +616,7 @@ def check_workspace_members_expand_globs_and_excludes() -> None:
             fail(f"{expected} is missing from the expanded workspace members")
     if any(
         member.directory.resolve()
-        == (MODULES_ROOT / "extensions" / "pill_master_renderer" / "modules" / "runtime").resolve()
+        == (MODULES_ROOT / "extensions" / "rendering" / "pill_rendering_core" / "modules" / "runtime").resolve()
         for member in members
     ):
         fail("the excluded master renderer runtime folder was kept as a member")

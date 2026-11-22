@@ -27,7 +27,7 @@ use pill_engine::{
     component, pill_project, script, tracing, CreateInfo, DestroyInfo, Engine, Entity,
     ScriptComponent, ScriptContext, StartInfo, StopInfo, World,
 };
-use pill_master_renderer_data::TransformComponent;
+use pill_rendering::TransformComponent;
 use serde::{Deserialize, Serialize};
 
 mod asset_loading;
@@ -219,7 +219,7 @@ pub fn init(engine: &mut Engine) -> u32 {
     // standalone frontend then draw the same frame through the same chain,
     // and the pick buffer the editor reads is written by a pass that actually
     // draws.
-    pill_master_renderer_data::register(engine);
+    pill_rendering::register(engine);
     __pill_register_TagAlphaComponent(engine.world_mut());
     __pill_register_ShowcaseComponent(engine.world_mut());
     __pill_register_ShowcaseReferenceComponent(engine.world_mut());
@@ -260,14 +260,14 @@ mod tests {
     use super::*;
     use crate::asset_loading::SceneAssets;
     use pill_engine::{Handle, Query};
-    use pill_master_renderer_data::{CameraComponent, MeshRendererComponent};
+    use pill_rendering::{CameraComponent, MeshRendererComponent};
 
     /// The builder places one camera and three rotating models, and a second
     /// pass adds nothing.
     ///
     /// The builder is driven directly rather than through [`init`]: the host
     /// compiles this project as a generated workspace member, which builds
-    /// `pill_master_renderer_data` with `default-features = false`, so the
+    /// `pill_rendering` with `default-features = false`, so the
     /// asset loaders `init` needs are not in that build and it correctly
     /// reports a failed load. The handles are never resolved by the builder, so
     /// invalid ones exercise exactly the shape and the early return that the
@@ -278,7 +278,7 @@ mod tests {
         // What `init` does before it loads anything: the renderer's data crate
         // owns the standard components, the three project ones are registered
         // by the generated glue.
-        pill_master_renderer_data::register(&mut engine);
+        pill_rendering::register(&mut engine);
         __pill_register_TagAlphaComponent(engine.world_mut());
         __pill_register_ShowcaseComponent(engine.world_mut());
         __pill_register_ShowcaseReferenceComponent(engine.world_mut());
