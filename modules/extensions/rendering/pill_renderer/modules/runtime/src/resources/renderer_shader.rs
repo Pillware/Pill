@@ -25,7 +25,7 @@
 //! an empty layout, so every pipeline has the same shape the drawers bind
 //! against.
 //!
-//! The WGSL is not written by hand. The data crate's build script compiles its
+//! The WGSL is not written by hand. This crate's build script compiles its
 //! HLSL sources to it, and in development the host's shader watcher compiles
 //! an edited source again and sends the new text to the shader asset.
 
@@ -115,7 +115,7 @@ impl RendererShader {
         uniform_groups: UniformGroups,
     ) -> Result<Self> {
         // Step 1: Create the two shader modules. The WGSL is not written by
-        // hand: the data crate's build script compiles its HLSL sources to it,
+        // hand: this crate's build script compiles its HLSL sources to it,
         // and a shader edited in development is compiled again by the host's
         // shader watcher. wgpu parses the WGSL when the module is created.
         let vertex_shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {

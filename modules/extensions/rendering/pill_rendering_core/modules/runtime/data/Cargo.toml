@@ -6,11 +6,12 @@ edition = "2021"
 [lints]
 workspace = true
 
-# The rendering data a game draws with: components, assets, the pipelines and
-# their shaders, pipeline selection, and the C# mirror of it all. Never links
-# wgpu: projects, the host and headless builds link this, and only a renderer
-# crate (`pill_renderer`) links the graphics stack. Two renderers can share it,
-# because each names it in its own manifest (`renderer_data`).
+# The rendering data a game draws with: components, assets, the material
+# vocabulary and the C# mirror of it all. Never links wgpu and ships no
+# shaders: projects, the host and headless builds link this, and only a renderer
+# crate (`pill_renderer`) links the graphics stack and carries the pipelines.
+# Two renderers can share it, because each names it in its own manifest
+# (`renderer_data`).
 [lib]
 # Named after the crate rather than `lib.rs`, like every extension, so the
 # debugger's file-name fallback has one candidate.
@@ -30,11 +31,8 @@ pill_renderer_api = { path = "../../../../../../rendering/pill_renderer_api" }
 trait_type_map = { git = "https://github.com/MattSzymonski/Trait-Type-Map", rev = "25343a9eac856445b0fa8266df5b000326d1574b" }
 
 serde = { version = "1", features = ["derive"] }
-thiserror = "2"
-# The chain's default material is a file this crate parses at runtime
-# (`config/pbr_pipeline`), not a value built in code (W-0136).
+# Material documents are plain JSON in a `.material` file.
 serde_json = "1"
-miette = { version = "7", features = ["derive"] }
 glam = { version = "0.33", features = ["serde", "bytemuck"] }
 bytemuck = { version = "1.4", features = ["derive"] }
 # The shaders' slot tables: name-keyed like a map, with the declaration order
@@ -53,13 +51,3 @@ image = { version = "0.25", default-features = false, features = [
 # format every backend can filter, so their texels are packed to `f16` here.
 half = "2"
 tobj = "3"
-
-[dev-dependencies]
-# Tests check the metadata files' JSON form. Test-only, and the workspace's
-# resolver 2 keeps dev-dependencies out of the graph a normal build resolves.
-serde_json = "1"
-
-[build-dependencies]
-# Turns `shaders/**/*.hlsl` into the WGSL this crate embeds, so a shader that
-# is not committed is still the one that compiles.
-pill_assets = { path = "../../../../../../assets/pill_assets" }

@@ -52,8 +52,7 @@ editor_core_dependency_graph = { package = "pill_editor_core", path = "../../edi
 renderer_dependency_graph = { package = "pill_renderer", path = "../../extensions/rendering/pill_renderer/modules/runtime", optional = true }
 libloading = "0.8"
 # The source and shader watchers, and the cooker the shader watcher runs - the
-# one the renderer data crate's build script runs, so a runtime cook matches the
-# build's.
+# one the renderer's build script runs, so a runtime cook matches the build's.
 notify = "6"
 pill_assets = { path = "../../assets/pill_assets" }
 serde = { version = "1", features = ["derive"] }

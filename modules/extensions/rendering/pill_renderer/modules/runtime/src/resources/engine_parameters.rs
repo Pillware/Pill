@@ -13,10 +13,10 @@
 //! One instance lives on the renderer and is refilled once for each surface
 //! frame: [`EngineParameters::update`] rewrites the whole buffer, so the CPU
 //! copy and the GPU buffer always match and no code has to track which fields
-//! changed. The fog values come first because the HLSL `EngineParams` in
-//! `pill_rendering`'s `res/shaders/common_shaders/include/common.hlsl`
-//! declares them at the same offsets. The frame size and time follow; the
-//! engine adds them, and no shipped shader declares them.
+//! changed. The fog values come first because the HLSL `EngineParams` in this
+//! crate's `res/shaders/common_shaders/include/common.hlsl` declares them at
+//! the same offsets. The frame size and time follow; the engine adds them, and
+//! no shipped shader declares them.
 
 // External crates
 use wgpu::util::DeviceExt;

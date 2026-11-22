@@ -258,7 +258,7 @@ const PROJECT_ASSET_DIRECTORY: &str = "res";
 const DEFAULT_EDITOR_THEME: &str = "editor/editor.theme";
 
 /// The renderer a project draws with when its settings name none.
-const DEFAULT_RENDERER: &str = "pill_renderer";
+pub(crate) const DEFAULT_RENDERER: &str = "pill_renderer";
 
 /// The `renderer:` value that selects no renderer at all: neither its data
 /// crate nor its GPU module loads.
@@ -277,10 +277,11 @@ const RENDERER_DATA_TAG: &str = "renderer_data";
 /// Directory at a module crate's root holding the resources it ships, its
 /// shader sources among them (under `shaders/`), relative to the crate.
 ///
-/// The renderer data crate's build script cooks this tree and the shader
-/// watcher re-cooks the same one, so a stage's path relative to it is the
-/// same in both, and it is the stage's asset path too.
-#[cfg(feature = "rendering")]
+/// A module's build script cooks this tree and the shader watcher re-cooks the
+/// same one, so a stage's path relative to it is the same in both, and it is
+/// the stage's asset path too. The development host declares the renderer's
+/// tree from it before the project loads, because a project's shaders name
+/// stages under the renderer's.
 pub(crate) const MODULE_RESOURCES_DIRECTORY: &str = "res";
 
 /// Dependency tables whose entries link code into the build.

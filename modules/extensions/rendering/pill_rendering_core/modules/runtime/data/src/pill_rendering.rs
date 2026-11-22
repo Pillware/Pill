@@ -6,10 +6,9 @@
 //! - Define the assets a project draws from ([`Mesh`], [`Texture`], [`Shader`],
 //!   [`Material`], [`RenderPass`], [`RenderingPipeline`]) and the [`components`]
 //!   that place them in the world.
-//! - Define the renderers' pipelines and their shaders ([`config`]), and the
-//!   resource a game selects one in ([`RenderingManager`]).
-//! - Register all of it with an engine through [`register`], and install the
-//!   default pipeline.
+//! - Define the resource a game selects its pipeline in ([`RenderingManager`]).
+//! - Register all of it with an engine through [`register`]. The pipelines and
+//!   their shaders are a renderer's own, and so is installing one.
 //!
 //! # Design
 //!
@@ -26,49 +25,41 @@
 //! shares: the backend trait, the frame, the pass vocabulary and the camera.
 //! The types a game needs from it are re-exported here.
 //!
-//! The shader sources live in the crate's `res/shaders/`, not under `src/`,
-//! so a shader edit is not a Rust source edit. The [`shader_hot_reload`]
-//! module handles live reload in native development builds: the development
-//! host re-cooks an edited source and hands the result to that module's export.
+//! The renderers' pipelines and their shaders are not here: they belong to the
+//! crate that draws them (`pill_renderer`), which ships its own `res/shaders/`
+//! and installs the default pipeline. What stays here is what any renderer can
+//! read - the assets a game writes, the material's slot vocabulary and the
+//! resource a game selects its pipeline in.
 
 /// The drawable assets - meshes, textures, shaders, materials, passes - and the
 /// builders that create them.
 pub mod assets;
-/// The sRGB transfer curve the importer and the GPU module share.
+/// The sRGB transfer curve the importer and the renderers share.
 pub mod color_space;
 
 /// The world-side draw components and [`register_components`].
 pub mod components;
 
-/// Bind group indices, the instance batch size, and the pipelines the renderer ships.
-pub mod config;
-
 /// The resource a game sets its pipeline in.
 mod rendering_manager;
-
-/// Development shader reload: puts the WGSL the host re-cooked into the shader
-/// assets built from that source.
-#[cfg(any(test, all(debug_assertions, not(target_arch = "wasm32"))))]
-pub mod shader_hot_reload;
 
 // Standard library
 use std::path::Path;
 // External crates
-use pill_core::telemetry::telemetry_target;
 pub use pill_engine::AssetLoader;
-use pill_engine::{pill_module, AssetManager, Engine, World};
+use pill_engine::{pill_module, Engine};
 pub use pill_renderer_api::frame::{
     CullMode, MaterialParameter, PassKind, PassTarget, RenderFrame,
 };
 
 // Current crate
 pub use assets::{
-    load_shipped_texture, Material, MaterialBuilder, MaterialDocument, MaterialTexture, Mesh,
-    MeshImportSettings, MeshVertex, PipelinePass, PipelinePassDocument, RenderPass,
-    RenderPassDocument, RenderingPipeline, RenderingPipelineDocument, Shader, ShaderBuilder,
-    ShaderImportSettings, ShaderParameterSlot, ShaderParameterType, ShaderTextureKind,
-    ShaderTextureSlot, Texture, TextureImportSettings, TextureType, DEFAULT_COLOR_TEXTURE,
-    DEFAULT_NORMAL_TEXTURE,
+    load_shipped_texture, neutral_material_parameters, Material, MaterialBuilder, MaterialDocument,
+    MaterialTexture, Mesh, MeshImportSettings, MeshVertex, PipelinePass, PipelinePassDocument,
+    RenderPass, RenderPassDocument, RenderingPipeline, RenderingPipelineDocument, Shader,
+    ShaderBuilder, ShaderImportSettings, ShaderParameterSlot, ShaderParameterType,
+    ShaderTextureKind, ShaderTextureSlot, Texture, TextureImportSettings, TextureType,
+    DEFAULT_COLOR_TEXTURE, DEFAULT_MATERIAL_PATH, DEFAULT_NORMAL_TEXTURE,
 };
 pub use components::*;
 pub use rendering_manager::RenderingManager;
@@ -81,14 +72,14 @@ pub use rendering_manager::RenderingManager;
 pub const MODULE_NAME: &str = "pill_rendering";
 
 /// Registers the renderer's components, asset types and resources with an
-/// engine and installs its default pipeline, then returns zero.
+/// engine, then returns zero.
 ///
 /// This is the half a reload repeats: every declaration below points at code
 /// in the arriving image, so a generation that skipped it would leave the
 /// kept tables calling into an image that is no longer mapped.
 ///
-/// It registers no system. Filling the frame and drawing it belong to the GPU
-/// module (`pill_renderer`), and a headless engine has neither.
+/// It registers no system and installs no pipeline. Filling the frame, drawing
+/// it and shipping a default chain belong to a renderer (`pill_renderer`).
 ///
 /// The components go in through [`register_components`]. The six asset types
 /// declare themselves, so the tables that hold their values point at code in
@@ -96,12 +87,6 @@ pub const MODULE_NAME: &str = "pill_rendering";
 /// and [`RenderingManager`] values are only inserted when they are missing.
 /// Declaring a type or a resource again changes nothing, so calling this a
 /// second time changes nothing either.
-///
-/// It also installs the PBR pipeline ([`config::pbr_pipeline`]) and points the
-/// manager at it, so a project that never declares a frame still draws one.
-/// That is only a default: a project that wants a different chain calls
-/// [`RenderingManager::set_pipeline`] after registering, and one that wants the
-/// renderer's own chain clears the manager.
 ///
 /// # Panics
 ///
@@ -168,18 +153,6 @@ pub fn register(engine: &mut Engine) -> u32 {
     // A shipped build links this crate statically and mounts its pack instead,
     // so it has no module directory to declare.
     declare_crate_roots();
-
-    // Step 5: Install the pipeline the renderer runs when a project declares
-    // none: the PBR chain, installed as assets and pointed at by the manager. A
-    // project that sets its own pipeline does so after this call, so its choice
-    // wins.
-    if engine
-        .world()
-        .get_resource::<RenderingManager>()
-        .is_some_and(|rendering_manager| rendering_manager.pipeline().is_none())
-    {
-        install_default_pbr_pipeline(engine.world_mut());
-    }
     0
 }
 
@@ -203,83 +176,30 @@ pub fn init(engine: &mut Engine) -> u32 {
 
 /// Declares the read-only root this crate ships, its own `res`.
 ///
-/// It holds the default material, the default textures and, under
-/// `shaders/`, the sources the chain's shaders are cooked from. The `.wgsl`
-/// beside each source is this crate's build product: the store answers it
-/// because a shader's stages are read from it by path, and the editor's tree
-/// leaves it out so a person sees only what they author.
+/// It holds the default material and the renderer's default textures. The
+/// pipelines' shaders are a renderer's own, under its own `res/shaders/`.
 ///
 /// Declaring the same root again is what a reload does, and it changes
-/// nothing. It is also what lets this crate's own tests read the same files a
-/// running module reads.
+/// nothing. It is also what lets a renderer declare this crate's content beside
+/// its own, and what lets tests read the same files a running module reads.
 ///
 /// # Panics
 ///
 /// Panics when `res` exists but one of the files this function names below it
 /// is missing; the message names the module and the path.
-fn declare_crate_roots() {
+pub fn declare_crate_roots() {
     let resources_directory = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/res"));
     if resources_directory.is_dir() {
         pill_engine::asset_store::declare_module_root_hiding(
             MODULE_NAME,
             resources_directory,
             &[
-                config::pbr_pipeline::DEFAULT_MATERIAL_PATH,
+                assets::DEFAULT_MATERIAL_PATH,
                 assets::DEFAULT_COLOR_TEXTURE,
                 assets::DEFAULT_NORMAL_TEXTURE,
-                "shaders/common_shaders/default_vertex.hlsl",
-                "shaders/common_shaders/include/common.hlsl",
-                "shaders/common_shaders/include/lit_common.hlsl",
-                "shaders/pbr_pipeline/include/pbr_surface.hlsl",
-                "shaders/pbr_pipeline/pbr_fragment.hlsl",
-                "shaders/pbr_pipeline/pbr_fragment.hlsl.meta",
-                "shaders/post_processing/bloom_composite_fragment.hlsl",
-                "shaders/post_processing/bloom_composite_fragment.hlsl.meta",
-                "shaders/post_processing/bloom_prefilter_fragment.hlsl",
-                "shaders/post_processing/bloom_prefilter_fragment.hlsl.meta",
-                "shaders/post_processing/fullscreen_vertex.hlsl",
-                "shaders/post_processing/lens_fragment.hlsl",
-                "shaders/post_processing/lens_fragment.hlsl.meta",
-                "shaders/post_processing/tonemap_fragment.hlsl",
-                "shaders/post_processing/tonemap_fragment.hlsl.meta",
-                "shaders/simple_pipeline/default_lit_fragment.hlsl",
-                "shaders/simple_pipeline/default_lit_fragment.hlsl.meta",
-                "shaders/skybox/include/skybox_common.hlsl",
-                "shaders/skybox/skybox_cubemap_fragment.hlsl",
-                "shaders/skybox/skybox_cubemap_fragment.hlsl.meta",
-                "shaders/skybox/skybox_equirect_fragment.hlsl",
-                "shaders/skybox/skybox_equirect_fragment.hlsl.meta",
-                "shaders/skybox/skybox_vertex.hlsl",
             ],
-            &["wgsl"],
+            &[],
         );
-    }
-}
-
-/// Installs [`config::pbr_pipeline`] and points the manager at it.
-///
-/// A failure is logged and not returned: a renderer that could not install the
-/// default pipeline still runs through its own built-in chain, and the log says
-/// what went wrong. Three failures reach here: a name clash with an asset the
-/// project already owns, the default material's file failing to parse or load,
-/// and one of our shaders failing to build.
-fn install_default_pbr_pipeline(world: &mut World) {
-    let pipeline_install = match world.get_resource_mut::<AssetManager>() {
-        Some(assets) => config::pbr_pipeline::install(assets),
-        // No store to install into: nothing can be drawn anyway.
-        None => return,
-    };
-
-    match pipeline_install {
-        Ok(pipeline) => {
-            if let Some(rendering_manager) = world.get_resource_mut::<RenderingManager>() {
-                rendering_manager.set_pipeline(pipeline);
-            }
-        }
-        Err(error) => pill_core::warn!(
-            target: telemetry_target::RENDERING,
-            "the default PBR pipeline was not installed: {error}"
-        ),
     }
 }
 
@@ -290,7 +210,7 @@ fn install_default_pbr_pipeline(world: &mut World) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pill_engine::{Engine, Handle, ImportRegistry, MetadataPolicy};
+    use pill_engine::{AssetManager, Engine, Handle, ImportRegistry, MetadataPolicy};
 
     /// A mesh renderer's handle fields are typed asset references: reading one
     /// names the registered asset type, writing another mesh's handle goes
@@ -424,72 +344,6 @@ f 1/1 2/2 3/3
         assert!(assets.get_by_name::<Texture>("pixel.png").is_some());
         assert!(assets.get_by_name::<Mesh>("triangle.obj").is_some());
         std::fs::remove_dir_all(&asset_root_directory).unwrap();
-    }
-
-    /// The pipeline the manager points at.
-    fn installed_pipeline(engine: &Engine) -> Handle<RenderingPipeline> {
-        let rendering_manager = engine
-            .world()
-            .get_resource::<RenderingManager>()
-            .expect("register inserts the manager");
-        rendering_manager
-            .pipeline()
-            .expect("register points the manager at a pipeline")
-    }
-
-    #[test]
-    fn registering_installs_the_pbr_pipeline_as_the_default_frame() {
-        let mut engine = Engine::new();
-
-        assert_eq!(register(&mut engine), 0);
-
-        // The manager runs the PBR chain, and the store holds that same
-        // pipeline under the chain's asset name.
-        let pipeline = installed_pipeline(&engine);
-        let assets = engine
-            .world()
-            .get_resource::<AssetManager>()
-            .expect("the engine inserts the store");
-        assert_eq!(
-            assets.handle_by_name::<RenderingPipeline>(config::pbr_pipeline::PIPELINE_NAME),
-            Some(pipeline)
-        );
-    }
-
-    /// A reload calls `register` again on a store that already holds the chain.
-    #[test]
-    fn installing_the_chain_twice_returns_the_same_assets() {
-        let mut engine = Engine::new();
-        register(&mut engine);
-        let pipeline_before_reload = installed_pipeline(&engine);
-
-        assert_eq!(register(&mut engine), 0);
-
-        assert_eq!(installed_pipeline(&engine), pipeline_before_reload);
-    }
-
-    /// A pipeline a project sets survives a later `register`: the default only
-    /// fills a manager that has none.
-    #[test]
-    fn a_pipeline_a_project_set_survives_a_later_register() {
-        let mut engine = Engine::new();
-        register(&mut engine);
-        let project_pipeline = {
-            let assets = engine
-                .world_mut()
-                .get_resource_mut::<AssetManager>()
-                .expect("the engine inserts the store");
-            config::simple_pipeline::install(assets).expect("a free name")
-        };
-        engine
-            .world_mut()
-            .get_resource_mut::<RenderingManager>()
-            .expect("register inserts the manager")
-            .set_pipeline(project_pipeline);
-
-        register(&mut engine);
-
-        assert_eq!(installed_pipeline(&engine), project_pipeline);
     }
 
     /// Registering the data registers no system: drawing belongs to the

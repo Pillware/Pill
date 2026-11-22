@@ -34,7 +34,6 @@ use serde::{Deserialize, Serialize};
 
 // Current crate
 use super::{Shader, Texture};
-use crate::config::pbr_pipeline;
 
 // =============================================================================
 // MaterialTexture
@@ -74,7 +73,7 @@ pub struct Material {
     /// Label used in logs and error messages.
     pub name: String,
     /// Shader the material draws with. [`Handle::INVALID`] selects the
-    /// renderer's built-in shader, as does a handle that names no loaded
+    /// renderer's default shader, as does a handle that names no loaded
     /// shader.
     pub shader: Handle<Shader>,
     /// Textures bound to the shader's slots, by slot name.
@@ -201,27 +200,55 @@ impl MaterialBuilder {
 // MaterialDocument
 // =============================================================================
 
+/// Path of the default material this crate ships, relative to its `res/`.
+///
+/// It is what a scene draws with when nothing names another material: a
+/// renderer's chain points its lit pass at it. Its shader is unset, so whichever
+/// renderer draws it substitutes the shader it would use for a material that
+/// names none.
+pub const DEFAULT_MATERIAL_PATH: &str = "materials/pill.pbr.material";
+
+/// The parameters a newly created material starts with, by slot name.
+///
+/// Each factor multiplies the map bound to its slot, so these values leave a
+/// bound map unchanged, and a slot left unset would pack as zero instead. The
+/// names are the material slot vocabulary the shipped shaders use; a renderer
+/// whose shader declares other slots ignores them.
+pub fn neutral_material_parameters() -> BTreeMap<String, MaterialParameter> {
+    BTreeMap::from([
+        (
+            "pbr_base".to_owned(),
+            MaterialParameter::Color([1.0, 1.0, 1.0]),
+        ),
+        ("pbr_roughness".to_owned(), MaterialParameter::Scalar(1.0)),
+        ("pbr_metallic".to_owned(), MaterialParameter::Scalar(1.0)),
+        (
+            "pbr_emissive".to_owned(),
+            MaterialParameter::Color([1.0, 1.0, 1.0]),
+        ),
+    ])
+}
+
 /// A material as written in its `.material` file.
 ///
 /// It is the asset itself, stored under the standard asset header (format
 /// version, asset type, guid). Its shader and textures are guids
 /// ([`AssetReference`]), resolved to handles when the file loads: a handle means
 /// nothing in the next run, a guid does. A reference that names no loaded asset
-/// resolves to [`Handle::INVALID`], which draws with the renderer's built-in
+/// resolves to [`Handle::INVALID`], which draws with the renderer's default
 /// shader or the slot's default texture.
 ///
-/// A newly created file holds the default document, and it draws as it is: the
-/// PBR chain's shader (by its fixed guid,
-/// [`pbr_pipeline::SHADER_GUID`](crate::config::pbr_pipeline::SHADER_GUID)) at
-/// the chain's neutral parameters, with no maps bound. Naming that shader
-/// matters, because the chain's geometry pass draws only the instances using
-/// its own shader; a material left on the built-in one would load and never be
-/// drawn. Maps are `BTreeMap`s for the reason [`Material`] gives.
+/// A newly created file holds the default document, and it draws as it is: no
+/// shader of its own, so the renderer substitutes the one it draws an
+/// unqualified material with, at the neutral parameters below, with no maps
+/// bound. Naming a shader is how a material joins a chain that draws only its
+/// own: a project with a custom chain points its materials at that chain's
+/// shader. Maps are `BTreeMap`s for the reason [`Material`] gives.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MaterialDocument {
     /// The shader the material draws with. Unset means the renderer's
-    /// built-in shader.
+    /// default shader.
     pub shader: AssetReference<Shader>,
     /// Textures bound to the shader's slots, by slot name.
     pub textures: BTreeMap<String, AssetReference<Texture>>,
@@ -232,12 +259,12 @@ pub struct MaterialDocument {
 }
 
 impl Default for MaterialDocument {
-    /// The PBR chain's shader at its neutral parameters; see the type's docs.
+    /// No shader and the neutral parameters; see the type's docs.
     fn default() -> Self {
         Self {
-            shader: AssetReference::new(pbr_pipeline::SHADER_GUID),
+            shader: AssetReference::unset(),
             textures: BTreeMap::new(),
-            parameters: pbr_pipeline::neutral_parameters(),
+            parameters: neutral_material_parameters(),
             rendering_order: u8::MAX,
         }
     }
@@ -278,35 +305,37 @@ impl StandaloneAsset for Material {
 mod tests {
     use super::*;
 
-    /// A newly created `.material` file draws as it is: it names the PBR
-    /// chain's shader, which resolves once the chain is installed, and starts
-    /// at the chain's neutral parameters with nothing bound.
+    /// A newly created `.material` file draws as it is: it names no shader, so
+    /// a renderer substitutes its own default, and it starts at the neutral
+    /// parameters with nothing bound. The file this crate ships is the same
+    /// document, which is what makes the default material renderer-neutral.
     #[test]
-    fn the_default_document_is_the_pbr_chains_neutral_material() {
+    fn the_default_document_is_the_neutral_material() {
         let mut assets = AssetManager::new();
         crate::declare_crate_roots();
-        pbr_pipeline::install(&mut assets).unwrap();
-        let shader = assets
-            .handle_by_name::<Shader>(pbr_pipeline::SHADER_PATH)
-            .unwrap();
 
         let material =
             Material::from_document("materials/a.material", MaterialDocument::default(), &assets)
                 .unwrap();
 
-        assert_eq!(material.shader, shader);
+        assert_eq!(material.shader, Handle::INVALID);
         assert!(material.textures.is_empty());
-        assert_eq!(material.parameters, pbr_pipeline::neutral_parameters());
+        assert_eq!(material.parameters, neutral_material_parameters());
         assert_eq!(material.rendering_order, u8::MAX);
-        // The chain's own default material starts from the same values.
-        let chain_default_material = assets
-            .get_by_name::<Material>(pbr_pipeline::DEFAULT_MATERIAL_PATH)
-            .unwrap();
-        assert_eq!(chain_default_material.parameters, material.parameters);
         assert_eq!(
             serde_json::to_value(MaterialDocument::default()).unwrap()["shader"],
-            serde_json::json!({ "guid": pbr_pipeline::SHADER_GUID.to_string() }),
-            "a material names its shader in the saved reference form"
+            serde_json::Value::Null,
+            "an unset reference saves as no guid"
         );
+
+        let shipped = assets
+            .import_standalone::<Material>(std::path::Path::new(DEFAULT_MATERIAL_PATH))
+            .expect("the crate ships its default material");
+        let shipped_material = assets
+            .get(shipped.handle)
+            .expect("the material it just imported");
+        assert_eq!(shipped_material.shader, material.shader);
+        assert_eq!(shipped_material.parameters, material.parameters);
+        assert!(shipped_material.textures.is_empty());
     }
 }

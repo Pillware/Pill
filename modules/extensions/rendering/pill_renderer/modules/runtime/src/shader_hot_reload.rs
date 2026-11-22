@@ -15,10 +15,10 @@
 //! Watching and cooking belong to the host: a worker thread there cooks the
 //! crate's HLSL sources with `pill_assets::cook_shader_tree`, the routine this
 //! crate's build script also runs, and passes each re-cooked file to the main
-//! thread. That thread calls this export on whichever data module generation
-//! is current at that moment. The data crate uses neither `notify` nor the
-//! cooker at run time, so reloading it cannot leave a watcher thread running
-//! code from a retired image.
+//! thread. That thread calls this export on whichever renderer generation is
+//! current at that moment. The renderer uses neither `notify` nor the cooker at
+//! run time, so reloading it cannot leave a watcher thread running code from a
+//! retired image.
 //!
 //! A shader edit is an asset edit. The renderer's pipelines keep their shaders
 //! as `Shader` assets, and the GPU module rebuilds any asset whose content

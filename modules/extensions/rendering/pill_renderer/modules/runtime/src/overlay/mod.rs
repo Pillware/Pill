@@ -39,8 +39,8 @@ use std::collections::HashSet;
 // External crates
 use pill_core::math::Vector2f;
 use pill_engine::{DebugFrame, Entity, GizmoPoint, GizmoPointShape, LabelAnchor};
-use pill_rendering::color_space::linear_to_srgb;
 use pill_renderer_api::{PickHit, PickRequest, PickResult, PICK_HANDLE_BIT};
+use pill_rendering::color_space::linear_to_srgb;
 use pill_ui_frame::{Color, DrawList, Rect};
 
 // Current crate

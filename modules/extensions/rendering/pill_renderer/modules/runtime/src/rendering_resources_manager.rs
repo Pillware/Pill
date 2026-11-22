@@ -143,8 +143,9 @@ pub(crate) struct RenderingResourcesManager {
     textures: GpuColumn<RendererTextureHandle>,
     /// Mesh objects by asset key.
     meshes: GpuColumn<RendererMeshHandle>,
-    /// The shader an instance draws with when its material names none, names
-    /// one that is not loaded, or is not in the resource storage.
+    /// The shader an instance draws with when its material names one that is not
+    /// loaded or not in the resource storage, and when its material names none
+    /// and the chain's shader is not loaded either.
     default_shader: RendererShaderHandle,
     /// The material an instance draws with when its material never built.
     default_material: RendererMaterialHandle,
@@ -381,10 +382,12 @@ impl RenderingResourcesManager {
     /// `sync_materials` rebuild the material in the same pass, against the new
     /// object.
     fn invalidate_dependent_materials(&mut self, assets: &AssetManager) {
+        // A material that names no shader draws with the chain's, so that
+        // shader's object is what its own was built against.
+        let chain_shader_key = self.chain_shader_key(assets);
         for (handle, material) in assets.iter_handles::<Material>() {
-            let shader_changed = self
-                .changed_asset_keys
-                .contains(&asset_key(material.shader));
+            let shader_changed = drawn_shader_key(material, chain_shader_key)
+                .is_some_and(|key| self.changed_asset_keys.contains(&key));
             let texture_changed = material.textures.values().any(|texture| {
                 self.changed_asset_keys
                     .contains(&asset_key(texture.texture))
@@ -615,6 +618,9 @@ impl RenderingResourcesManager {
     /// Drops and rebuilds the materials whose asset changed.
     fn sync_materials(&mut self, assets: &AssetManager, state: &mut State) {
         self.live_asset_keys.clear();
+        // A material that names no shader draws through the chain's own, so
+        // resolve it once for the whole pass rather than per material.
+        let chain_shader = self.chain_shader(assets);
 
         for (handle, material) in assets.iter_handles::<Material>() {
             let key = asset_key(handle);
@@ -628,9 +634,10 @@ impl RenderingResourcesManager {
             }
             let shader_key = asset_key(material.shader);
             let shader_handle = if material.shader == Handle::INVALID {
-                // A material with no shader is documented to draw with the
-                // renderer's built-in one, so this is a choice, not a fault.
-                self.default_shader
+                // A material with no shader draws with the chain's, which is
+                // what the shipped default material relies on: it names no
+                // shader so that any renderer can draw the same file.
+                chain_shader.unwrap_or(self.default_shader)
             } else if let Some(shader_handle) = self.shaders.handle(shader_key) {
                 shader_handle
             } else {
@@ -685,17 +692,45 @@ impl RenderingResourcesManager {
             }
         }
     }
+
+    /// Returns the asset key of the shader the installed chain draws with, or
+    /// `None` when no chain is installed or its shader is not loaded yet.
+    fn chain_shader_key(&self, assets: &AssetManager) -> Option<u64> {
+        assets
+            .handle_by_name::<Shader>(crate::config::pbr_pipeline::SHADER_PATH)
+            .map(asset_key)
+    }
+
+    /// Returns the GPU object of the shader the installed chain draws with, or
+    /// `None` when no chain is installed or its shader is not loaded yet.
+    fn chain_shader(&self, assets: &AssetManager) -> Option<RendererShaderHandle> {
+        self.chain_shader_key(assets)
+            .and_then(|key| self.shaders.handle(key))
+    }
 }
 
 // =============================================================================
 // Free Functions
 // =============================================================================
 
+/// The asset key of the shader a material draws with.
+///
+/// A material that names no shader draws with the chain's, so that is the key
+/// its GPU object depends on. `None` when neither names one.
+fn drawn_shader_key(material: &Material, chain_shader_key: Option<u64>) -> Option<u64> {
+    if material.shader == Handle::INVALID {
+        chain_shader_key
+    } else {
+        Some(asset_key(material.shader))
+    }
+}
+
 /// Builds the built-in lit shader and a material from it, and returns both.
 ///
 /// The material is what an instance draws with when its own material never
-/// built. The shader is what a material draws with when it names none or names
-/// one that is not loaded. The two are built together and kept as one pair.
+/// built. The shader is what a material draws with when it names one that is
+/// not loaded, or names none while the chain's shader is missing. The two are
+/// built together and kept as one pair.
 ///
 /// The WGSL is the shipped pipeline's own text rather than a copy: the vertex
 /// stage comes from `res/shaders/common_shaders/default_vertex.wgsl` and the
@@ -819,5 +854,27 @@ mod tests {
         assert!(!column.is_current(1, 0));
         assert!(column.is_current(2, 0), "its neighbour is untouched");
         assert_eq!(column.handle(2), Some(20));
+    }
+
+    /// A material that names no shader is built against the chain's shader, so
+    /// that shader being recompiled has to rebuild the material too: every pass
+    /// claims its draws by the shader handle it was built with.
+    #[test]
+    fn a_shaderless_material_depends_on_the_chains_shader() {
+        let unnamed = Material::builder("default").build();
+        assert_eq!(drawn_shader_key(&unnamed, Some(42)), Some(42));
+        assert_eq!(
+            drawn_shader_key(&unnamed, None),
+            None,
+            "no chain shader to depend on"
+        );
+
+        let named_shader = Handle::from_raw(3, 0);
+        let named = Material::builder("named").shader(&named_shader).build();
+        assert_eq!(
+            drawn_shader_key(&named, Some(42)),
+            Some(asset_key(named_shader)),
+            "the shader it names wins over the chain's"
+        );
     }
 }

@@ -412,13 +412,6 @@ mod slot {
             self.source_edit_generation.fetch_add(1, Ordering::AcqRel);
         }
 
-        /// The module's crate directory, relative to the workspace root. It is
-        /// the parent of the source directory the watcher watches.
-        #[cfg(feature = "rendering")]
-        pub(crate) fn crate_directory(&self) -> &Path {
-            Path::new(&self.extension_config.crate_directory)
-        }
-
         /// The generation the watcher has signalled but nothing has handled
         /// yet, if any.
         ///

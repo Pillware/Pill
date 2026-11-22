@@ -316,14 +316,17 @@ pub struct ModuleAssetRoot {
 /// Loading code names a module resource by a path relative to one of these
 /// roots, exactly as it names a project asset relative to `res`. A module
 /// registers once per generation, so a reload declares the same root again;
-/// that changes nothing.
+/// that changes nothing. A second declaration may also add a required file or a
+/// hidden extension the first one did not name, which is how a host makes a
+/// renderer's tree visible before the renderer module loads and the module then
+/// completes the declaration itself.
 ///
 /// # Panics
 ///
 /// Panics when `directory` is not a directory, when one of `required_files`
-/// is not a file below it, or when the same directory is declared twice with
-/// a different file or hidden-extension list: each is a packaging mistake,
-/// and each names the module and the path.
+/// is not a file below it, or when the same directory is declared twice and the
+/// second declaration drops a file or a hidden extension the first one named:
+/// each is a packaging mistake, and each names the module and the path.
 pub fn declare_module_root(module: &str, directory: impl Into<PathBuf>, required_files: &[&str]) {
     declare_module_root_hiding(module, directory, required_files, &[]);
 }
@@ -337,9 +340,8 @@ pub fn declare_module_root(module: &str, directory: impl Into<PathBuf>, required
 ///
 /// # Panics
 ///
-/// Panics on the same mistakes as [`declare_module_root`]: a missing
-/// directory or file, or the same directory declared twice with a different
-/// file or hidden-extension list.
+/// Panics on the same mistakes as [`declare_module_root`], and when the second
+/// declaration of a directory drops a file or a hidden extension.
 pub fn declare_module_root_hiding(
     module: &str,
     directory: impl Into<PathBuf>,
@@ -367,12 +369,21 @@ pub fn declare_module_root_hiding(
         .iter_mut()
         .find(|declared| declared.module == root.module && declared.directory == root.directory)
     {
+        // A second declaration may add what the module requires; it may not
+        // drop anything an earlier one named.
+        let adds_everything = declared.files.iter().all(|file| root.files.contains(file))
+            && declared
+                .hidden
+                .iter()
+                .all(|extension| root.hidden.contains(extension));
         assert!(
-            *declared == root,
-            "module '{}' declared its root '{}' twice, and the two disagree about its files",
+            adds_everything,
+            "module '{}' declared its root '{}' twice, and the second declaration drops a file or a hidden extension the first one named",
             root.module,
             declared.directory.display()
         );
+        declared.files = root.files;
+        declared.hidden = root.hidden;
         return;
     }
     mounts.module_roots.push(root);
@@ -965,24 +976,71 @@ mod tests {
     }
 
     /// A module registers once per generation, so declaring the same root
-    /// twice is a reload. The same directory with a different file list is a
-    /// mistake.
+    /// twice is a reload. A second declaration may add a requirement; dropping
+    /// one is a mistake.
     #[test]
     fn declaring_the_same_root_again_changes_nothing() {
         let _guard = module_roots_test_lock();
         clear_module_roots();
         let directory = scratch("module-root-twice");
         std::fs::write(directory.join("grid.wgsl"), b"grid").unwrap();
+        std::fs::write(directory.join("outline.wgsl"), b"outline").unwrap();
         declare_module_root("pill_test_module", &directory, &["grid.wgsl"]);
         declare_module_root("pill_test_module", &directory, &["grid.wgsl"]);
         assert_eq!(module_roots().len(), 1, "the reload kept one root");
 
+        // A host that makes the tree visible before the module loads declares
+        // it with nothing required; the module then completes it.
+        declare_module_root(
+            "pill_test_module",
+            &directory,
+            &["grid.wgsl", "outline.wgsl"],
+        );
+        assert_eq!(
+            module_roots()[0].files,
+            vec!["grid.wgsl", "outline.wgsl"],
+            "the second declaration added its file"
+        );
+
         let panic = std::panic::catch_unwind(|| {
-            declare_module_root("pill_test_module", &directory, &[]);
+            declare_module_root("pill_test_module", &directory, &["grid.wgsl"]);
         });
         let message = panic_message(panic);
-        assert!(message.contains("disagree"), "{message}");
+        assert!(message.contains("drops"), "{message}");
         assert_eq!(module_roots().len(), 1);
+        assert_eq!(
+            module_roots()[0].files,
+            vec!["grid.wgsl", "outline.wgsl"],
+            "the refused declaration left the root as it was"
+        );
+
+        clear_module_roots();
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    /// A host may declare a module's tree before the module loads, and the
+    /// module's own declaration then adds the files it cannot run without.
+    #[test]
+    fn a_bare_declaration_is_completed_by_the_modules_own() {
+        let _guard = module_roots_test_lock();
+        clear_module_roots();
+        let directory = scratch("module-root-host-first");
+        std::fs::create_dir_all(directory.join("shaders")).unwrap();
+        std::fs::write(directory.join("shaders/fragment.hlsl"), b"//").unwrap();
+
+        declare_module_root("pill_test_module", &directory, &[]);
+        assert_eq!(module_roots()[0].files, Vec::<String>::new());
+        declare_module_root_hiding(
+            "pill_test_module",
+            &directory,
+            &["shaders/fragment.hlsl"],
+            &["wgsl"],
+        );
+
+        let roots = module_roots();
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].files, vec!["shaders/fragment.hlsl"]);
+        assert_eq!(roots[0].hidden, vec!["wgsl"]);
 
         clear_module_roots();
         std::fs::remove_dir_all(&directory).unwrap();

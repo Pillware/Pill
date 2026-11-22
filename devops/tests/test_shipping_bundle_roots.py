@@ -20,8 +20,9 @@ DESCRIPTION
     `devops/tools/generate_shipping_bundle.py` and asserting:
 
       - `devops/tests/projects/native` selects the renderer data crate's `res`
-        as its one root, and a module that ships nothing beside its code
-        contributes no root;
+        as its one root, the statically linked renderer's `res` travels beside
+        it, and a module that ships nothing beside its code contributes no
+        root;
       - a group folder's extension crates are found, and the group itself is
         never read as an extension;
       - the emitted build script calls `write_asset_pack_with_roots`, names
@@ -99,6 +100,15 @@ def main() -> int:
     expect(
         "a module's res, shader tree included, is its one pack root",
         roots == expected_roots,
+    )
+    # The renderer is linked statically rather than listed as a module, and it
+    # is the crate that ships the shaders, so its own `res` has to travel too.
+    linked_roots = generator.module_asset_roots(REPOSITORY_ROOT, modules + [RENDERER])
+    expect(
+        "the linked renderer's res, its shader tree included, is packed too",
+        linked_roots
+        == expected_roots
+        + [generator.module_crate_directory(REPOSITORY_ROOT, RENDERER) / "res"],
     )
     expect(
         "a module that ships nothing beside its code contributes no root",

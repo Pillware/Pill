@@ -961,10 +961,7 @@ mod tests {
             listing("pill_rendering", "folder", false, false),
         ];
         assert!(is_read_only_key(&rows, EXTENSIONS_ROOT));
-        assert!(is_read_only_key(
-            &rows,
-            "extensions/pill_rendering"
-        ));
+        assert!(is_read_only_key(&rows, "extensions/pill_rendering"));
         assert!(is_read_only_key(
             &rows,
             "extensions/pill_rendering/materials"
@@ -989,8 +986,7 @@ mod tests {
             "pill_master_renderer::Material",
         )];
         let mut selection = EditorSelection::default();
-        selection.asset =
-            Some("extensions/pill_rendering/materials/pill.pbr.material".to_string());
+        selection.asset = Some("extensions/pill_rendering/materials/pill.pbr.material".to_string());
         assert!(selected_row(&selection, &rows).is_some(), "found by key");
 
         let mut pending = PendingEditorCommands::default();

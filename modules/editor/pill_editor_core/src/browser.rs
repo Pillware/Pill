@@ -489,10 +489,7 @@ mod tests {
                 "extensions/pill_rendering/materials",
             ]
         );
-        assert_eq!(
-            labels,
-            vec!["extensions", "pill_rendering", "materials"]
-        );
+        assert_eq!(labels, vec!["extensions", "pill_rendering", "materials"]);
         assert_eq!(
             breadcrumb(EXTENSIONS_ROOT),
             vec![(EXTENSIONS_ROOT.to_string(), EXTENSIONS_ROOT.to_string())]

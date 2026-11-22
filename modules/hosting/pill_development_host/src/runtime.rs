@@ -56,7 +56,7 @@ use crate::native_library::cleanup_temporary_files;
 use crate::notices::{self, HostNotice};
 use crate::project_module::{LoadedProject, ManagedReloadStart};
 use crate::watchers::{spawn_source_watcher, AssetChange};
-use crate::{HostConfig, ProjectModuleBackend, ProjectModuleConfig};
+use crate::{ExtensionConfig, HostConfig, ProjectModuleBackend, ProjectModuleConfig};
 
 // =============================================================================
 // Constants
@@ -140,8 +140,8 @@ pub struct DevHost {
     #[cfg(feature = "rendering")]
     renderer: Option<String>,
     /// The data crate the renderer's manifest names; `None` when the project
-    /// selects no renderer. Its `res` tree is the shader sources' home, so the
-    /// shader watcher needs it by name.
+    /// selects no renderer. Its `res` holds the materials, and its components
+    /// are the ones a renderer edit has to be built against.
     #[cfg(feature = "rendering")]
     renderer_data: Option<String>,
     /// The engine and its frame. Declared before the loaded images: the world
@@ -968,28 +968,27 @@ impl RenderingHost {
 
     /// Deliver everything the shader watchers re-cooked since the last frame.
     ///
-    /// The renderer's data crate and the project each have a tree of their
+    /// The renderer's shaders and the project's own each have a tree of their
     /// own, and their outputs reach the running world by different routes, so
     /// each half is handled on its own. The result says whether anything was
     /// delivered, which is one of the things that keeps an idle frame from
     /// skipping its redraw.
-    fn deliver_shader_changes(&mut self, data_extension: Option<&str>) -> bool {
-        let data_delivered = self.deliver_data_crate_shader_changes(data_extension);
+    fn deliver_shader_changes(&mut self) -> bool {
+        let renderer_delivered = self.deliver_renderer_shader_changes();
         let project_delivered = self.deliver_project_shader_changes();
-        data_delivered || project_delivered
+        renderer_delivered || project_delivered
     }
 
-    /// Hand every shader the watcher re-cooked to the renderer data crate's
+    /// Hand every shader the watcher re-cooked to the renderer module's
     /// `pill_render_data_shader_changed`, which puts the WGSL into the shader
     /// assets built from it.
     ///
-    /// The export is looked up again for every delivery, in the data module
+    /// The export is looked up again for every delivery, in the renderer
     /// generation that is current at this frame boundary. A shader edit made
-    /// while the data crate was rebuilding therefore reaches the generation
-    /// that replaced it. A data crate without the export (a shipping build,
-    /// where this path is compiled out) leaves the edits undelivered and logs
-    /// a warning.
-    fn deliver_data_crate_shader_changes(&mut self, data_extension: Option<&str>) -> bool {
+    /// while the renderer was rebuilding therefore reaches the generation that
+    /// replaced it. A renderer without the export (a shipping build, where this
+    /// path is compiled out) leaves the edits undelivered and logs a warning.
+    fn deliver_renderer_shader_changes(&mut self) -> bool {
         let Some(watcher) = &self.shader_watcher else {
             return false;
         };
@@ -997,15 +996,7 @@ impl RenderingHost {
         if cooked.is_empty() {
             return false;
         }
-        let DevHost {
-            extensions,
-            runtime,
-            ..
-        } = &mut self.host;
-        let engine = runtime.engine_mut();
-        let Some(slot) =
-            data_extension.and_then(|data| extensions.iter().find(|slot| slot.name() == data))
-        else {
+        let Some(slot) = self.renderer_module.slot() else {
             return false;
         };
         let Some(address) = slot.export_address(SHADER_CHANGED_EXPORT) else {
@@ -1013,11 +1004,12 @@ impl RenderingHost {
                 target: telemetry_target::HOT_RELOAD,
                 module = slot.name(),
                 export = SHADER_CHANGED_EXPORT,
-                "the renderer data module does not export the shader reload function; shader edits are not applied"
+                "the renderer module does not export the shader reload function; shader edits are not applied"
             );
             return false;
         };
-        // SAFETY: the data crate exports this name with exactly
+        let engine = self.host.runtime.engine_mut();
+        // SAFETY: the renderer exports this name with exactly
         // `ShaderChangedFunction`'s signature. A function pointer and a data
         // pointer have the same size on every target this engine builds for.
         let shader_changed =
@@ -1040,7 +1032,7 @@ impl RenderingHost {
                 warn!(
                     target: telemetry_target::HOT_RELOAD,
                     path = shader.relative_path.as_str(),
-                    "the renderer data module refused a re-cooked shader"
+                    "the renderer module refused a re-cooked shader"
                 );
             } else {
                 delivered = true;
@@ -1179,11 +1171,7 @@ impl RenderingHost {
         // Step 1: The data crate's schemas before any reload, when it has an
         // edit pending: compared after the reload phase to tell a layout change
         // from a body-only one.
-        let data_extension = self
-            .host
-            .renderer
-            .as_deref()
-            .map(|renderer| format!("{renderer}_data"));
+        let data_extension = self.host.renderer_data.clone();
         let schemas_before = data_extension.as_deref().and_then(|data| {
             let pending = self
                 .host
@@ -1202,9 +1190,9 @@ impl RenderingHost {
             &reloaded_extensions,
             schemas_before,
         );
-        // Re-cooked shaders go to the data generation that is current now,
+        // Re-cooked shaders go to the renderer generation that is current now,
         // after every swap of this boundary.
-        let shaders_delivered = self.deliver_shader_changes(data_extension.as_deref());
+        let shaders_delivered = self.deliver_shader_changes();
 
         // Step 3: The frame's systems.
         run_frame_phase(&mut self.host, frame_start);
@@ -1698,6 +1686,21 @@ pub fn setup(host_config: impl Into<HostConfig>) -> Result<DevHost, HostError> {
         };
         module_hot_patch.push(module_patch_session);
     }
+    // A project's shaders name their vertex stage under a renderer's
+    // `res/shaders`, and the project initializes before any renderer module
+    // loads - a `renderer: none` project loads none at all. Declaring the tree
+    // here is what makes those paths answerable in every posture; the renderer
+    // declares the same root when it loads, which adds the files it cannot run
+    // without and hides the cooked output. A packed build has no module
+    // directory, and its pack already carries these files.
+    let shader_tree_crate = host_config
+        .renderer
+        .as_deref()
+        .unwrap_or(crate::config::DEFAULT_RENDERER);
+    let resources_directory = module_resources_directory(&workspace_root, shader_tree_crate);
+    if resources_directory.is_dir() {
+        pill_engine::asset_store::declare_module_root(shader_tree_crate, resources_directory, &[]);
+    }
     // By now every extension has declared the read-only resource folders it
     // ships. Check them here, not inside the module initialization, which runs
     // under `catch_unwind`. A file that went missing then stops the host and
@@ -2066,8 +2069,21 @@ fn unsupported_render_components(
         .collect()
 }
 
-/// Start watching the renderer data crate's shader sources, when the host has
-/// a renderer and its data crate has a `res/` directory.
+/// The `res` directory of the module `module`, whether or not it is loaded yet.
+///
+/// The renderer module loads last - only a windowed host loads it, and it
+/// attaches to a window the project has already started - while a project's
+/// shaders name stages under the renderer's `res/shaders`. Both the startup
+/// declaration of that tree and the shader watcher resolve it from the crate
+/// directory, which the workspace layout fixes.
+fn module_resources_directory(workspace_root: &Path, module: &str) -> PathBuf {
+    workspace_root
+        .join(ExtensionConfig::located_workspace_member(workspace_root, module).crate_directory)
+        .join(crate::config::MODULE_RESOURCES_DIRECTORY)
+}
+
+/// Start watching the renderer module's shader sources, when the host has a
+/// renderer and it has a `res/` directory.
 ///
 /// A watch that cannot start is reported and leaves the host without shader
 /// reload; nothing else depends on it.
@@ -2081,22 +2097,18 @@ fn start_shader_watcher(host: &DevHost) -> Option<crate::watchers::ShaderWatcher
         );
         return None;
     }
-    let data = host.renderer_data.clone()?;
-    let slot = host.extensions.iter().find(|slot| slot.name() == data)?;
-    // The tree the data crate cooks from, its `res` at the crate root. The
-    // build script and the watcher have to name the same directory, or a
-    // shader edit changes a file that nothing rebuilds, and the paths the
-    // watcher reports relative to it are the stages' asset paths.
-    let shaders_directory = host
-        .workspace_root
-        .join(slot.crate_directory())
-        .join(crate::config::MODULE_RESOURCES_DIRECTORY);
-    match crate::watchers::ShaderWatcher::spawn(&data, shaders_directory, Vec::new()) {
+    let renderer = host.renderer.clone()?;
+    // The tree the renderer cooks from, its `res` at the crate root. The build
+    // script and the watcher have to name the same directory, or a shader edit
+    // changes a file that nothing rebuilds, and the paths the watcher reports
+    // relative to it are the stages' asset paths.
+    let shaders_directory = module_resources_directory(&host.workspace_root, &renderer);
+    match crate::watchers::ShaderWatcher::spawn(&renderer, shaders_directory, Vec::new()) {
         Ok(watcher) => watcher,
         Err(error) => {
             warn!(
                 target: telemetry_target::HOT_RELOAD,
-                module = data.as_str(),
+                module = renderer.as_str(),
                 "shader reload is off: the shader watcher could not start: {error}"
             );
             None

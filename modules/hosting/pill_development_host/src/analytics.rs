@@ -1778,8 +1778,7 @@ mod tests {
     /// rest are only counted.
     #[test]
     fn startup_report_layout() {
-        let mut extension =
-            ModuleAnalytics::new("pill_rendering", ModuleKind::Extension);
+        let mut extension = ModuleAnalytics::new("pill_rendering", ModuleKind::Extension);
         extension.build_wall_ms = 5830;
         extension.load_ms = 178.2;
         extension.artifact_bytes = 3 * 1024 * 1024;

@@ -72,15 +72,15 @@ pub const SHADER_PATH: &str = "shaders/pbr_pipeline/pbr_fragment.hlsl";
 /// The guid the PBR shader is stored under, so a material file can name it.
 pub const SHADER_GUID: AssetGuid = AssetGuid::from_name(SHADER_GUID_NAME);
 
-/// The material file the chain's default material is imported from, relative
-/// to this module's `res`.
+/// The material file the chain's default material is imported from.
 ///
-/// The chain's default material is content, not code: this file is its one
-/// definition. The editor lists it read-only under the `extensions` root, and it
-/// is imported like any other standalone `.material` - named by this path and
-/// keyed by the guid in its own header, so a reference to it survives the file
-/// being renamed.
-pub const DEFAULT_MATERIAL_PATH: &str = "materials/pill.pbr.material";
+/// The chain's default material is content, not code: `pill_rendering` ships
+/// the file, and this chain points its lit pass at it. The editor lists it
+/// read-only under the `extensions` root, and it is imported like any other
+/// standalone `.material` - named by this path and keyed by the guid in its own
+/// header, so a reference to it survives the file being renamed. Its shader is
+/// unset, which is what lets any renderer draw it.
+pub const DEFAULT_MATERIAL_PATH: &str = pill_rendering::DEFAULT_MATERIAL_PATH;
 
 /// Asset name of the skybox pass, which [`set_skybox`] gives a material.
 pub const SKYBOX_PASS: &str = "pill.pbr.pass.skybox";
@@ -110,21 +110,11 @@ const OPAQUE_PASS: &str = "pill.pbr.pass.opaque";
 ///
 /// Each factor multiplies the map bound to its slot, so these values leave a
 /// bound map unchanged. A slot with no map bound falls back to the renderer's
-/// default texture for the slot's type. The chain's default material and every
-/// newly created `.material` start from this set, so the two start out the same.
+/// default texture for the slot's type. The values are `pill_rendering`'s
+/// neutral set, which every newly created `.material` starts from, so the
+/// chain's default material and a new file start out the same.
 pub fn neutral_parameters() -> BTreeMap<String, MaterialParameter> {
-    BTreeMap::from([
-        (
-            "pbr_base".to_owned(),
-            MaterialParameter::Color([1.0, 1.0, 1.0]),
-        ),
-        ("pbr_roughness".to_owned(), MaterialParameter::Scalar(1.0)),
-        ("pbr_metallic".to_owned(), MaterialParameter::Scalar(1.0)),
-        (
-            "pbr_emissive".to_owned(),
-            MaterialParameter::Color([1.0, 1.0, 1.0]),
-        ),
-    ])
+    pill_rendering::neutral_material_parameters()
 }
 
 /// Builds the sky pass: a fullscreen triangle at the far plane, into the lit
@@ -318,46 +308,32 @@ pub fn set_skybox(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assets::MaterialDocument;
     use pill_engine::Engine;
 
-    /// The file this crate ships is the neutral default material: its shader is
-    /// the one `install` stores, its parameters are the neutral set, and nothing
-    /// is bound - the same state a newly created `.material` starts from.
+    /// The chain's default material is `pill_rendering`'s file, imported under
+    /// its path: neutral parameters, nothing bound, and no shader of its own.
+    ///
+    /// The empty shader is what makes the file shareable: any renderer's chain
+    /// can draw it, and the renderer that installed this one substitutes its own
+    /// lit shader for the empty handle.
     #[test]
-    fn the_shipped_file_is_the_neutral_default_material() {
-        let source = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("res")
-                .join(DEFAULT_MATERIAL_PATH),
-        )
-        .expect("the shipped file is in the crate);");
-        let file_document =
-            pill_engine::asset_document::parse(source.as_bytes()).expect("the shipped file parses");
-        let file_document: MaterialDocument =
-            serde_json::from_value(file_document["asset"].clone())
-                .expect("the shipped file carries a document");
+    fn the_default_material_is_the_data_crate_file_with_no_shader() {
         let mut assets = AssetManager::new();
         crate::declare_crate_roots();
         install(&mut assets).expect("a free name");
 
-        let shader = assets
-            .handle_by_name::<Shader>(SHADER_PATH)
-            .expect("the chain's shader");
         let material = assets
             .get_by_name::<Material>(DEFAULT_MATERIAL_PATH)
             .expect("the chain's default material");
 
-        assert_eq!(material.shader, shader);
+        assert_eq!(
+            material.shader,
+            Handle::INVALID,
+            "the shipped default names no shader"
+        );
         assert_eq!(material.parameters, neutral_parameters());
         assert!(material.textures.is_empty());
         assert_eq!(material.rendering_order, u8::MAX);
-        assert_eq!(file_document.parameters, neutral_parameters());
-        assert_eq!(
-            file_document.shader,
-            MaterialDocument::default().shader,
-            "the file names the shader a new material names"
-        );
     }
 
     #[test]

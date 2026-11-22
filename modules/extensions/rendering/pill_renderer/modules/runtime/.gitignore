@@ -1,3 +1,5 @@
-# Hand-written WGSL, embedded with `include_str!`; nothing cooks these, so the
-# blanket `*.wgsl` rule at the repository root must not apply in this crate.
-!*.wgsl
+# Hand-written WGSL under `src`, embedded with `include_str!`; nothing cooks
+# these, so the blanket `*.wgsl` rule at the repository root must not apply. The
+# `*.wgsl` beside each `.hlsl` under `res/` is this crate's build product, so
+# that rule still holds there.
+!src/**/*.wgsl

@@ -27,7 +27,7 @@
 //! stale again. A cook that fails is logged and queues nothing, so the shaders
 //! already loaded keep drawing. What gets queued is every output whose text
 //! differs from the last text the worker saw for it, not only the outputs this
-//! cook rebuilt. The data crate's build script runs the same cook, so it can
+//! cook rebuilt. The renderer's build script runs the same cook, so it can
 //! reach an edited source first; the worker then finds nothing stale, yet the
 //! edit still has to reach the running world. Only `.hlsl` events count. The
 //! cooked `.wgsl` files sit beside the sources and would otherwise feed back
@@ -203,7 +203,7 @@ fn read_output_texts(shaders_directory: &Path) -> HashMap<PathBuf, String> {
 /// cook searches after the tree's own.
 ///
 /// Every discovered source is compared, not only the outputs this cook
-/// rebuilt. The data crate's build script cooks the same tree, so it can reach
+/// rebuilt. The renderer's build script cooks the same tree, so it can reach
 /// an edited source first; the edit still has to reach the running world.
 ///
 /// A cook that fails is logged and returns nothing, so the running shaders
@@ -274,7 +274,7 @@ fn cook_edited_shaders(
 }
 
 /// Returns `path` relative to `root`, using `/` as the separator, in the form
-/// the data crate's shader records use.
+/// the renderer's shader records use.
 ///
 /// Returns `None` when `path` is outside `root`.
 fn relative_path_from_root(root: &Path, path: &Path) -> Option<String> {

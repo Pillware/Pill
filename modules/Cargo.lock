@@ -1280,19 +1280,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
 
 [[package]]
-name = "host_module_pill_spline"
+name = "host_module_pill_renderer"
 version = "0.1.0"
 dependencies = [
  "pill_engine",
- "pill_spline",
+ "pill_renderer",
 ]
 
 [[package]]
-name = "host_module_pill_test"
+name = "host_module_pill_rendering"
 version = "0.1.0"
 dependencies = [
  "pill_engine",
- "pill_test",
+ "pill_rendering",
 ]
 
 [[package]]
@@ -2950,6 +2950,7 @@ dependencies = [
  "image",
  "indexmap",
  "miette",
+ "pill_assets",
  "pill_core",
  "pill_core_macros",
  "pill_engine",
@@ -2985,15 +2986,12 @@ dependencies = [
  "half",
  "image",
  "indexmap",
- "miette",
- "pill_assets",
  "pill_core",
  "pill_core_macros",
  "pill_engine",
  "pill_renderer_api",
  "serde",
  "serde_json",
- "thiserror 2.0.20",
  "tobj",
  "trait_type_map",
 ]

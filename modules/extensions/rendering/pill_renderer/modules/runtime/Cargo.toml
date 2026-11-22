@@ -43,10 +43,16 @@ pill_renderer_api = { path = "../../../../../rendering/pill_renderer_api" }
 # the shared draw data the `ui` module paints with this module's own device
 # (D8). The renderer names no UI library: `pill_ui_frame` carries the lists.
 pill_ui_frame = { path = "../../../../../rendering/pill_ui_frame" }
-# The rendering data this crate draws: its components, assets, pipelines and
-# shaders. Everything wgpu-free a renderer needs lives there, shared with any
-# other renderer that names the same crate.
+# The rendering data this crate draws: its components, assets and the material
+# vocabulary. Everything wgpu-free a renderer needs lives there, shared with any
+# other renderer that names the same crate. The pipelines and their shaders are
+# this crate's own, as they exist for wgpu.
 pill_rendering = { path = "../../../pill_rendering_core/modules/runtime/data" }
+
+[build-dependencies]
+# Turns `res/shaders/**/*.hlsl` into the WGSL this crate embeds, so a shader
+# that is not committed is still the one that compiles.
+pill_assets = { path = "../../../../../assets/pill_assets" }
 
 [package.metadata.pill]
 # The data crate this renderer draws with: its components, asset types and

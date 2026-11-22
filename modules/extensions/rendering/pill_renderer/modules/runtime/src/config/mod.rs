@@ -240,6 +240,10 @@ mod tests {
     #[test]
     fn every_shader_source_record_matches_an_installed_shader() {
         let mut engine = Engine::new();
+        // The data module loads first and inserts the manager this crate's
+        // registration fills; `register` installs the PBR chain only for a
+        // manager that has no pipeline.
+        assert_eq!(pill_rendering::register(&mut engine), 0);
         crate::register(&mut engine);
         let assets = engine
             .world_mut()
