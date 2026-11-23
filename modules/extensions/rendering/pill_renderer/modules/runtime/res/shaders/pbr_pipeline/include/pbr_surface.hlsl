@@ -31,6 +31,7 @@
 // text either way.
 
 #include "lit_common.hlsl"
+#include "light_rig.hlsl"
 
 // What shading needs to know about a surface, resolved from a material.
 //
@@ -48,6 +49,38 @@ struct PbrSurface
 static const float PI = 3.14159265359;
 // Flat ambient, standing in for the IBL the reference samples.
 static const float AMBIENT_STRENGTH = 0.05;
+
+// Ray traced shadow state of the surface being shaded.
+struct ShadowParams
+{
+    // 1 when the ray tracing pass ran for this surface, 0 when it did not.
+    uint enabled;
+    uint mask_width;
+    uint mask_height;
+    uint reserved;
+};
+
+[[vk::binding(1, 1)]]
+ConstantBuffer<ShadowParams> shadow;
+
+// One value per pixel: 1 where the key light reaches the surface, 0 where
+// geometry blocks it. When the pass does not run the renderer binds a
+// single-value buffer and `shadow.enabled` is 0, so this is never read.
+[[vk::binding(2, 1)]]
+StructuredBuffer<float> shadow_mask;
+
+// How much of the key light reaches this pixel: 1 when nothing blocks it and
+// when the pass did not run for this surface.
+float key_light_visibility(float4 sv_position)
+{
+    if (shadow.enabled == 0u)
+    {
+        return 1.0;
+    }
+    uint x = min((uint)sv_position.x, shadow.mask_width - 1u);
+    uint y = min((uint)sv_position.y, shadow.mask_height - 1u);
+    return saturate(shadow_mask[y * shadow.mask_width + x]);
+}
 
 float distribution_ggx(float3 N, float3 H, float roughness)
 {
@@ -127,26 +160,22 @@ float3 shade_pbr_surface(PbrSurface surface, LitVaryings input)
 
     float3 F0 = lerp(float3(0.04, 0.04, 0.04), surface.albedo, surface.metallic);
 
-    // Three-point rig, in the shader until the renderer reads light components.
-    const float3 key_direction = normalize(float3(-0.5, -0.6, -1.0));
-    const float3 fill_direction = normalize(float3(1.0, -0.2, 0.4));
-    const float3 rim_direction = normalize(float3(0.0, 0.8, 0.6));
-    const float3 key_color = float3(1.0, 0.97, 0.92);
-    const float3 fill_color = float3(0.85, 0.9, 1.0);
-    const float3 rim_color = float3(1.0, 0.95, 0.9);
-
+    // The three-point rig lives in `light_rig.hlsl`, which the ray tracing
+    // shadow stage includes too: both use the same key direction. Only the key
+    // light is shadowed - the mask the ray tracing pass writes is built from
+    // rays traveling along `-KEY_DIRECTION`.
     float3 direct = float3(0.0, 0.0, 0.0);
     direct += accumulate_light(
         N, V, F0, surface.albedo, surface.roughness, surface.metallic,
-        key_direction, key_color, 3.0
+        KEY_DIRECTION, KEY_COLOR, KEY_INTENSITY
+    ) * key_light_visibility(input.sv_position);
+    direct += accumulate_light(
+        N, V, F0, surface.albedo, surface.roughness, surface.metallic,
+        FILL_DIRECTION, FILL_COLOR, FILL_INTENSITY
     );
     direct += accumulate_light(
         N, V, F0, surface.albedo, surface.roughness, surface.metallic,
-        fill_direction, fill_color, 1.0
-    );
-    direct += accumulate_light(
-        N, V, F0, surface.albedo, surface.roughness, surface.metallic,
-        rim_direction, rim_color, 1.5
+        RIM_DIRECTION, RIM_COLOR, RIM_INTENSITY
     );
 
     // Ambient without IBL: the diffuse albedo plus the dielectric F0 term.

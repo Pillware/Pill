@@ -34,6 +34,9 @@ pub(crate) struct RawDevice {
     device: ash::Device,
     /// The acceleration-structure functions, which no wgpu API exposes.
     structures: ash::khr::acceleration_structure::Device,
+    /// The ray tracing pipeline functions: creating pipelines, reading the
+    /// shader group handles and tracing rays.
+    pipelines: ash::khr::ray_tracing_pipeline::Device,
     /// The memory types and heaps, read once for every allocation.
     memory_properties: vk::PhysicalDeviceMemoryProperties,
 }
@@ -61,6 +64,8 @@ impl RawDevice {
         };
         // SAFETY: the device belongs to the instance, and both outlive it.
         let structures = ash::khr::acceleration_structure::Device::new(&raw_instance, &raw_device);
+        // SAFETY: as above.
+        let pipelines = ash::khr::ray_tracing_pipeline::Device::new(&raw_instance, &raw_device);
         // SAFETY: the physical device belongs to the instance.
         let memory_properties =
             unsafe { raw_instance.get_physical_device_memory_properties(physical_device) };
@@ -69,6 +74,7 @@ impl RawDevice {
             physical_device,
             device: raw_device,
             structures,
+            pipelines,
             memory_properties,
         })
     }
@@ -91,6 +97,11 @@ impl RawDevice {
     /// The acceleration-structure functions.
     pub(crate) fn structures(&self) -> &ash::khr::acceleration_structure::Device {
         &self.structures
+    }
+
+    /// The ray tracing pipeline functions.
+    pub(crate) fn ray_tracing_pipelines(&self) -> &ash::khr::ray_tracing_pipeline::Device {
+        &self.pipelines
     }
 
     /// The memory types and heaps every allocation is placed in.

@@ -42,6 +42,7 @@ use crate::{
     ray_tracing::{
         device::RawDevice,
         memory::{MemoryUse, RawBuffer},
+        shadow_pass,
     },
     render_queue::RenderQueueItem,
     resources::{RendererMesh, RendererMeshHandle, RendererResourceStorage},
@@ -306,6 +307,13 @@ pub(crate) struct RayTracingScene {
     /// The mesh structures that were replaced or forgotten, each with the
     /// number of frames it still has to outlive before it is destroyed.
     retired: Vec<(MeshStructure, usize)>,
+    /// The shadow pass: the raw pipeline its dispatch is recorded with. It is
+    /// built by the first frame that traces.
+    pass: Option<shadow_pass::ShadowPass>,
+    /// Which slot of the ring the current frame's structure lives in.
+    current_slot: Option<usize>,
+    /// The current frame's top-level structure, which the dispatch binds.
+    current_top_level: Option<vk::AccelerationStructureKHR>,
 }
 
 impl RayTracingScene {
@@ -340,6 +348,9 @@ impl RayTracingScene {
             mesh_scratch,
             mesh_scratch_size,
             retired: Vec::new(),
+            pass: None,
+            current_slot: None,
+            current_top_level: None,
         })
     }
 
@@ -431,6 +442,10 @@ impl RayTracingScene {
         frame.ensure_capacity(&self.raw, instance_count)?;
         let record_bytes: Vec<u8> = bytemuck::cast_slice(&self.records).to_vec();
         frame.instances.write(&self.raw, &record_bytes)?;
+        // The dispatch of this frame binds this slot's structure.
+        let current_structure = frame.structure;
+        self.current_slot = Some(slot);
+        self.current_top_level = Some(current_structure);
 
         // Step 4: Record every build into one wgpu encoder and submit it.
         self.record_builds(device, queue, slot, &pending, report.instances)?;
@@ -460,6 +475,78 @@ impl RayTracingScene {
         self.retired = still_waiting;
 
         Ok(report)
+    }
+
+    /// Records one surface's shadow dispatch into `encoder`.
+    ///
+    /// The pass binds this frame's top-level structure and `mask`, then traces
+    /// one ray per mask pixel. It is recorded before the surface's raster
+    /// passes, because those read the mask it writes.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message when the pipeline cannot be built, when the frame has
+    /// no structure yet, or when the mask has no Vulkan handle. The caller logs
+    /// it and draws the surface unshadowed.
+    pub(crate) fn trace_shadows(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        surface: u32,
+        mask: &wgpu::Buffer,
+        size: (u32, u32),
+        inverse_view_projection: [[f32; 4]; 4],
+    ) -> Result<(), String> {
+        let slot = self
+            .current_slot
+            .ok_or_else(|| "this frame built no top-level structure".to_string())?;
+        let top_level = self
+            .current_top_level
+            .ok_or_else(|| "this frame built no top-level structure".to_string())?;
+        // SAFETY: the mask is alive for the submission this encoder becomes.
+        let raw_mask = unsafe {
+            mask.as_hal::<wgpu::hal::api::Vulkan>()
+                .map(|guard| guard.raw_handle())
+        }
+        .ok_or_else(|| "the shadow mask has no Vulkan handle".to_string())?;
+
+        // The pass is taken out and put back, so the scene's own fields can be
+        // read while it is used.
+        let mut pass = match self.pass.take() {
+            Some(pass) => pass,
+            None => shadow_pass::ShadowPass::new(&self.raw)?,
+        };
+        let raw = &self.raw;
+        let mut failure: Option<String> = None;
+        // SAFETY: wgpu hands the raw encoder of a recording command encoder,
+        // and the mask and the structure are alive for the submission.
+        unsafe {
+            encoder.as_hal_mut::<wgpu::hal::api::Vulkan, _, ()>(|hal_encoder| {
+                let Some(hal_encoder) = hal_encoder else {
+                    failure = Some("the ray tracing path needs the Vulkan backend".to_string());
+                    return;
+                };
+                let command_buffer = hal_encoder.raw_handle();
+                if let Err(error) = pass.record(
+                    raw,
+                    command_buffer,
+                    slot,
+                    surface,
+                    top_level,
+                    raw_mask,
+                    size,
+                    inverse_view_projection,
+                ) {
+                    failure = Some(error);
+                    return;
+                }
+                record_visibility_barrier(raw, command_buffer);
+            });
+        }
+        self.pass = Some(pass);
+        match failure {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     /// Creates the structure of one mesh, sized and ready to build.
@@ -802,6 +889,52 @@ unsafe fn record_commands(
             &[],
             &[],
         );
+    }
+}
+
+/// Orders the shadow dispatch's mask writes before the fragment shaders that
+/// read them.
+///
+/// The dispatch runs in the ray tracing stage and the lit pass samples the mask
+/// later in the same command buffer, so one barrier between the two stages is
+/// what makes the shadow visible in the frame it was traced for.
+///
+/// # Safety
+///
+/// `command_buffer` must be recording.
+unsafe fn record_visibility_barrier(raw: &RawDevice, command_buffer: vk::CommandBuffer) {
+    let to_fragment = vk::MemoryBarrier::default()
+        .src_access_mask(vk::AccessFlags::SHADER_WRITE)
+        .dst_access_mask(vk::AccessFlags::SHADER_READ);
+    // SAFETY: forwarded from this function's contract.
+    unsafe {
+        raw.device().cmd_pipeline_barrier(
+            command_buffer,
+            vk::PipelineStageFlags::RAY_TRACING_SHADER_KHR,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+            vk::DependencyFlags::empty(),
+            &[to_fragment],
+            &[],
+            &[],
+        );
+    }
+}
+
+impl Drop for RayTracingScene {
+    /// Releases the shadow pass with the scene.
+    ///
+    /// The scene is dropped before the wgpu device it was made on, which is
+    /// what makes destroying a raw pipeline here safe. The structures a frame
+    /// still holds are released with the device, because a device is created
+    /// for one renderer image and never outlives it.
+    fn drop(&mut self) {
+        let pass = self.pass.take();
+        // SAFETY: the scene is dropped before the device it was built on.
+        unsafe {
+            if let Some(pass) = pass {
+                pass.destroy(&self.raw);
+            }
+        }
     }
 }
 

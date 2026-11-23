@@ -361,6 +361,12 @@ def area_checks(paths: Sequence[str]) -> List[Check]:
         selected.append(verify_check("renderer-boundaries", "renderer changed"))
         selected.append(suite_check("test_hot_reload_assets.py", "renderer or shader data changed"))
         selected.append(suite_check("test_shader_recompile.py", "renderer or shader data changed"))
+        # The ray tracing path is the one place raw Vulkan meets wgpu, and the
+        # Vulkan validation layer is what checks that seam. The suite skips
+        # with its reason where the SDK's layer is not installed.
+        selected.append(
+            suite_check("test_ray_tracing_validation.py", "renderer changed")
+        )
 
     # The example's committed render chain: the windowed host runs it and the
     # renderer's chain log must name the project's own pass.

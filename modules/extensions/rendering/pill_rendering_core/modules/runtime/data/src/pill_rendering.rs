@@ -51,6 +51,7 @@ use pill_engine::{pill_module, Engine};
 pub use pill_renderer_api::frame::{
     CullMode, MaterialParameter, PassKind, PassTarget, RenderFrame,
 };
+pub use pill_renderer_api::RayTracedShadows;
 
 // Current crate
 pub use assets::{

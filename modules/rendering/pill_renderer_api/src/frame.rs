@@ -362,6 +362,12 @@ pub struct RenderFrame {
     /// instead of copied field by field, so an editor writes one resource and
     /// the renderer reads one value. An empty `entities` list means no outline.
     pub outlines: crate::SelectionOutlines,
+    /// Whether the game asked for the frame's shadows to be traced with ray
+    /// tracing.
+    ///
+    /// A renderer that cannot trace rays ignores it and shades the frame the
+    /// way it always does. The value comes from [crate::RayTracedShadows].
+    pub ray_traced_shadows: bool,
     /// The distance between the scene grid's minor lines, in world units, when
     /// a frontend turned the grid on. `None` draws no grid.
     ///
@@ -405,6 +411,7 @@ impl Default for RenderFrame {
             surface_views: BTreeMap::new(),
             debug: pill_engine::DebugFrame::default(),
             outlines: crate::SelectionOutlines::default(),
+            ray_traced_shadows: false,
             grid_cell_size: None,
             editor_views: Vec::new(),
             pick_requests: Vec::new(),

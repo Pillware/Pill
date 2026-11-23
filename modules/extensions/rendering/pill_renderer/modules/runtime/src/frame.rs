@@ -67,7 +67,10 @@ type RenderingExtras<'w> = (
     Res<'w, pill_renderer_api::SelectionOutlines>,
     ResMut<'w, pill_renderer_api::PickRequests>,
     ResMut<'w, pill_ui_frame::UiFrameSlot>,
-    ResMut<'w, pill_renderer_api::PreviewRequests>,
+    (
+        ResMut<'w, pill_renderer_api::PreviewRequests>,
+        Res<'w, pill_renderer_api::RayTracedShadows>,
+    ),
 );
 
 // =============================================================================
@@ -103,7 +106,7 @@ pub fn rendering_system(
         outlines,
         mut pick_requests,
         mut ui_slot,
-        mut preview_requests,
+        (mut preview_requests, ray_traced_shadows),
     ): RenderingExtras<'_>,
     mut cameras: Query<(Entity, &TransformComponent, &CameraComponent)>,
     mut drawables: Query<(Entity, &TransformComponent, &MeshRendererComponent)>,
@@ -178,6 +181,13 @@ pub fn rendering_system(
             .iter_mut()
             .map(|(entity, transform, renderer)| (entity, *transform, *renderer)),
     );
+    // Whether the game asked for ray-traced shadows. A world that never
+    // inserts the switch gets the run's answer, which is what makes
+    // `PILL_RAY_TRACING=1` enough to see them.
+    frame.ray_traced_shadows = ray_traced_shadows
+        .get()
+        .map(|switch| switch.enabled)
+        .unwrap_or_else(|| pill_renderer_api::RayTracedShadows::from_environment().enabled);
     Ok(())
 }
 

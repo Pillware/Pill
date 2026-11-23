@@ -46,6 +46,10 @@ pub(crate) mod device;
 /// for.
 #[cfg(all(feature = "ray_tracing", not(target_arch = "wasm32")))]
 pub(crate) mod memory;
+/// The raw ray tracing pipeline whose dispatch fills each surface's shadow
+/// mask.
+#[cfg(all(feature = "ray_tracing", not(target_arch = "wasm32")))]
+pub(crate) mod shadow_pass;
 
 /// The acceleration structures the renderer builds alongside its meshes.
 #[cfg(all(feature = "ray_tracing", not(target_arch = "wasm32")))]

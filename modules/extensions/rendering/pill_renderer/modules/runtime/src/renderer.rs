@@ -180,6 +180,27 @@ pub(crate) struct SurfaceTarget {
     /// The primary surface's first frame is not announced - it is the window
     /// the renderer was built on - so it starts out presented.
     presented: bool,
+    /// This surface's ray-traced shadow mask, one value per pixel, while the
+    /// pass runs. `None` while it does not.
+    shadow_mask: Option<ShadowMask>,
+    /// Whether the traced-shadow evidence line was already logged for the
+    /// current state of the switch.
+    shadow_reported: bool,
+    /// How many frames this surface traced, so the evidence line reads back a
+    /// mask a dispatch actually filled.
+    shadow_frames: u32,
+    /// Whether the last frame traced this surface's shadows, so a change of the
+    /// switch is reported once.
+    shadow_traced: bool,
+}
+
+/// One surface's shadow mask: the pixels the dispatch fills and how many there
+/// are.
+struct ShadowMask {
+    /// The storage buffer the dispatch writes and the lit shaders read.
+    buffer: wgpu::Buffer,
+    /// How many pixels it holds, as (width, height).
+    size: (u32, u32),
 }
 
 impl SurfaceTarget {
@@ -659,6 +680,10 @@ impl PillRenderer for Renderer {
             minimized: width == 0 || height == 0,
             ready: true,
             presented: false,
+            shadow_mask: None,
+            shadow_reported: false,
+            shadow_frames: 0,
+            shadow_traced: false,
         };
         if let Some(replaced_target) = self.surface_targets.insert(id.0, target) {
             self.state
@@ -847,16 +872,42 @@ impl State {
         let camera_bind_group_layout = capturing_validation(&device, || {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("camera_parameters_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    // The ray traced shadow state of the surface. Every lit
+                    // shader binds it with the camera, and one that never reads
+                    // it pays nothing.
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // The per-pixel shadow mask the ray tracing pass writes.
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
             })
         })
         .map_err(|detail| RendererError::Other {
@@ -899,6 +950,10 @@ impl State {
             minimized: width == 0 || height == 0,
             ready: true,
             presented: true,
+            shadow_mask: None,
+            shadow_reported: false,
+            shadow_frames: 0,
+            shadow_traced: false,
         };
         let state = Self {
             renderer_resource_storage,
@@ -1006,17 +1061,197 @@ impl State {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("render_encoder"),
             });
-        // Step 2: Record one wgpu render pass per pass of the chain, into the
+        // Step 2: Trace this surface's shadows when the frame asked for them,
+        // before the passes that read the mask the dispatch writes.
+        self.trace_surface_shadows(target, &draw);
+        // Step 3: Record one wgpu render pass per pass of the chain, into the
         // same encoder. The first pass clears the targets it writes. The rest
         // add to what is there.
         for entry in plan {
             self.record_pass(&mut encoder, entry, target, &draw);
         }
-        // Step 3: Draw the overlay and the UI over the chain's picture.
+        // Step 4: Draw the overlay and the UI over the chain's picture.
         self.record_overlay_and_ui(&mut encoder, target, &draw);
-        // Step 4: Resolve the profiler's queries, submit the commands and
+        // Step 5: Resolve the profiler's queries, submit the commands and
         // present the image.
         self.finish_surface_frame(encoder, draw)
+    }
+
+    /// Makes this surface's mask match the frame: a pixel per surface pixel
+    /// while the pass runs, and none while it does not.
+    ///
+    /// Returns the mask to trace into, or `None` when the frame asked for no
+    /// ray-traced shadows.
+    fn prepare_shadow_mask(
+        &mut self,
+        target: &mut SurfaceTarget,
+        draw: &SurfaceDraw<'_>,
+    ) -> Option<(wgpu::Buffer, (u32, u32))> {
+        let traced = draw.frame.ray_traced_shadows;
+        // A change of the switch is reported once, so a run that pressed the key
+        // proves it did something: the pass says it stopped, and reports its
+        // count again the next time it starts.
+        if traced != target.shadow_traced {
+            target.shadow_traced = traced;
+            let surface = target.id.0;
+            info!(
+                target: telemetry_target::RENDERING,
+                enabled = traced,
+                surface,
+                "ray traced shadows switch"
+            );
+        }
+        if !traced {
+            target.shadow_mask = None;
+            target.shadow_reported = false;
+            target.shadow_frames = 0;
+            if let Some(camera) = self.renderer_resource_storage.cameras.get_mut(draw.camera) {
+                camera.bind_shadow_mask(&self.device, &self.queue, None, (0, 0));
+            }
+            return None;
+        }
+        let size = (draw.size.0.max(1), draw.size.1.max(1));
+        let rebuild = target
+            .shadow_mask
+            .as_ref()
+            .is_none_or(|mask| mask.size != size);
+        if rebuild {
+            let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("shadow_mask"),
+                size: u64::from(size.0) * u64::from(size.1) * 4,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                mapped_at_creation: false,
+            });
+            target.shadow_mask = Some(ShadowMask { buffer, size });
+            target.shadow_reported = false;
+            target.shadow_frames = 0;
+        }
+        target
+            .shadow_mask
+            .as_ref()
+            .map(|mask| (mask.buffer.clone(), mask.size))
+    }
+
+    /// Reports how many pixels the mask found shadowed, once per state of the
+    /// switch.
+    fn report_shadow_evidence(&mut self, target: &mut SurfaceTarget) {
+        if target.shadow_reported || target.shadow_frames < 4 {
+            return;
+        }
+        let surface = target.id.0;
+        let Some(mask) = target.shadow_mask.as_ref() else {
+            return;
+        };
+        target.shadow_reported = true;
+        let bytes = u64::from(mask.size.0) * u64::from(mask.size.1) * 4;
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("shadow_mask_evidence"),
+            size: bytes,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("shadow evidence"),
+            });
+        encoder.copy_buffer_to_buffer(&mask.buffer, 0, &staging, 0, bytes);
+        self.queue.submit(std::iter::once(encoder.finish()));
+        let slice = staging.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        let _ = self.device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
+        let Ok(data) = slice.get_mapped_range() else {
+            return;
+        };
+        let visibility: &[f32] = bytemuck::cast_slice(&data);
+        let shadowed = visibility.iter().filter(|value| **value < 0.5).count();
+        info!(
+            target: telemetry_target::RENDERING,
+            shadowed, pixels = visibility.len(), surface, "ray traced shadows"
+        );
+    }
+
+    /// Records one surface's shadow dispatch and points its lit shaders at the
+    /// mask, when the frame asked for ray-traced shadows and this build can
+    /// trace them.
+    ///
+    /// A frame that did not ask, a build without the feature, or a device that
+    /// cannot trace leaves the surface's camera bound to the stand-in, which is
+    /// the shading the renderer has always drawn.
+    fn trace_surface_shadows(&mut self, target: &mut SurfaceTarget, draw: &SurfaceDraw<'_>) {
+        let Some((buffer, size)) = self.prepare_shadow_mask(target, draw) else {
+            return;
+        };
+        #[cfg(all(feature = "ray_tracing", not(target_arch = "wasm32")))]
+        {
+            let State {
+                ray_tracing,
+                device,
+                queue,
+                renderer_resource_storage,
+                ..
+            } = self;
+            let Some(scene) = ray_tracing.as_mut() else {
+                target.shadow_mask = None;
+                return;
+            };
+            // The camera's world-to-clip matrix, inverted, so the ray
+            // generation stage can turn a pixel into a world-space ray.
+            let Some(camera) = renderer_resource_storage.cameras.get(draw.camera) else {
+                return;
+            };
+            let inverse_view_projection = camera
+                .parameters_data
+                .inverse_view_projection_matrix
+                .to_cols_array_2d();
+            let surface = target.id.0;
+            // wgpu refuses to mix its own recording with raw recording in one
+            // encoder, so the dispatch records into an encoder of its own and is
+            // submitted first: the queue then orders it before the raster passes
+            // that read the mask.
+            let mut shadow_encoder =
+                device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("shadow pass"),
+                });
+            let outcome = scene.trace_shadows(
+                &mut shadow_encoder,
+                surface,
+                &buffer,
+                size,
+                inverse_view_projection,
+            );
+            match outcome {
+                Ok(()) => {
+                    queue.submit(std::iter::once(shadow_encoder.finish()));
+                }
+                Err(error) => {
+                    if !target.shadow_reported {
+                        target.shadow_reported = true;
+                        pill_core::warn!(
+                            target: telemetry_target::RENDERING,
+                            "ray traced shadows are off: {error}"
+                        );
+                    }
+                    target.shadow_mask = None;
+                    return;
+                }
+            }
+            if let Some(camera) = renderer_resource_storage.cameras.get_mut(draw.camera) {
+                camera.bind_shadow_mask(device, queue, Some(&buffer), size);
+            }
+        }
+        #[cfg(not(all(feature = "ray_tracing", not(target_arch = "wasm32"))))]
+        {
+            let _ = (&buffer, size);
+        }
+        // The evidence line is read back from a mask the GPU has finished
+        // writing: a few frames have to pass after the switch before the count
+        // describes whole dispatches rather than the one in flight.
+        target.shadow_frames = target.shadow_frames.saturating_add(1);
+        self.report_shadow_evidence(target);
     }
 
     /// Acquire one surface's image and prepare everything the passes read.

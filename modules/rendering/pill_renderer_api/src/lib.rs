@@ -59,6 +59,9 @@ pub mod picking;
 /// Asset previews: off-screen renders the editor asks a renderer for.
 pub mod preview;
 
+/// Whether the frame's shadows are traced with hardware ray tracing.
+pub mod shadows;
+
 // Current crate
 pub use api::{
     AttachFuture, FrameOutcome, HeadlessRenderer, PanelFrame, PillRenderer, RenderCapabilities,
@@ -80,6 +83,7 @@ pub use preview::{
     PreviewResults,
 };
 pub use raw_window::{RawWindowData, RawWindowKind};
+pub use shadows::RayTracedShadows;
 pub use surface::{
     resolve_camera_binding, CameraBinding, PresentPreference, SurfaceCameras, SurfaceId,
     SurfaceOptions, SurfaceView,
