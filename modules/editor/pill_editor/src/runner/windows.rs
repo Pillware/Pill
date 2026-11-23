@@ -21,6 +21,21 @@
 use super::*;
 
 impl EditorWindow {
+    /// Client origin on screen on macOS, which positions child windows in
+    /// screen coordinates; zero elsewhere.
+    fn child_screen_offset(&self) -> (i32, i32) {
+        #[cfg(target_os = "macos")]
+        {
+            self.window
+                .inner_position()
+                .map_or((0, 0), |origin| (origin.x, origin.y))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            (0, 0)
+        }
+    }
+
     /// Keeps the floating overlay window over the editor's client area.
     ///
     /// The overlay is a window of its own, so nothing moves it with the editor
@@ -188,6 +203,7 @@ impl EditorWindow {
     /// rectangles are applied. The other views stay hidden until their tabs
     /// show.
     pub(super) fn place_views(&mut self) {
+        let screen_offset = self.child_screen_offset();
         let Some(Some(scene)) = self.views.first_mut() else {
             return;
         };
@@ -199,7 +215,7 @@ impl EditorWindow {
         let left = side + margin;
         let width = (width - 2 * side - 2 * margin).max(1) as u32;
         let height = (height - top - bottom - margin).max(1) as u32;
-        scene.window.place(left, top, width, height, false);
+        scene.window.place(left, top, width, height, false, screen_offset);
     }
 
     /// Gives a popped-out scene view its top-level window and places it at the
@@ -244,7 +260,7 @@ impl EditorWindow {
             }
         }
         if let Some(Some(scene)) = self.views.get_mut(view) {
-            scene.window.place(x, y, width, height, true);
+            scene.window.place(x, y, width, height, true, (0, 0));
         }
     }
 
@@ -284,21 +300,23 @@ impl EditorWindow {
     /// logical points to the client area's physical pixels.
     pub(super) fn place_view_rect(&mut self, view: usize, rect: ShellRect) {
         let (x, y, width, height) = self.view_rect_pixels(rect);
+        let screen_offset = self.child_screen_offset();
         let Some(scene) = &mut self.views[view] else {
             return;
         };
         scene.body_rect = Some(rect);
-        scene.window.place(x, y, width, height, false);
+        scene.window.place(x, y, width, height, false, screen_offset);
     }
 
     /// Places the game window at the dock's game rectangle, converted from
     /// logical points to the client area's physical pixels.
     pub(super) fn place_game_rect(&mut self, rect: ShellRect) {
         let (x, y, width, height) = self.view_rect_pixels(rect);
+        let screen_offset = self.child_screen_offset();
         let Some(game) = &mut self.game_surface else {
             return;
         };
-        game.place(x, y, width, height, false);
+        game.place(x, y, width, height, false, screen_offset);
     }
 
     /// Converts a dock rectangle from logical points to the client area's

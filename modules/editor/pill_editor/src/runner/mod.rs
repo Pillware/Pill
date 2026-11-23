@@ -4281,7 +4281,15 @@ impl SurfaceWindow {
     /// the position when the platform forced it to the detached fallback - it
     /// is its own top-level window then - and a docked child takes its origin
     /// from the rectangle's own corner.
-    fn place(&mut self, x: i32, y: i32, width: u32, height: u32, screen_owned: bool) {
+    fn place(
+        &mut self,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
+        screen_owned: bool,
+        screen_offset: (i32, i32),
+    ) {
         // A placement means the dock shows this window's tab again after a
         // switch or an undock; a hidden window still sits where it was, so
         // only the visibility changes.
@@ -4292,8 +4300,13 @@ impl SurfaceWindow {
         if self.placed == Some((x, y, width, height)) {
             return;
         }
-        if screen_owned || !self.detached {
+        if screen_owned {
             self.window.set_outer_position(PhysicalPosition::new(x, y));
+        } else if !self.detached {
+            self.window.set_outer_position(PhysicalPosition::new(
+                x + screen_offset.0,
+                y + screen_offset.1,
+            ));
         }
         // The client origin is what a pointer event from this window is
         // relative to: a docked child's is the rectangle's corner, and a

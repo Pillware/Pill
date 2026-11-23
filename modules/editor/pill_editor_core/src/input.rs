@@ -20,7 +20,10 @@
 //! list.
 
 // External crates
-use egui::{Event, ImeEvent, Modifiers, MouseWheelUnit, Pos2, RawInput, Rect, Vec2};
+use egui::{
+    Event, ImeEvent, Modifiers, MouseWheelUnit, Pos2, RawInput, Rect, Vec2, ViewportId,
+    ViewportInfo,
+};
 use pill_core::math::Vector2f;
 use pill_engine::input::{
     ButtonState, InputEvent, KeyCode, Modifiers as EngineModifiers, MouseButton, ScrollDelta,
@@ -206,6 +209,14 @@ pub fn raw_input(shell_input: &EguiShellInput) -> RawInput {
             Pos2::ZERO,
             Vec2::new(shell_input.screen_size.x, shell_input.screen_size.y),
         )),
+        viewports: std::iter::once((
+            ViewportId::ROOT,
+            ViewportInfo {
+                native_pixels_per_point: Some(scale_factor),
+                ..Default::default()
+            },
+        ))
+        .collect(),
         time: Some(shell_input.time),
         focused: shell_input.focused,
         events: egui_events,
@@ -387,6 +398,7 @@ mod tests {
             egui_input.screen_rect,
             Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0)))
         );
+        assert_eq!(egui_input.viewport().native_pixels_per_point, Some(2.0));
         assert_eq!(egui_input.time, Some(12.5));
         assert!(egui_input.focused);
         // The shell reads its own event list, so a frame with no events has
