@@ -431,9 +431,7 @@ pub fn check_declared_names_unique() -> Result<(), DuplicateDeclaredName> {
     // sorts for the host's ABI, and the baseline cut reads the newest
     // submissions first.
     let mut value_type_descriptors: Vec<&crate::component_registry::PillValueTypeDescriptor> =
-        inventory::iter::<crate::component_registry::PillValueTypeDescriptor>()
-            .into_iter()
-            .collect();
+        inventory::iter::<crate::component_registry::PillValueTypeDescriptor>().collect();
     value_type_descriptors.truncate(
         value_type_descriptors
             .len()

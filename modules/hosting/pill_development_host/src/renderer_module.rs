@@ -421,6 +421,10 @@ impl PillRenderer for ModuleRenderer {
     fn take_preview_results(&mut self) -> Vec<pill_renderer_api::PreviewImage> {
         self.module_backend_mut().take_preview_results()
     }
+
+    fn panel_frame(&self) -> Option<pill_renderer_api::PanelFrame<'_>> {
+        self.module_backend().panel_frame()
+    }
 }
 
 impl Drop for ModuleRenderer {

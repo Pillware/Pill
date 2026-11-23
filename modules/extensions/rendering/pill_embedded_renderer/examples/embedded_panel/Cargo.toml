@@ -1,0 +1,21 @@
+[package]
+name = "embedded_panel"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# `cdylib` for a hot-reloading build, where the host loads this as a DLL, and
+# `rlib` so a shipping or web build can link the project into the binary.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pill_core = { path = "../../../../../engine/pill_core" }
+pill_engine = { path = "../../../../../engine/pill_engine" }
+# The rendering data the scene is built from, and the UI lists it draws.
+# Never the renderer itself: a project is drawn by the renderer the host loads.
+pill_rendering = { path = "../../../pill_rendering_core/modules/runtime/data" }
+pill_ui_frame = { path = "../../../../../rendering/pill_ui_frame" }
+
+# A project is not a Cargo workspace member: the host generates a
+# `host_project_embedded_panel` crate and builds it against this manifest.
+[workspace]

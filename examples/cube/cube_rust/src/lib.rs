@@ -28,9 +28,7 @@ use pill_engine::{
     pill_project, system, AssetLoader, AssetManager, Engine, Handle, Query, Res, SystemError, Time,
     World,
 };
-use pill_rendering::{
-    CameraComponent, Material, Mesh, MeshRendererComponent, TransformComponent,
-};
+use pill_rendering::{CameraComponent, Material, Mesh, MeshRendererComponent, TransformComponent};
 
 /// The path to the cube's model, relative to `res`.
 const CUBE_MESH_PATH: &str = "models/cube.obj";

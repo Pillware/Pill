@@ -1,0 +1,44 @@
+[package]
+name = "pill_embedded_renderer"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+# The CPU renderer: it draws a frame into an RGB565 framebuffer instead of onto
+# a GPU surface, so it links no graphics stack and no window. `rlib` only: the
+# host loads it as a module through a generated `host_module_*` wrapper, and a
+# shipping build links it statically.
+[lib]
+# Named after the crate rather than `lib.rs`, like every extension crate, so the
+# debugger's file-name fallback has one candidate.
+path = "src/pill_embedded_renderer.rs"
+crate-type = ["rlib"]
+
+[dependencies]
+pill_core = { path = "../../../../../engine/pill_core" }
+pill_engine = { path = "../../../../../engine/pill_engine" }
+# The renderer contract: the backend trait this crate implements, the frame it
+# draws, and the camera each surface draws through.
+pill_renderer_api = { path = "../../../../../rendering/pill_renderer_api" }
+# The rendering logic every renderer shares: frame building, the camera maths,
+# the model matrix and material reads by slot name. Plain functions, linked
+# into this image.
+pill_rendering_core = { path = "../../../pill_rendering_core/modules/runtime/core" }
+# The rendering data this renderer draws: its components, assets and the
+# material vocabulary. Shared with every other renderer that names it.
+pill_rendering = { path = "../../../pill_rendering_core/modules/runtime/data" }
+# The UI draw lists the frame carries: plain data any backend can draw, the
+# same lists the GPU renderer paints.
+pill_ui_frame = { path = "../../../../../rendering/pill_ui_frame" }
+glam = { version = "0.33", features = ["serde", "bytemuck"] }
+
+[package.metadata.pill]
+# The data crate this renderer draws with. Two renderers name the same one, so
+# the tag - not the renderer's name - is what says which crate holds its data.
+renderer_data = "pill_rendering"
+# The target this renderer serves. A shipping bundle links one renderer per
+# target and Cargo picks the arm, so a device build gets the CPU renderer and
+# every other target the GPU one.
+renderer_target = 'cfg(target_os = "espidf")'

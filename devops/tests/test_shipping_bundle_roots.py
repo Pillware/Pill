@@ -29,7 +29,11 @@ DESCRIPTION
         the root relative to the bundle, cooks each module root's shaders
         before packing it, and cooks the project's own shader sources too - a
         project has no build script to cook them, and the shader import reads
-        the cooked file, not the source.
+        the cooked file, not the source;
+      - a renderer that tags a build target is linked for that target alone:
+        the bundle declares it under that target's `cfg` and hands the host a
+        `StaticRenderer` arm per target, so a device build links no GPU crate
+        and a desktop build no display one, and `renderer: none` links neither.
 
 USAGE
   python devops/tests/test_shipping_bundle_roots.py
@@ -200,6 +204,115 @@ def main() -> int:
         "the settings directory travels in the project's pack",
         generator.ASSETS_DIRECTORY_NAME == "res",
     )
+
+    # A renderer that tags a target is linked for that target only: the bundle
+    # names one dependency and one `StaticRenderer` arm per target, and Cargo
+    # picks the arm. A device build therefore links no GPU crate and a desktop
+    # build no display one, without the generator guessing which is being
+    # built; `renderer: none` links neither.
+    modules_root = REPOSITORY_ROOT / "modules"
+    arms = generator.renderer_target_arms(REPOSITORY_ROOT, RENDERER)
+    expect(
+        "the display renderer serves the device target and the GPU one the targets left over",
+        arms
+        == [
+            ('cfg(target_os = "espidf")', "pill_embedded_renderer"),
+            ('cfg(not(any(target_os = "espidf")))', RENDERER),
+        ],
+    )
+    targeted_manifest = generator.build_cargo_manifest(
+        BUNDLE_DIRECTORY,
+        PROJECT_ROOT,
+        "native",
+        modules,
+        set(),
+        REPOSITORY_ROOT,
+        renderer=RENDERER,
+        renderer_arms=arms,
+    )
+    plain_table = targeted_manifest.split("[target.")[0]
+    expect(
+        "the display renderer is a dependency of its own target only",
+        '[target.\'cfg(target_os = "espidf")\'.dependencies]\npill_embedded_renderer = { path = '
+        in targeted_manifest
+        and "pill_embedded_renderer" not in plain_table,
+    )
+    expect(
+        "the GPU renderer is the dependency of the targets left over",
+        "[target.'cfg(not(any(target_os = \"espidf\")))'.dependencies]\n"
+        f"{RENDERER} = {{ path = " in targeted_manifest,
+    )
+    headless_manifest = generator.build_cargo_manifest(
+        BUNDLE_DIRECTORY,
+        PROJECT_ROOT,
+        "native",
+        modules,
+        set(),
+        REPOSITORY_ROOT,
+    )
+    expect(
+        "a build without a renderer declares neither renderer",
+        "pill_renderer " not in headless_manifest
+        and "pill_embedded_renderer" not in headless_manifest,
+    )
+
+    targeted_source = generator.build_library_source(
+        "bundle_package",
+        "Bundle Project",
+        modules,
+        "native",
+        "../../example",
+        BUNDLE_DIRECTORY,
+        modules_root,
+        renderer=RENDERER,
+        renderer_arms=arms,
+    )
+    expect(
+        "the bundle hands the host one renderer per target, under matching cfgs",
+        '    #[cfg(target_os = "espidf")]\n'
+        "    return Some(StaticRenderer {\n"
+        "        init: pill_embedded_renderer::register,"
+        in targeted_source
+        and '    #[cfg(not(any(target_os = "espidf")))]\n'
+        "    return Some(StaticRenderer {\n"
+        f"        init: {RENDERER}::register,"
+        in targeted_source,
+    )
+    headless_source = generator.build_library_source(
+        "bundle_package",
+        "Bundle Project",
+        modules,
+        "native",
+        "../../example",
+        BUNDLE_DIRECTORY,
+        modules_root,
+    )
+    expect(
+        "a build without a renderer hands over none",
+        "::register," not in headless_source.split("static_renderer")[1].split("}")[0]
+        and "None" in headless_source.split("pub fn static_renderer")[1].split("}")[0],
+    )
+
+    # A project that names a target-specific renderer gets no renderer on the
+    # targets it leaves over, rather than one it did not ask for.
+    with tempfile.TemporaryDirectory() as temporary:
+        tagged = Path(temporary) / "modules" / "extensions" / "rendering"
+        runtime = tagged / "device" / "modules" / "runtime"
+        runtime.mkdir(parents=True)
+        (runtime / "Cargo.toml").write_text(
+            '[package]\nname = "device_renderer"\n\n'
+            "[package.metadata.pill]\n"
+            'renderer_target = \'cfg(target_os = "espidf")\'\n',
+            encoding="utf-8",
+        )
+        expect(
+            "naming a target-specific renderer leaves the other targets without one",
+            generator.renderer_target_arms(Path(temporary), "device_renderer")
+            == [
+                ('cfg(target_os = "espidf")', "device_renderer"),
+                ('cfg(not(any(target_os = "espidf")))', None),
+            ],
+        )
 
     if failures:
         print(f"\n  {len(failures)} check(s) failed")

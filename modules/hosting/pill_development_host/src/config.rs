@@ -135,8 +135,8 @@ const EDITOR_DIRECTORY: &str = "editor";
 const EXTENSION_MODULES_DIRECTORY: &str = "modules";
 
 /// Folder, inside an extension's `modules/` folder, holding the extension
-/// crate. The master renderer groups two crates under it instead, one per
-/// child directory (`data` and `gpu`).
+/// crate. A folder that groups crates instead - the rendering data and logic
+/// crates under `runtime/{data,core}` - holds one crate per child directory.
 const RUNTIME_CRATE_DIRECTORY: &str = "runtime";
 
 /// Folder, inside an extension's `modules/` folder, holding its editor crate.
@@ -826,6 +826,24 @@ impl HostConfig {
             load_editor_crates,
             project_settings.renderer.as_deref(),
         );
+        // `PILL_RENDERER` overrides the project's key for a standalone run, so
+        // a preview can be tried without editing the project. The editor always
+        // draws with the default renderer, so it says what it ignored.
+        let requested_renderer = crate::switches::renderer_override();
+        let renderer_setting = match (&requested_renderer, load_editor_crates) {
+            (Some(requested), false) => Some(requested.as_str()),
+            (Some(requested), true) => {
+                tracing::info!(
+                    target: telemetry_target::EDITOR,
+                    variable = crate::switches::RENDERER_VARIABLE,
+                    named = requested.as_str(),
+                    used = DEFAULT_RENDERER,
+                    "the editor ignores the requested renderer"
+                );
+                renderer_setting
+            }
+            (None, _) => renderer_setting,
+        };
         if renderer_setting != project_settings.renderer.as_deref() {
             tracing::info!(
                 target: telemetry_target::EDITOR,
@@ -2212,7 +2230,7 @@ pub(crate) struct ExtensionCrateLocation {
 
     /// The crate's directory inside its extension folder, with `/`
     /// separators: `modules/runtime`, `modules/editor`, or one level deeper
-    /// under the master renderer's `modules/runtime`.
+    /// under a `modules/runtime` that groups crates.
     pub(crate) directory_in_folder: String,
 
     /// Whether this is the folder's editor crate: the crate in
@@ -2260,8 +2278,8 @@ impl ExtensionCrateLocation {
     }
 
     /// Whether the crate sits one level below `modules/runtime`, in a runtime
-    /// folder that groups crates instead of holding one (the master renderer's
-    /// `data` and `gpu`).
+    /// folder that groups crates instead of holding one (the rendering data
+    /// and logic crates).
     fn is_nested_runtime_crate(&self) -> bool {
         self.directory_in_folder
             .strip_prefix(EXTENSION_MODULES_DIRECTORY)
@@ -2319,8 +2337,8 @@ fn extension_folders(extensions_root: &Path) -> Vec<String> {
 /// Returns every extension crate under `extensions_root`, in folder order.
 ///
 /// An extension folder holds its extension in `modules/runtime` and its editor
-/// part in `modules/editor`; the master renderer's `modules/runtime` groups two
-/// crates, one per child directory. A crate is a directory holding a
+/// part in `modules/editor`; a `modules/runtime` that groups crates holds one
+/// per child directory. A crate is a directory holding a
 /// `Cargo.toml` that declares a package name. [`extension_folders`] decides
 /// which folders are extension folders, so a crate in a group folder reports it
 /// with the group prefix (`rendering/pill_renderer`).
@@ -2332,7 +2350,7 @@ pub(crate) fn extension_crate_locations(extensions_root: &Path) -> Vec<Extension
             .join(EXTENSION_MODULES_DIRECTORY);
         let runtime_directory = modules_directory.join(RUNTIME_CRATE_DIRECTORY);
         // The runtime crate is `modules/runtime` itself, unless that folder
-        // groups crates instead (the master renderer's `data` and `gpu`).
+        // groups crates instead (the rendering data and logic crates).
         let runtime_crates = match declared_package_name(&runtime_directory) {
             Some(package_name) => vec![(
                 format!("{EXTENSION_MODULES_DIRECTORY}/{RUNTIME_CRATE_DIRECTORY}"),
@@ -2390,8 +2408,8 @@ pub(crate) fn extension_crate_locations(extensions_root: &Path) -> Vec<Extension
 /// A path therefore names the crate it holds, and the conventional path a
 /// missing crate falls back to resolves to a real directory. A nested runtime
 /// crate is exempt, because the folder it sits in cannot name it too:
-/// `extensions/rendering/pill_rendering_core/modules/runtime` holds
-/// `data` (`pill_rendering`) beside the `core` crate to come.
+/// `extensions/rendering/pill_rendering_core/modules/runtime` holds `data`
+/// (`pill_rendering`) beside `core` (`pill_rendering_core`).
 ///
 /// # Errors
 ///

@@ -61,7 +61,8 @@ pub mod preview;
 
 // Current crate
 pub use api::{
-    AttachFuture, FrameOutcome, HeadlessRenderer, PillRenderer, RenderCapabilities, RenderMetrics,
+    AttachFuture, FrameOutcome, HeadlessRenderer, PanelFrame, PillRenderer, RenderCapabilities,
+    RenderMetrics,
 };
 pub use components::*;
 pub use error::RendererError;

@@ -129,6 +129,32 @@ pub struct RenderMetrics {
 pub type AttachFuture = Pin<Box<dyn Future<Output = Result<Box<dyn PillRenderer>, RendererError>>>>;
 
 // =============================================================================
+// PanelFrame
+// =============================================================================
+
+/// The pixels of one frame a processor renderer drew, for a frontend that shows
+/// them.
+///
+/// A renderer with no graphics device behind it draws into its own pixel buffer;
+/// a frontend that owns a window can put those pixels on screen itself. The
+/// frame borrows the renderer's buffer, so showing it costs no copy and it stays
+/// valid only while the renderer lives. The frontend shows it before it drops
+/// the renderer, or detaches from it.
+///
+/// The pixels are packed RGB565, row-major from the top-left corner, which is
+/// what a small display controller reads. A frontend showing them in a window
+/// widens each pixel and scales the result to fill it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PanelFrame<'a> {
+    /// Pixels across.
+    pub width: u32,
+    /// Pixel rows.
+    pub height: u32,
+    /// `width * height` packed RGB565 pixels, row-major from the top.
+    pub pixels: &'a [u16],
+}
+
+// =============================================================================
 // PillRenderer
 // =============================================================================
 
@@ -274,6 +300,18 @@ pub trait PillRenderer {
     /// answers nothing, for a renderer without an off-screen preview target.
     fn take_preview_results(&mut self) -> Vec<crate::PreviewImage> {
         Vec::new()
+    }
+
+    /// The pixels of the most recent frame, for a renderer that draws on the
+    /// processor and a frontend that shows them in a window.
+    ///
+    /// The returned view borrows the renderer's own buffer, so it is valid
+    /// until the next [`Self::render`] or until the renderer is dropped. The
+    /// default answers `None`, which is every renderer that presents through a
+    /// graphics device: its frames are already on the surface it was attached
+    /// to.
+    fn panel_frame(&self) -> Option<PanelFrame<'_>> {
+        None
     }
 }
 

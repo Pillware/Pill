@@ -33,6 +33,9 @@
 /// Errors of a windowed runtime.
 #[cfg(feature = "rendering")]
 mod error;
+/// Showing a processor renderer's pixels in the frontend's window.
+#[cfg(all(feature = "rendering", not(target_arch = "wasm32")))]
+mod panel_blit;
 /// Which owner a module, the renderer or the project registers its ECS
 /// systems under.
 pub mod registration;

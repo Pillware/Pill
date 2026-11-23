@@ -90,6 +90,10 @@ pub struct AttachedRenderer {
     /// The backend drawing on the primary window; declared first so it drops
     /// first.
     renderer: Box<dyn PillRenderer>,
+    /// The window a processor renderer's pixels are shown in, once the backend
+    /// answers [`PillRenderer::panel_frame`].
+    #[cfg(not(target_arch = "wasm32"))]
+    panel_blit: Option<crate::panel_blit::PanelBlit>,
     /// The primary window, kept in the same record as every extra surface. A
     /// per-surface operation is then one lookup instead of a branch, and a
     /// backend swap repeats the same steps for both. Declared after
@@ -174,6 +178,8 @@ impl AttachedRenderer {
     ) -> Self {
         Self {
             renderer,
+            #[cfg(not(target_arch = "wasm32"))]
+            panel_blit: None,
             primary_surface: SurfaceRecord {
                 window,
                 window_data,
@@ -257,6 +263,11 @@ impl AttachedRenderer {
         let viewport = self.primary_surface.viewport;
         let ready = self.primary_surface.ready;
         self.renderer = renderer;
+        // A new window means the old blit belongs to a window that is going.
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.panel_blit = None;
+        }
         self.detached = false;
         self.primary_surface = SurfaceRecord {
             window,
@@ -287,6 +298,12 @@ impl AttachedRenderer {
             "replace_backend over a live backend drops it while its module may be gone; call detach_backend first"
         );
         self.renderer = renderer;
+        // The window did not change, so a blit of the old backend's pixels
+        // must not survive into the new one: it holds that backend's frame.
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.panel_blit = None;
+        }
         self.detached = false;
         self.replay_surfaces();
     }
@@ -564,10 +581,35 @@ impl AttachedRenderer {
     pub fn present(&mut self, world: &mut World) -> Result<(), RendererError> {
         // Step 1: Draw the frame the `rendering` system left in the world.
         self.render(world)?;
-        // Step 2: Hand back the picks and previews the GPU finished meanwhile.
+        // Step 2: Show the pixels a processor renderer drew, when it drew them
+        // itself instead of on a surface.
+        #[cfg(not(target_arch = "wasm32"))]
+        self.show_panel_frame();
+        // Step 3: Hand back the picks and previews the GPU finished meanwhile.
         self.deliver_pick_results(world);
         self.deliver_preview_results(world);
         Ok(())
+    }
+
+    /// Shows a processor renderer's most recent frame in the primary window.
+    ///
+    /// A renderer that presents through a graphics device answers no panel
+    /// frame, and nothing happens. The frame keeps the panel's resolution and
+    /// is stretched over the window, so a preview shows what a device panel
+    /// will.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn show_panel_frame(&mut self) {
+        let Some(frame) = self.renderer.panel_frame() else {
+            return;
+        };
+        if self.panel_blit.is_none() {
+            self.panel_blit =
+                crate::panel_blit::PanelBlit::new(self.primary_surface.window_data.window);
+        }
+        let Some(panel_blit) = &mut self.panel_blit else {
+            return;
+        };
+        panel_blit.present(frame, self.primary_surface.size);
     }
 
     /// Move the picks the renderer has answered since the last call into the

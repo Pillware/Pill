@@ -9,13 +9,15 @@ TIER: static
 REQUIREMENTS: Python 3.11+ (standard library only).
 
 DESCRIPTION
-    Each renderer is a GPU module that names its data crate in its own
-    manifest: `renderer_data = "<crate>"` under `[package.metadata.pill]`.
-    Both crates sit in an extension folder under `extensions/` - either
-    directly, or inside a group folder, which holds extension folders and no
-    crates of its own. The pairs are found by that tag, never listed here, and
-    a data crate's name does not have to match its renderer's. The shared
-    contract crate is
+    Each renderer names its data crate in its own manifest:
+    `renderer_data = "<crate>"` under `[package.metadata.pill]`. Most are GPU
+    modules; a renderer that draws on the processor (`pill_embedded_renderer`,
+    which fills an RGB565 framebuffer) follows the same rules and is what rule
+    1 keeps off wgpu. Both crates sit in an extension folder under
+    `extensions/` - either directly, or inside a group folder, which holds
+    extension folders and no crates of its own. The pairs are found by that
+    tag, never listed here, and a data crate's name does not have to match its
+    renderer's. The shared contract crate is
     `pill_renderer_api`. This check reads the workspace members' manifests
     (and the example projects') and enforces:
 

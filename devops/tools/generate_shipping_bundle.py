@@ -151,6 +151,12 @@ RENDERER_ALIASES = {"pill_master_renderer": DEFAULT_RENDERER}
 # The manifest key, under `[package.metadata.pill]`, through which a renderer
 # names its data crate. Two renderers can share one.
 RENDERER_DATA_TAG = "renderer_data"
+# The manifest key, under `[package.metadata.pill]`, through which a renderer
+# names the build target it serves as a `cfg(...)` predicate. Cargo then picks
+# the arm, so one bundle can carry a display renderer for the device and the
+# GPU renderer everywhere else. A renderer without the tag serves whatever
+# target the tagging ones leave over.
+RENDERER_TARGET_TAG = "renderer_target"
 # The requested feature that makes a shipping build windowed.
 RENDERING_FEATURE = "rendering"
 # The project's asset directory, packed into the binary when it exists, and the
@@ -281,6 +287,61 @@ def declared_renderer_data(directory: Path):
     pill_metadata = manifest.get("package", {}).get("metadata", {}).get("pill", {})
     renderer_data = pill_metadata.get(RENDERER_DATA_TAG)
     return renderer_data if isinstance(renderer_data, str) else None
+
+
+# Returns the predicate inside a `cfg(...)` expression, or "" when the text is
+# not one. The remaining targets are `not(any(...))` over these predicates, so
+# the wrapper has to come off.
+def cfg_predicate(cfg_expression: str) -> str:
+    text = cfg_expression.strip()
+    if text.startswith("cfg(") and text.endswith(")"):
+        return text[len("cfg(") : -1].strip()
+    return ""
+
+
+# Returns the target `directory/Cargo.toml` tags a renderer as serving through
+# `renderer_target` under `[package.metadata.pill]`, or None when the directory
+# holds no readable manifest, carries no tag, or the tag is no cfg predicate.
+def declared_renderer_target(directory: Path):
+    manifest_path = directory / PROJECT_MANIFEST_FILE_NAME
+    if not manifest_path.is_file():
+        return None
+    try:
+        with manifest_path.open("rb") as handle:
+            manifest = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    pill_metadata = manifest.get("package", {}).get("metadata", {}).get("pill", {})
+    renderer_target = pill_metadata.get(RENDERER_TARGET_TAG)
+    if not isinstance(renderer_target, str) or not cfg_predicate(renderer_target):
+        return None
+    return renderer_target
+
+
+# Pairs each renderer that tags a target with the cfg it serves, and the
+# project's renderer with the targets the tagging ones leave over. One entry
+# per target, so the bundle declares one dependency and one `StaticRenderer`
+# arm per target instead of the generator guessing which one is being built.
+def renderer_target_arms(root: Path, renderer):
+    declared = []
+    selected_is_declared = False
+    for directory in extension_crate_directories(root):
+        renderer_target = declared_renderer_target(directory)
+        package_name = declared_package_name(directory)
+        if renderer_target is None or package_name is None:
+            continue
+        declared.append((renderer_target, package_name))
+        if package_name == renderer:
+            selected_is_declared = True
+    if not renderer:
+        return declared
+    predicates = [cfg_predicate(target) for target, _ in declared]
+    left_over = f"cfg(not(any({', '.join(predicates)})))" if predicates else ""
+    if selected_is_declared:
+        # The project named a renderer that serves one target. The targets it
+        # leaves over get no renderer, rather than one it did not ask for.
+        return declared + ([(left_over, None)] if left_over else [])
+    return declared + [(left_over, renderer)]
 
 
 # Yields the directory of every editor module, in directory name order: each
@@ -674,11 +735,14 @@ def build_cargo_manifest(
     root: Path,
     managed: bool = False,
     renderer=None,
+    renderer_arms=None,
     packs_assets: bool = False,
 ) -> str:
     """Builds the generated bundle's Cargo.toml text.
 
     `renderer` is the GPU crate a windowed build links, or None.
+    `renderer_arms` pairs each renderer with the target cfg it serves, from
+    `renderer_target_arms`; it defaults to `renderer` for every target.
     `packs_assets` adds the asset packer the bundle's build script runs.
     """
     lines = [
@@ -730,15 +794,26 @@ def build_cargo_manifest(
         lines.append(
             f'{module} = {{ path = "{relative_path}", default-features = false }}'
         )
-    if renderer:
-        # The renderer, linked statically: the bundle is the only crate that
-        # depends on it for real, and hands the host its two entry points.
-        # Nothing loads this binary as a module, so it carries no wrapper.
+    if renderer_arms is None:
+        renderer_arms = [(None, renderer)] if renderer else []
+    # The renderer, linked statically: the bundle is the only crate that
+    # depends on it for real, and hands the host its two entry points. Nothing
+    # loads this binary as a module, so it carries no wrapper. A renderer that
+    # serves one target is a target-specific dependency, so a build for another
+    # target never links it; the arm serving everything else stays a plain
+    # `[dependencies]` entry, which has to come before any target table.
+    for cfg_expression, crate_name in sorted(
+        renderer_arms, key=lambda arm: arm[0] is not None
+    ):
+        if crate_name is None:
+            continue
+        if cfg_expression:
+            lines += ["", f"[target.'{cfg_expression}'.dependencies]"]
         renderer_path = manifest_relative_path(
-            bundle_directory, module_crate_directory(root, renderer)
+            bundle_directory, module_crate_directory(root, crate_name)
         )
         lines.append(
-            f'{renderer} = {{ path = "{renderer_path}", default-features = false }}'
+            f'{crate_name} = {{ path = "{renderer_path}", default-features = false }}'
         )
     if packs_assets:
         # The build script packs the project's `res` directory with it.
@@ -873,6 +948,7 @@ def build_library_source(
     aot: bool = False,
     rid: str = "win-x64",
     renderer=None,
+    renderer_arms=None,
     packs_assets: bool = False,
     logging=(None, None, None, []),
     debug_draw: bool = False,
@@ -882,6 +958,8 @@ def build_library_source(
     """Builds the generated bundle's src/lib.rs text.
 
     `renderer` is the GPU crate a windowed build links, or None.
+    `renderer_arms` pairs each renderer with the target cfg it serves, from
+    `renderer_target_arms`; it defaults to `renderer` for every target.
     `packs_assets` packs the project's `res` directory with the build script.
     `logging` is the validated `logging:` section, from `load_logging`.
     `debug_draw` is the `debug_draw:` key, from `load_debug_draw`.
@@ -993,18 +1071,30 @@ def build_library_source(
         ]
     lines += [
         "",
-        "/// The renderer this binary links, or `None` for a headless build.",
+        "/// The renderer this binary links for the target being built, or `None`",
+        "/// for a headless build.",
         "pub fn static_renderer() -> Option<StaticRenderer> {",
     ]
-    if renderer:
+    if renderer_arms is None:
+        renderer_arms = [(None, renderer)] if renderer else []
+    # One arm per target: the renderer that serves it, and the one serving the
+    # targets left over. Cargo compiles exactly one, so a bundle built for the
+    # device links no GPU crate and the desktop build links no display one.
+    for cfg_expression, crate_name in renderer_arms:
+        predicate = cfg_predicate(cfg_expression) if cfg_expression else ""
+        if predicate:
+            lines.append(f"    #[cfg({predicate})]")
+        if crate_name is None:
+            lines.append("    return None;")
+            continue
         lines += [
-            "    Some(StaticRenderer {",
-            f"        init: {renderer}::register,",
-            f"        attach: {renderer}::attach,",
-            "    })",
+            "    return Some(StaticRenderer {",
+            f"        init: {crate_name}::register,",
+            f"        attach: {crate_name}::attach,",
+            "    });",
         ]
-    else:
-        lines += ["    None"]
+    if not renderer_arms:
+        lines.append("    None")
     lines += [
         "}",
         "",
@@ -1432,9 +1522,14 @@ def main() -> int:
     linked_renderer = (
         renderer_name if renderer_name and RENDERING_FEATURE in requested_features else None
     )
+    # One arm per target, so a device bundle links the display renderer and a
+    # desktop bundle the GPU one; `renderer: none` links neither.
+    renderer_arms = renderer_target_arms(root, linked_renderer)
     missing_modules = [
         name
-        for name in modules + ([linked_renderer] if linked_renderer else [])
+        for name in modules
+        + ([linked_renderer] if linked_renderer else [])
+        + [crate_name for _, crate_name in renderer_arms if crate_name]
         if not (module_crate_directory(root, name) / PROJECT_MANIFEST_FILE_NAME).is_file()
     ]
     if missing_modules:
@@ -1483,6 +1578,7 @@ def main() -> int:
         root,
         managed=(kind == "managed"),
         renderer=linked_renderer,
+        renderer_arms=renderer_arms,
         packs_assets=packs_assets,
     )
     library_source = build_library_source(
@@ -1496,6 +1592,7 @@ def main() -> int:
         aot=aot and kind == "managed",
         rid=rid,
         renderer=linked_renderer,
+        renderer_arms=renderer_arms,
         packs_assets=packs_assets,
         logging=load_logging(project_root),
         debug_draw=load_debug_draw(project_root),

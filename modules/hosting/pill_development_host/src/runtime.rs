@@ -62,8 +62,8 @@ use crate::{ExtensionConfig, HostConfig, ProjectModuleBackend, ProjectModuleConf
 // Constants
 // =============================================================================
 
-/// The renderer data crate's development shader reload export; see
-/// `pill_rendering::shader_hot_reload`.
+/// The renderer module's development shader reload export, defined by the GPU
+/// module's `shader_hot_reload` beside the shader tree it cooks.
 #[cfg(feature = "rendering")]
 const SHADER_CHANGED_EXPORT: &str = "pill_render_data_shader_changed";
 
