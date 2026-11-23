@@ -853,6 +853,27 @@ impl HostConfig {
             );
         }
         let renderer = Self::resolve_renderer(renderer_setting, &extensions_root)?;
+        // `renderer_features:` is checked against the renderer the project ends
+        // up drawing with, so the editor posture checks `pill_renderer` - the
+        // renderer it always uses - and a standalone checks the key's answer.
+        Self::check_renderer_features(
+            &workspace_root,
+            renderer
+                .as_ref()
+                .map(|selection| selection.renderer.as_str()),
+            &project_settings.renderer_features,
+        )?;
+        if !project_settings.renderer_features.is_empty() {
+            tracing::info!(
+                target: telemetry_target::ENGINE,
+                renderer = renderer
+                    .as_ref()
+                    .map(|selection| selection.renderer.as_str())
+                    .unwrap_or_default(),
+                features = ?project_settings.renderer_features,
+                "the project turns on renderer features"
+            );
+        }
         let module_names = Self::module_names_with_renderer_data(
             renderer
                 .as_ref()
@@ -1080,6 +1101,52 @@ impl HostConfig {
             renderer: renderer_name.to_string(),
             data_crate,
         }))
+    }
+
+    /// Checks every `renderer_features:` name against its renderer's manifest.
+    ///
+    /// Nothing compiles differently here: the generated wrapper enables every
+    /// feature a crate declares. The check is what makes the key honest - a
+    /// project that asks for a feature the renderer does not have learns it at
+    /// startup, with the same rule a shipping build applies.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::RendererFeatureWithoutRenderer`] when a feature is
+    /// named while no renderer is selected, and
+    /// [`ConfigError::UnknownRendererFeature`] when the renderer's manifest does
+    /// not declare one.
+    fn check_renderer_features(
+        workspace_root: &Path,
+        renderer: Option<&str>,
+        requested: &[String],
+    ) -> Result<(), ConfigError> {
+        let names: Vec<&str> = requested
+            .iter()
+            .map(|name| name.trim())
+            .filter(|name| !name.is_empty())
+            .collect();
+        if names.is_empty() {
+            return Ok(());
+        }
+        let Some(renderer) = renderer else {
+            let feature = names.first().copied().unwrap_or_default().to_owned();
+            return Err(ConfigError::RendererFeatureWithoutRenderer { feature });
+        };
+        let declared =
+            crate::build_runner::declared_features(workspace_root, renderer).unwrap_or_default();
+        for feature in names {
+            if !declared
+                .iter()
+                .any(|declared_name| declared_name == feature)
+            {
+                return Err(ConfigError::UnknownRendererFeature {
+                    name: renderer.to_owned(),
+                    feature: feature.to_owned(),
+                });
+            }
+        }
+        Ok(())
     }
 
     /// The module load order: the renderer's data crate first, when a renderer
@@ -1587,6 +1654,12 @@ struct ProjectSettingsFile {
     /// `extensions/` (`pill_renderer` when absent), or `none`. The data
     /// crate its manifest names through `renderer_data` loads in every build.
     renderer: Option<String>,
+    /// Features the project turns on in its renderer, by name. Every name is
+    /// checked against the renderer's own manifest, so a typo stops the project
+    /// at startup instead of shipping a renderer nobody asked for. The host's
+    /// generated wrapper enables every declared feature anyway; the key is what
+    /// a shipping build forwards.
+    renderer_features: Vec<String>,
     /// What the development host does with the project's source assets.
     assets: ProjectAssetSettings,
     /// Log levels over the engine's defaults.
@@ -5230,5 +5303,102 @@ mod project_editor_crate_tests {
         );
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+/// Tests for `renderer_features:`: the host checks every name against the
+/// renderer's manifest, so a typo stops the project at startup.
+#[cfg(test)]
+mod renderer_features_tests {
+    use super::HostConfig;
+    use crate::scratch::ScratchDirectory;
+    use pill_core::error::ConfigError;
+
+    /// A workspace root holding one renderer crate, named `package`, whose
+    /// manifest declares `features`.
+    ///
+    /// Every test uses its own package name: the feature lookup caches by name
+    /// for the whole process.
+    fn workspace(scratch: &str, package: &str, features: &[&str]) -> ScratchDirectory {
+        let root = ScratchDirectory::new(scratch);
+        let crate_directory = root.join("extensions").join(package);
+        std::fs::create_dir_all(crate_directory.join("src")).unwrap();
+        let declared: String = features
+            .iter()
+            .map(|name| format!("{name} = []\n"))
+            .collect();
+        std::fs::write(
+            crate_directory.join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"{package}\"\nversion = \"0.1.0\"\n\n[features]\n{declared}"
+            ),
+        )
+        .unwrap();
+        std::fs::write(crate_directory.join("src").join("lib.rs"), "").unwrap();
+        root
+    }
+
+    /// The names the test asks for, as the settings file would carry them.
+    fn requested(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| (*name).to_string()).collect()
+    }
+
+    #[test]
+    fn a_declared_feature_is_accepted() {
+        let root = workspace(
+            "renderer_feature_declared",
+            "rt_test_declared",
+            &["ray_tracing"],
+        );
+
+        HostConfig::check_renderer_features(
+            &root,
+            Some("rt_test_declared"),
+            &requested(&["ray_tracing"]),
+        )
+        .expect("a feature the manifest declares is accepted");
+    }
+
+    #[test]
+    fn an_undeclared_feature_names_the_renderer_and_the_feature() {
+        let root = workspace("renderer_feature_typo", "rt_test_typo", &["ray_tracing"]);
+
+        let error = HostConfig::check_renderer_features(
+            &root,
+            Some("rt_test_typo"),
+            &requested(&["ray_tracin"]),
+        )
+        .expect_err("a misspelled feature must be reported");
+
+        match error {
+            ConfigError::UnknownRendererFeature { name, feature } => {
+                assert_eq!(name, "rt_test_typo");
+                assert_eq!(feature, "ray_tracin");
+            }
+            other => panic!("expected the unknown-feature error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_feature_without_a_renderer_is_refused() {
+        let root = ScratchDirectory::new("renderer_feature_no_renderer");
+
+        let error = HostConfig::check_renderer_features(&root, None, &requested(&["ray_tracing"]))
+            .expect_err("features need a renderer to carry them");
+
+        match error {
+            ConfigError::RendererFeatureWithoutRenderer { feature } => {
+                assert_eq!(feature, "ray_tracing");
+            }
+            other => panic!("expected the no-renderer error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn no_features_is_accepted_without_a_renderer() {
+        let root = ScratchDirectory::new("renderer_feature_empty");
+
+        HostConfig::check_renderer_features(&root, None, &[])
+            .expect("an empty list asks for nothing");
     }
 }

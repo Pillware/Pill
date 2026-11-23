@@ -42,7 +42,7 @@ use std::sync::mpsc::{channel, Receiver};
 use pill_core::error::WatcherError;
 use pill_core::platform::Instant;
 use pill_core::telemetry::telemetry_target;
-use pill_core::{info, warn};
+use pill_core::{debug, info, warn};
 
 // Current crate
 use super::shared::{is_relevant_event, spawn_settled_watcher};
@@ -235,6 +235,17 @@ fn cook_edited_shaders(
     let mut changed_shaders = Vec::new();
     for source in &report.discovered_sources {
         let output_path = source.with_extension("wgsl");
+        // A source a rule other than the WGSL one compiled - a ray tracing
+        // stage - has no WGSL to hand over: the module embeds its SPIR-V when
+        // it is built, so the watcher says so at debug and moves on.
+        if !output_path.is_file() && source.with_extension("spv").is_file() {
+            debug!(
+                target: telemetry_target::HOT_RELOAD,
+                source = %source.display(),
+                "cooked to SPIR-V; the renderer embeds it at build time"
+            );
+            continue;
+        }
         let Some(relative_path) = relative_path_from_root(shaders_directory, &output_path) else {
             continue;
         };

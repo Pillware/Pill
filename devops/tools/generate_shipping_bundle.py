@@ -423,6 +423,24 @@ def load_renderer(project_root: Path):
     return RENDERER_ALIASES.get(name, name)
 
 
+def load_renderer_features(project_root: Path) -> list:
+    """Returns the feature names the project turns on in its renderer.
+
+    Reads the settings file's `renderer_features:` key, which holds one name or
+    a list of them; absent means none. The names are only checked against the
+    renderer's own manifest later, by `renderer_features_for_arms`, because
+    which renderer a build links is decided per target.
+    """
+    settings_path = project_root / PROJECT_SETTINGS_FILE_NAME
+    with settings_path.open(encoding="utf-8") as handle:
+        data = yaml.safe_load(handle) or {}
+    declared = data.get("renderer_features")
+    if declared is None:
+        return []
+    names = declared if isinstance(declared, list) else [declared]
+    return [str(name).strip() for name in names if str(name).strip()]
+
+
 # The log levels the `logging:` section accepts, as `pill_player::LoggingSettings`
 # reads them.
 LOG_LEVELS = {"off", "error", "warn", "info", "debug", "trace"}
@@ -670,8 +688,7 @@ def load_project_features(project_root: Path) -> set:
     """Reads the feature names the project declares in its Cargo.toml [features].
 
     The bundle can enable a project feature only when the project declares it,
-    so the generator filters the requested names against this table. Parsed
-    line-by-line like the package name; no TOML parser is required. A managed
+    so the generator filters the requested names against this table. A managed
     project declares no cargo features, so this is only called for native ones.
     """
     manifest_path = project_root / PROJECT_MANIFEST_FILE_NAME
@@ -679,6 +696,18 @@ def load_project_features(project_root: Path) -> set:
         raise FileNotFoundError(
             f"no {PROJECT_MANIFEST_FILE_NAME} in project root {project_root}"
         )
+    return declared_feature_names(manifest_path)
+
+
+def declared_feature_names(manifest_path: Path) -> set:
+    """Reads the feature names a Cargo manifest declares in its `[features]`.
+
+    Parsed line-by-line like the package name; no TOML parser is required.
+    Only lines that assign a name count, so the entries of a feature whose list
+    spans several lines are not mistaken for features of their own.
+    """
+    if not manifest_path.is_file():
+        return set()
     in_features_table = False
     features = set()
     for line in manifest_path.read_text(encoding="utf-8").splitlines():
@@ -687,10 +716,45 @@ def load_project_features(project_root: Path) -> set:
             in_features_table = stripped == "[features]"
             continue
         if in_features_table and stripped and not stripped.startswith("#"):
+            if "=" not in stripped:
+                continue
             name = stripped.split("=", 1)[0].strip().strip('"').strip("'")
             if name:
                 features.add(name)
     return features
+
+
+def renderer_features_for_arms(root: Path, renderer_arms, requested: list) -> dict:
+    """Returns the features each linked renderer can carry, keyed by crate name.
+
+    A name has to be declared by at least one linked renderer, or the project is
+    asking for something no renderer in this build has - which is reported
+    rather than dropped. A name a target-specific arm does not declare is left
+    off that arm, so a device build never asks its renderer for a desktop-only
+    feature.
+    """
+    declared = {}
+    for _, crate_name in renderer_arms:
+        if not crate_name:
+            continue
+        declared[crate_name] = declared_feature_names(
+            module_crate_directory(root, crate_name) / PROJECT_MANIFEST_FILE_NAME
+        )
+    unknown = [
+        name
+        for name in requested
+        if not any(name in names for names in declared.values())
+    ]
+    if unknown:
+        renderers = ", ".join(sorted(declared)) or "the renderers this build links"
+        raise ValueError(
+            f"`renderer_features:` names {', '.join(unknown)}, which {renderers} "
+            "does not declare"
+        )
+    return {
+        crate_name: [name for name in requested if name in names]
+        for crate_name, names in declared.items()
+    }
 
 
 def find_csproj_manifest(project_root: Path) -> Path:
@@ -736,6 +800,7 @@ def build_cargo_manifest(
     managed: bool = False,
     renderer=None,
     renderer_arms=None,
+    renderer_features=None,
     packs_assets: bool = False,
 ) -> str:
     """Builds the generated bundle's Cargo.toml text.
@@ -743,6 +808,8 @@ def build_cargo_manifest(
     `renderer` is the GPU crate a windowed build links, or None.
     `renderer_arms` pairs each renderer with the target cfg it serves, from
     `renderer_target_arms`; it defaults to `renderer` for every target.
+    `renderer_features` maps a renderer crate to the feature names this build
+    turns on in it, from `renderer_features_for_arms`.
     `packs_assets` adds the asset packer the bundle's build script runs.
     """
     lines = [
@@ -812,8 +879,16 @@ def build_cargo_manifest(
         renderer_path = manifest_relative_path(
             bundle_directory, module_crate_directory(root, crate_name)
         )
+        # Default features stay off and the project's own choices are named one
+        # by one: a feature reaches a shipped renderer only because a project
+        # asked for it on this edge.
+        enabled = (renderer_features or {}).get(crate_name) or []
+        feature_names = ", ".join(f'"{name}"' for name in sorted(enabled))
+        feature_clause = f", features = [{feature_names}]" if enabled else ""
         lines.append(
-            f'{crate_name} = {{ path = "{renderer_path}", default-features = false }}'
+            f'{crate_name} = {{ path = "{renderer_path}", default-features = false'
+            + feature_clause
+            + " }"
         )
     if packs_assets:
         # The build script packs the project's `res` directory with it.
@@ -1540,6 +1615,27 @@ def main() -> int:
         )
         return 1
 
+    # Step 2b: forward `renderer_features:` onto the renderer's dependency edge.
+    # A shipped build links the renderer with its default features off, so a
+    # name the project asks for reaches cargo only through that table. The key
+    # needs a renderer to carry it, and the names have to be ones it declares.
+    renderer_features = load_renderer_features(project_root)
+    if renderer_features and not linked_renderer:
+        print(
+            "error: `renderer_features:` names "
+            f"{', '.join(renderer_features)}, but this build links no renderer; "
+            "ship it with --feature rendering",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        arm_features = renderer_features_for_arms(
+            root, renderer_arms, renderer_features
+        )
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+
     # Step 3: keep only the requested project features the project declares, so
     # an unknown or host-only feature is ignored rather than erroring. This is
     # what makes `--feature rendering` still work: it is a host feature now, so
@@ -1579,6 +1675,7 @@ def main() -> int:
         managed=(kind == "managed"),
         renderer=linked_renderer,
         renderer_arms=renderer_arms,
+        renderer_features=arm_features,
         packs_assets=packs_assets,
     )
     library_source = build_library_source(

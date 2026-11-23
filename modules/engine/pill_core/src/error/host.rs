@@ -284,6 +284,22 @@ pub enum ConfigError {
     )]
     RendererDataTagMissing { name: String },
 
+    /// A project asks for a feature its renderer's manifest does not declare.
+    #[message(
+        "the renderer ",
+        value(name),
+        " does not declare the feature ",
+        value(feature)
+    )]
+    UnknownRendererFeature { name: String, feature: String },
+
+    /// A project names renderer features while it selects no renderer.
+    #[message(
+        "the project selects no renderer, so it cannot turn on ",
+        value(feature)
+    )]
+    RendererFeatureWithoutRenderer { feature: String },
+
     /// The asset pack a shipped build mounts is not a valid pack.
     #[message(
         "the embedded asset pack of ",

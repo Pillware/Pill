@@ -583,17 +583,20 @@ impl RenderingResourcesManager {
                     .is_some_and(|mesh_object| mesh_object.update_in_place(&state.queue, mesh));
                 if updated_in_place {
                     self.meshes.insert(key, gpu_handle, version);
+                    state.mesh_structure_changed(gpu_handle);
                     continue;
                 }
             }
             // Step 2: anything else replaces them.
             if let Some(old_handle) = self.meshes.remove(key) {
                 state.renderer_resource_storage.meshes.remove(old_handle);
+                state.mesh_structure_removed(old_handle);
             }
-            match RendererMesh::new(&state.device, &mesh.name, mesh) {
+            match RendererMesh::new(&state.device, &mesh.name, mesh, state.traces_rays()) {
                 Ok(mesh_object) => {
                     let gpu_handle = state.renderer_resource_storage.meshes.insert(mesh_object);
                     self.meshes.insert(key, gpu_handle, version);
+                    state.mesh_structure_changed(gpu_handle);
                 }
                 Err(error) => pill_core::warn!(
                     target: telemetry_target::RENDERING,
@@ -611,6 +614,7 @@ impl RenderingResourcesManager {
         for key in removed_keys {
             if let Some(gpu_handle) = self.meshes.remove(key) {
                 state.renderer_resource_storage.meshes.remove(gpu_handle);
+                state.mesh_structure_removed(gpu_handle);
             }
         }
     }

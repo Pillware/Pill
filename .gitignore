@@ -16,8 +16,10 @@
 bin/
 obj/
 
-# Cooked shader output: `build.rs` regenerates the `*.wgsl` beside each `*.hlsl`.
+# Cooked shader output: `build.rs` regenerates the `*.wgsl` and `*.spv` beside
+# each `*.hlsl`.
 *.wgsl
+*.spv
 
 # Hot-reload runtime temp copies.
 modules/pill_standalone_temp/

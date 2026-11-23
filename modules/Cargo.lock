@@ -2966,6 +2966,7 @@ dependencies = [
 name = "pill_renderer"
 version = "0.1.0"
 dependencies = [
+ "ash",
  "bytemuck",
  "glam 0.33.7",
  "image",

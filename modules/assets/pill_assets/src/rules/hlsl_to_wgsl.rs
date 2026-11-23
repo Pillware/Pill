@@ -39,7 +39,7 @@ const SLANGC_EXECUTABLE: &str = if cfg!(windows) {
 ///
 /// A crate cooks its shader tree from its build script, so a compiler that
 /// never exits would stall the whole build, not just one file.
-const SLANGC_TIMEOUT: Duration = Duration::from_secs(120);
+pub(crate) const SLANGC_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// How often a running `slangc` is checked for having finished.
 const SLANGC_POLL_INTERVAL: Duration = Duration::from_millis(25);
@@ -122,6 +122,12 @@ impl Rule for HlslToWgsl {
         self.source_glob
     }
 
+    fn claims(&self, input: &Path) -> bool {
+        // The raster stages, and nothing else: the ray tracing and compute
+        // stages are SPIR-V, so `hlsl_to_spirv` claims them.
+        file_name_ends_with(input, "_vertex.hlsl") || file_name_ends_with(input, "_fragment.hlsl")
+    }
+
     fn output_for(&self, input: &Path) -> PathBuf {
         input.with_extension("wgsl")
     }
@@ -202,7 +208,7 @@ impl Rule for HlslToWgsl {
 ///
 /// Returns a message naming `compiler_path` when the process cannot be started
 /// or waited for, or when it is still running after `timeout` and is killed.
-fn run_bounded_command(
+pub(crate) fn run_bounded_command(
     mut command: Command,
     compiler_path: &Path,
     timeout: Duration,
@@ -254,7 +260,7 @@ fn run_bounded_command(
 /// Returns a message when the working directory cannot be read, when
 /// `PILL_SLANGC` names a path the check refuses, or when no `slangc` is found.
 /// The last message says how to set `PILL_SLANGC` or where to install Slang.
-fn slangc_path() -> Result<PathBuf, String> {
+pub(crate) fn slangc_path() -> Result<PathBuf, String> {
     let working_directory = std::env::current_dir()
         .map_err(|error| format!("cannot read the working directory: {error}"))?;
     resolve_slangc(
@@ -362,19 +368,28 @@ fn entry_and_stage_for(file: &Path) -> Result<(&'static str, &'static str), Cook
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or_default();
-    if name.ends_with("_vertex.hlsl") {
+    if file_name_ends_with(file, "_vertex.hlsl") {
         return Ok(("vs_main", "vertex"));
     }
-    if name.ends_with("_fragment.hlsl") {
+    if file_name_ends_with(file, "_fragment.hlsl") {
         return Ok(("fs_main", "fragment"));
     }
     Err(CookError::Rule {
         rule: "hlsl_to_wgsl",
         input: file.to_owned(),
         detail: format!(
-            "cannot infer a stage from {name}: name it *_vertex.hlsl or *_fragment.hlsl"
+            "cannot infer a stage from {name}: name a raster source *_vertex.hlsl or \
+             *_fragment.hlsl, or a ray tracing or compute source *_raygen.hlsl, *_miss.hlsl, \
+             *_closesthit.hlsl, *_anyhit.hlsl, *_intersection.hlsl or *_compute.hlsl"
         ),
     })
+}
+
+/// Whether `file`'s name ends with `suffix`.
+fn file_name_ends_with(file: &Path, suffix: &str) -> bool {
+    file.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.ends_with(suffix))
 }
 
 // =============================================================================

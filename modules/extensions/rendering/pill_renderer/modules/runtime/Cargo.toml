@@ -30,6 +30,12 @@ miette = { version = "7", features = ["derive"] }
 glam = { version = "0.33", features = ["serde", "bytemuck"] }
 bytemuck = { version = "1.4", features = ["derive"] }
 wgpu = "30.0.0"
+# Raw Vulkan, for the acceleration structures wgpu keeps private and the ray
+# tracing passes it does not expose. Pinned to the version wgpu-hal 30 links, so
+# the `ash::Device` it hands out is the same type as the one used here. It is
+# compiled only with the `ray_tracing` feature, and adds no feature of its own
+# because wgpu-hal already asks for ash's defaults.
+ash = { version = "0.38", optional = true }
 # A texture preview decodes the file the tile names: a project brings a
 # texture in under its own asset name, and a file nothing loaded still
 # previews (W-0049 Stage 11).
@@ -57,6 +63,14 @@ pill_rendering = { path = "../../../pill_rendering_core/modules/runtime/data" }
 # Turns `res/shaders/**/*.hlsl` into the WGSL this crate embeds, so a shader
 # that is not committed is still the one that compiles.
 pill_assets = { path = "../../../../../assets/pill_assets" }
+
+[features]
+# The hardware ray tracing path. Off by default: an ordinary build carries no
+# ray tracing code, and the renderer opens the device it always did. The
+# development host's generated wrapper enables every declared feature, so under
+# the host this is compiled in and `PILL_RAY_TRACING` decides at run time
+# whether the path runs.
+ray_tracing = ["dep:ash"]
 
 [package.metadata.pill]
 # The data crate this renderer draws with: its components, asset types and

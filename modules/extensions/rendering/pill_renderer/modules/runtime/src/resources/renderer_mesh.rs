@@ -85,7 +85,8 @@ impl RendererMesh {
     /// Uploads a mesh's vertices and indices, ready to draw.
     ///
     /// `name` is the mesh's name. It labels the GPU buffers and the error
-    /// message.
+    /// message. `traces_rays` adds the usage an acceleration-structure build
+    /// needs to read them, which only the ray tracing path asks for.
     ///
     /// # Errors
     ///
@@ -94,7 +95,7 @@ impl RendererMesh {
     /// empty case has to be refused here. A mesh with nothing in it is a
     /// mistake in the asset, and naming it helps more than an upload failure
     /// buried in the log.
-    pub fn new(device: &wgpu::Device, name: &str, mesh: &Mesh) -> Result<Self> {
+    pub fn new(device: &wgpu::Device, name: &str, mesh: &Mesh, traces_rays: bool) -> Result<Self> {
         // Step 1: Refuse a mesh that has nothing to upload.
         if mesh.vertices.is_empty() || mesh.indices.is_empty() {
             return Err(RendererError::Other {
@@ -103,17 +104,26 @@ impl RendererMesh {
         }
 
         // Step 2: Upload the vertices and the indices into their own buffers.
+        // A mesh the ray tracing path builds a structure from also has to be
+        // readable by an acceleration-structure build, which is the one usage
+        // wgpu will not add on its own.
+        let mut vertex_usage = wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST;
+        let mut index_usage = wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST;
+        if traces_rays {
+            vertex_usage |= wgpu::BufferUsages::BLAS_INPUT;
+            index_usage |= wgpu::BufferUsages::BLAS_INPUT;
+        }
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(&format!("{:?}_vertex_buffer", name)),
             contents: bytemuck::cast_slice(&mesh.vertices),
             // `COPY_DST` lets a same-sized update be written in place.
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            usage: vertex_usage,
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some(&format!("{:?}_index_buffer", name)),
             contents: bytemuck::cast_slice(&mesh.indices),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            usage: index_usage,
         });
 
         // Step 3: Keep the buffers, the name and the index count for the draw.

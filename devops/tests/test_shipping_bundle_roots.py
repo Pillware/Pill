@@ -33,7 +33,10 @@ DESCRIPTION
       - a renderer that tags a build target is linked for that target alone:
         the bundle declares it under that target's `cfg` and hands the host a
         `StaticRenderer` arm per target, so a device build links no GPU crate
-        and a desktop build no display one, and `renderer: none` links neither.
+        and a desktop build no display one, and `renderer: none` links neither;
+      - the project's `renderer_features:` reach cargo as a named feature on
+        the renderer's dependency edge, which keeps its default features off,
+        and an arm that does not declare a name is not given it.
 
 USAGE
   python devops/tests/test_shipping_bundle_roots.py
@@ -255,6 +258,98 @@ def main() -> int:
         "pill_renderer " not in headless_manifest
         and "pill_embedded_renderer" not in headless_manifest,
     )
+
+    # `renderer_features:` reaches cargo on the renderer's own edge, because a
+    # shipped build links that renderer with its default features off. A
+    # target-specific arm is given only the names it declares.
+    feature_arms = generator.renderer_features_for_arms(
+        REPOSITORY_ROOT, arms, ["ray_tracing"]
+    )
+    expect(
+        "the project's renderer features land on the renderer that declares them",
+        feature_arms == {"pill_embedded_renderer": [], RENDERER: ["ray_tracing"]},
+    )
+    featured_manifest = generator.build_cargo_manifest(
+        BUNDLE_DIRECTORY,
+        PROJECT_ROOT,
+        "native",
+        modules,
+        set(),
+        REPOSITORY_ROOT,
+        renderer=RENDERER,
+        renderer_arms=arms,
+        renderer_features=feature_arms,
+    )
+    renderer_lines = [
+        line
+        for line in featured_manifest.splitlines()
+        if line.startswith(f"{RENDERER} = ") or line.startswith("pill_embedded_renderer = ")
+    ]
+    expect(
+        "the shipped renderer keeps its default features off and names the one asked for",
+        any(
+            'default-features = false, features = ["ray_tracing"]' in line
+            and line.startswith(f"{RENDERER} = ")
+            for line in renderer_lines
+        ),
+    )
+    expect(
+        "a target arm that declares no such feature names none",
+        any(
+            line.startswith("pill_embedded_renderer = ") and "features = [" not in line
+            for line in renderer_lines
+        ),
+    )
+    unfiltered = generator.build_cargo_manifest(
+        BUNDLE_DIRECTORY,
+        PROJECT_ROOT,
+        "native",
+        modules,
+        set(),
+        REPOSITORY_ROOT,
+        renderer=RENDERER,
+        renderer_arms=arms,
+    )
+    expect(
+        "a project that asks for no renderer feature names none",
+        "features = [" not in unfiltered,
+    )
+    try:
+        generator.renderer_features_for_arms(REPOSITORY_ROOT, arms, ["ray_tracin"])
+    except ValueError as error:
+        expect(
+            "a feature no linked renderer declares is reported, not dropped",
+            "ray_tracin" in str(error) and RENDERER in str(error),
+        )
+    else:
+        expect("a feature no linked renderer declares is reported, not dropped", False)
+
+    # The key is read from the project's own settings, as one name or a list.
+    with tempfile.TemporaryDirectory() as temporary:
+        project = Path(temporary)
+        settings = project / generator.PROJECT_SETTINGS_FILE_NAME
+        settings.write_text('name: "P"\nbuild_binary_name: "P"\n', encoding="utf-8")
+        expect(
+            "a project that names no renderer feature asks for none",
+            generator.load_renderer_features(project) == [],
+        )
+        settings.write_text(
+            'name: "P"\nbuild_binary_name: "P"\nrenderer_features: ray_tracing\n',
+            encoding="utf-8",
+        )
+        expect(
+            "one renderer feature is read as a one-name list",
+            generator.load_renderer_features(project) == ["ray_tracing"],
+        )
+        settings.write_text(
+            'name: "P"\nbuild_binary_name: "P"\nrenderer_features:\n'
+            "  - ray_tracing\n  - another\n",
+            encoding="utf-8",
+        )
+        expect(
+            "a list of renderer features is read in order",
+            generator.load_renderer_features(project) == ["ray_tracing", "another"],
+        )
 
     targeted_source = generator.build_library_source(
         "bundle_package",

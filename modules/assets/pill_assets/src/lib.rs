@@ -43,7 +43,7 @@ use pill_asset_format::{ASSET_PACK_MAGIC, ASSET_PACK_VERSION};
 /// that every pipeline runs.
 pub mod rules;
 
-pub use rules::{default_rules, HlslToWgsl};
+pub use rules::{default_rules, HlslToSpirv, HlslToWgsl};
 
 /// Cooking a crate's whole shader tree: the routine a build script and the
 /// development shader watcher share.
@@ -135,6 +135,9 @@ impl std::error::Error for CookError {
 // Rule
 // =============================================================================
 
+/// The rule name a pipeline reports when it finds a source no rule claims.
+const UNCLAIMED_SOURCE_RULE: &str = "unclaimed_source";
+
 /// One transformation applied to every file its glob matches.
 pub trait Rule {
     /// The name reported in errors and matched against a manifest entry.
@@ -150,6 +153,18 @@ pub trait Rule {
 
     /// The output that `input` produces. Its timestamp decides staleness.
     fn output_for(&self, input: &Path) -> PathBuf;
+
+    /// Whether this rule compiles `input`.
+    ///
+    /// Two shader rules share one tree - the raster stages cook to WGSL and the
+    /// ray tracing ones to SPIR-V - so the globs they match overlap and the
+    /// file name decides. A rule that returns `false` leaves the input to
+    /// another rule; an input no rule claims is refused by the pipeline rather
+    /// than skipped, because a shader nobody cooked is a name that does not
+    /// exist.
+    fn claims(&self, _input: &Path) -> bool {
+        true
+    }
 
     /// The side outputs written in addition to [`Rule::output_for`].
     fn extra_outputs(&self, _input: &Path) -> Vec<PathBuf> {
@@ -326,10 +341,42 @@ impl Pipeline {
     ///
     /// Returns the first failure, as [`Pipeline::run`] does.
     fn walk(&self, should_cook: bool) -> Result<PipelineStats, CookError> {
-        // Step 1: Record every output the rules can produce.
-        let mut stats = PipelineStats::default();
+        // Step 1: Read every rule's glob once, and refuse a source no rule
+        // claims. Two shader rules share one tree, so the globs overlap and the
+        // file name decides; a name neither claims is a typo, and a shader
+        // nobody cooked is a name that does not exist.
+        let mut inputs_per_rule: Vec<(&dyn Rule, Vec<PathBuf>)> = Vec::new();
+        let mut claimed_inputs: BTreeSet<PathBuf> = BTreeSet::new();
+        let mut matched_inputs: BTreeSet<PathBuf> = BTreeSet::new();
         for rule in &self.rules {
+            let mut claimed = Vec::new();
             for input in expand(&self.root, rule.input_glob())? {
+                matched_inputs.insert(input.clone());
+                if rule.claims(&input) {
+                    claimed_inputs.insert(input.clone());
+                    claimed.push(input);
+                }
+            }
+            inputs_per_rule.push((rule.as_ref(), claimed));
+        }
+        if let Some(unclaimed) = matched_inputs.difference(&claimed_inputs).next() {
+            return Err(CookError::Rule {
+                rule: UNCLAIMED_SOURCE_RULE,
+                input: unclaimed.clone(),
+                detail: format!(
+                    "no cook rule claims {}: name a raster source *_vertex.hlsl or \
+                     *_fragment.hlsl, or a ray tracing or compute source *_raygen.hlsl, \
+                     *_miss.hlsl, *_closesthit.hlsl, *_anyhit.hlsl, *_intersection.hlsl or \
+                     *_compute.hlsl",
+                    unclaimed.display()
+                ),
+            });
+        }
+
+        // Step 2: Record every output the rules can produce.
+        let mut stats = PipelineStats::default();
+        for (rule, inputs) in inputs_per_rule {
+            for input in inputs {
                 let output = rule.output_for(&input);
                 stats.discovered_inputs.push(input.clone());
                 stats
@@ -340,11 +387,11 @@ impl Pipeline {
                         .cook_edges
                         .push((input.clone(), extra_output, rule.name()));
                 }
-                // Step 2: Stop here when the caller only wants the plan.
+                // Step 3: Stop here when the caller only wants the plan.
                 if !should_cook {
                     continue;
                 }
-                // Step 3: An output is stale when it is older than the input
+                // Step 4: An output is stale when it is older than the input
                 // or older than any extra input.
                 let extra_inputs = rule.extra_inputs(&input)?;
                 let mut stale = is_stale(&input, &output)?;
@@ -358,7 +405,7 @@ impl Pipeline {
                     stats.skipped_outputs.push(output);
                     continue;
                 }
-                // Step 4: Build the output and stamp it with its newest
+                // Step 5: Build the output and stamp it with its newest
                 // input's time.
                 let started_at = Instant::now();
                 rule.build(&input, &output)?;
@@ -1136,7 +1183,7 @@ mod tests {
             .expect("manifest resolves");
 
         let names: Vec<_> = pipeline.rules.iter().map(|rule| rule.name()).collect();
-        assert_eq!(names, ["hlsl_to_wgsl", "recording"]);
+        assert_eq!(names, ["hlsl_to_wgsl", "hlsl_to_spirv", "recording"]);
 
         // An unknown name is a hard error rather than a silently skipped rule.
         fs::write(&manifest, "nonsense\n").expect("manifest");

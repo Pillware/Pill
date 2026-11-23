@@ -153,6 +153,33 @@ impl Surface {
         if crate::profiler::gpu_profiling_requested() {
             wanted_features |= crate::profiler::GPU_PROFILE_FEATURES;
         }
+        // Step 3: decide whether this run traces rays. The answer is logged
+        // either way, because a run that expected the path and did not get it
+        // has to be able to read why from the log.
+        let ray_tracing = crate::ray_tracing::decide(
+            crate::ray_tracing::COMPILED,
+            crate::ray_tracing::requested(),
+            backend,
+            adapter.features(),
+        );
+        match ray_tracing.reason() {
+            None => info!(
+                target: telemetry_target::RENDERING,
+                state = "on",
+                backend = ?backend,
+                "ray tracing"
+            ),
+            Some(reason) => info!(
+                target: telemetry_target::RENDERING,
+                state = "off",
+                reason,
+                backend = ?backend,
+                "ray tracing"
+            ),
+        }
+        if ray_tracing.is_on() {
+            wanted_features |= crate::ray_tracing::device_features();
+        }
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("pill renderer device"),
@@ -160,7 +187,20 @@ impl Surface {
                 required_limits: wgpu::Limits::default().using_resolution(adapter.limits()),
                 memory_hints: wgpu::MemoryHints::default(),
                 trace: wgpu::Trace::default(),
-                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+                // The ray tracing features are experimental in wgpu 30, so the
+                // device cannot ask for them without the token that says the
+                // caller accepted an in-progress API. The path is opt-in and
+                // its own code is behind the `ray_tracing` feature, so the
+                // token is only taken when that path runs.
+                experimental_features: if ray_tracing.is_on() {
+                    // SAFETY: this is the opt-in for wgpu's experimental
+                    // features, and the ray tracing path is what asked for
+                    // it: the caller set `PILL_RAY_TRACING`, the build carries
+                    // the feature, and the adapter reports the extensions.
+                    unsafe { wgpu::ExperimentalFeatures::enabled() }
+                } else {
+                    wgpu::ExperimentalFeatures::disabled()
+                },
             })
             .await
             .map_err(|error| RendererError::Backend {
@@ -168,7 +208,7 @@ impl Surface {
             })?;
         crate::error::report_uncaptured_errors(&device);
         crate::error::latch_device_loss(&device);
-        // Step 3: Choose the format and the alpha mode, then configure the
+        // Step 4: Choose the format and the alpha mode, then configure the
         // surface.
         let capabilities = surface.get_capabilities(&adapter);
         let color_format =

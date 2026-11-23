@@ -32,7 +32,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 // Current crate
-use crate::{walk_files, CookError, HlslToWgsl, Pipeline, Rule};
+use crate::{walk_files, CookError, HlslToSpirv, HlslToWgsl, Pipeline, Rule};
 
 // =============================================================================
 // Constants
@@ -160,11 +160,15 @@ pub fn cook_shader_tree_with_include_directories(
         }
     }
     for source_directory in &layout.source_directories {
-        let mut rule = HlslToWgsl::flat_tree();
+        let mut wgsl_rule = HlslToWgsl::flat_tree();
+        let mut spirv_rule = HlslToSpirv::flat_tree();
         for include_directory in &include_directories {
-            rule = rule.with_include_directory(include_directory);
+            wgsl_rule = wgsl_rule.with_include_directory(include_directory);
+            spirv_rule = spirv_rule.with_include_directory(include_directory);
         }
-        let rules: Vec<Box<dyn Rule>> = vec![Box::new(rule)];
+        // Both rules over the same directory: each claims the file names it can
+        // compile, and the pipeline refuses a source neither claims.
+        let rules: Vec<Box<dyn Rule>> = vec![Box::new(wgsl_rule), Box::new(spirv_rule)];
         let stats = Pipeline::with_rules(source_directory, rules).run()?;
         report.discovered_sources.extend(stats.discovered_inputs);
         report.rebuilt_outputs.extend(stats.rebuilt_outputs);
@@ -342,6 +346,58 @@ mod tests {
             "the cook wrote the stage beside its source"
         );
         assert!(report.rebuilt_outputs.contains(&output));
+    }
+
+    /// A ray tracing source cooks to SPIR-V and a raster source in the same
+    /// directory still cooks to WGSL, because the two rules split the tree by
+    /// file name.
+    #[test]
+    fn a_ray_tracing_source_cooks_to_spirv_beside_the_raster_ones() {
+        let base = std::env::temp_dir()
+            .join("pill_assets_shader_cook")
+            .join(format!("{}_stages", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let root = base.join("project");
+        fs::create_dir_all(root.join("shaders")).expect("scratch directory");
+        fs::write(
+            root.join("shaders/probe_vertex.hlsl"),
+            "float4 vs_main() : SV_POSITION { return float4(0.0, 0.0, 0.0, 1.0); }\n",
+        )
+        .expect("source");
+        fs::write(
+            root.join("shaders/shadow_raygen.hlsl"),
+            "[shader(\"raygeneration\")]\nvoid raygen_main()\n{\n}\n",
+        )
+        .expect("source");
+
+        let report = cook_shader_tree(&root).expect("both stages cook");
+
+        let wgsl_output = root.join("shaders/probe_vertex.wgsl");
+        let spirv_output = root.join("shaders/shadow_raygen.spv");
+        assert!(wgsl_output.is_file(), "the raster stage cooks to WGSL");
+        assert!(spirv_output.is_file(), "the ray stage cooks to SPIR-V");
+        assert!(report.rebuilt_outputs.contains(&wgsl_output));
+        assert!(report.rebuilt_outputs.contains(&spirv_output));
+    }
+
+    /// A name neither shader rule claims is refused, and the message names
+    /// both lists so the author knows what to call the file.
+    #[test]
+    fn a_source_no_rule_claims_is_refused_naming_both_lists() {
+        let base = std::env::temp_dir()
+            .join("pill_assets_shader_cook")
+            .join(format!("{}_unclaimed", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let root = base.join("project");
+        fs::create_dir_all(root.join("shaders")).expect("scratch directory");
+        fs::write(root.join("shaders/shadow.hlsl"), "void main()\n{\n}\n").expect("source");
+
+        let error = cook_shader_tree(&root).expect_err("a name with no stage is refused");
+        let message = error.to_string();
+        assert!(
+            message.contains("*_vertex.hlsl") && message.contains("*_raygen.hlsl"),
+            "the refusal names both lists: {message}"
+        );
     }
 
     /// Editing a header the caller supplied makes the source that includes it

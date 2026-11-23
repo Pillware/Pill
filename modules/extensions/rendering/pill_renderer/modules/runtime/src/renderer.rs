@@ -309,6 +309,48 @@ impl Renderer {
             surface_targets: BTreeMap::from([(primary.id.0, primary)]),
         })
     }
+
+    /// Rebuilds the acceleration structures the frame's ray tracing reads.
+    ///
+    /// A frame with the path off does nothing here, and so does a frame whose
+    /// structures could not be built: a missing structure costs the frame its
+    /// rays, not the frame.
+    fn build_acceleration_structures(&mut self, render_queue: &[RenderQueueItem]) {
+        #[cfg(all(feature = "ray_tracing", not(target_arch = "wasm32")))]
+        {
+            let Self {
+                state,
+                queued_instances,
+                ..
+            } = self;
+            let Some(scene) = state.ray_tracing.as_mut() else {
+                return;
+            };
+            match scene.build_frame(
+                &state.device,
+                &state.queue,
+                &state.renderer_resource_storage,
+                render_queue,
+                queued_instances,
+            ) {
+                Ok(report) if report.meshes > 0 => {
+                    pill_core::debug!(
+                        target: telemetry_target::RENDERING,
+                        meshes = report.meshes,
+                        instances = report.instances,
+                        "acceleration structures built"
+                    );
+                }
+                Ok(_) => {}
+                Err(error) => pill_core::warn!(
+                    target: telemetry_target::RENDERING,
+                    "acceleration structures are not built: {error}"
+                ),
+            }
+        }
+        #[cfg(not(all(feature = "ray_tracing", not(target_arch = "wasm32"))))]
+        let _ = render_queue;
+    }
 }
 
 impl Drop for Renderer {
@@ -424,6 +466,10 @@ impl PillRenderer for Renderer {
             &self.queued_instances,
         );
         drop(upload_zone);
+        // Step 3b: While ray tracing is on, refresh the acceleration structures
+        // it reads: the meshes that appeared or changed, then the frame's
+        // instance list over them.
+        self.build_acceleration_structures(&render_queue);
         self.metrics.prepare_micros = prepare_started_at.elapsed().as_micros() as u64;
         self.metrics.instance_bytes = (render_queue.len() * std::mem::size_of::<Instance>()) as u64;
 
@@ -709,6 +755,14 @@ pub struct State {
     /// The per-type cache of every GPU resource - shaders, textures, meshes,
     /// materials and cameras - and the engine parameters table.
     pub(crate) renderer_resource_storage: RendererResourceStorage,
+    /// The raw acceleration structures the frame's ray tracing reads, when the
+    /// ray tracing path runs.
+    ///
+    /// It is declared before the device on purpose: its structures have to be
+    /// destroyed while the device they were created on still exists, and a
+    /// struct's fields drop in declaration order.
+    #[cfg(all(feature = "ray_tracing", not(target_arch = "wasm32")))]
+    pub(crate) ray_tracing: Option<crate::ray_tracing::RayTracingScene>,
     /// The colour format every pipeline that renders to a surface declares.
     ///
     /// All surfaces use one format. A surface attached later is refused if it
@@ -829,7 +883,10 @@ impl State {
                 camera_bind_group_layout.clone(),
             ));
         // Step 4: Build the primary surface's target and the state that draws
-        // it.
+        // it. The backend is read before the surface moves into the target, so
+        // the ray tracing decision below can name it.
+        #[cfg(all(feature = "ray_tracing", not(target_arch = "wasm32")))]
+        let surface_backend = surface.backend();
         let primary = SurfaceTarget {
             id: SurfaceId::PRIMARY,
             surface,
@@ -845,6 +902,13 @@ impl State {
         };
         let state = Self {
             renderer_resource_storage,
+            #[cfg(all(feature = "ray_tracing", not(target_arch = "wasm32")))]
+            ray_tracing: create_ray_tracing_scene(
+                &device,
+                &instance,
+                surface_backend,
+                adapter.features(),
+            ),
             surface_format,
             device,
             queue,
@@ -1370,6 +1434,70 @@ impl State {
             }
         }
         Ok(())
+    }
+
+    /// Whether this run builds acceleration structures, which a mesh buffer
+    /// needs an extra usage for.
+    pub(crate) fn traces_rays(&self) -> bool {
+        #[cfg(all(feature = "ray_tracing", not(target_arch = "wasm32")))]
+        {
+            return self.ray_tracing.is_some();
+        }
+        #[cfg(not(all(feature = "ray_tracing", not(target_arch = "wasm32"))))]
+        false
+    }
+
+    /// Marks a mesh's acceleration structure stale, because its buffers were
+    /// rewritten or replaced.
+    pub(crate) fn mesh_structure_changed(&mut self, mesh: crate::resources::RendererMeshHandle) {
+        #[cfg(all(feature = "ray_tracing", not(target_arch = "wasm32")))]
+        if let Some(scene) = self.ray_tracing.as_mut() {
+            scene.mesh_changed(mesh);
+        }
+        #[cfg(not(all(feature = "ray_tracing", not(target_arch = "wasm32"))))]
+        let _ = mesh;
+    }
+
+    /// Forgets a mesh's acceleration structure, because the mesh is gone.
+    pub(crate) fn mesh_structure_removed(&mut self, mesh: crate::resources::RendererMeshHandle) {
+        #[cfg(all(feature = "ray_tracing", not(target_arch = "wasm32")))]
+        if let Some(scene) = self.ray_tracing.as_mut() {
+            scene.mesh_removed(mesh);
+        }
+        #[cfg(not(all(feature = "ray_tracing", not(target_arch = "wasm32"))))]
+        let _ = mesh;
+    }
+}
+
+/// Creates the raw acceleration structures, when the ray tracing path runs.
+///
+/// The decision is the one [`Surface::create`] logged, read again from the same
+/// inputs, so the startup line and the structures cannot disagree.
+#[cfg(all(feature = "ray_tracing", not(target_arch = "wasm32")))]
+fn create_ray_tracing_scene(
+    device: &wgpu::Device,
+    instance: &wgpu::Instance,
+    backend: wgpu::Backend,
+    adapter_features: wgpu::Features,
+) -> Option<crate::ray_tracing::RayTracingScene> {
+    let decision = crate::ray_tracing::decide(
+        crate::ray_tracing::COMPILED,
+        crate::ray_tracing::requested(),
+        backend,
+        adapter_features,
+    );
+    if !decision.is_on() {
+        return None;
+    }
+    match crate::ray_tracing::RayTracingScene::new(device, instance) {
+        Ok(scene) => Some(scene),
+        Err(error) => {
+            pill_core::warn!(
+                target: telemetry_target::RENDERING,
+                "ray tracing structures are off: {error}"
+            );
+            None
+        }
     }
 }
 

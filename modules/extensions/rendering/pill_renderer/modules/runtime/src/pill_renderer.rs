@@ -53,6 +53,10 @@ mod overlay;
 /// The query sets and readbacks behind GPU profiling measurements.
 pub mod profiler;
 
+/// Hardware ray tracing: whether this build, this machine and this run can
+/// trace rays, and the device features the path asks for.
+mod ray_tracing;
+
 /// Mapping a GPU buffer back to the CPU without stalling a frame.
 mod readback;
 
