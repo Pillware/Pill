@@ -334,7 +334,13 @@ def renderer_target_arms(root: Path, renderer):
         if package_name == renderer:
             selected_is_declared = True
     if not renderer:
-        return declared
+        # A build that links no renderer still ships the target-specific ones a
+        # module declares, and every other target must hand over none: without
+        # that arm the generated `static_renderer` has an empty body wherever no
+        # declared target applies, which does not compile.
+        predicates = [cfg_predicate(target) for target, _ in declared]
+        left_over = f"cfg(not(any({', '.join(predicates)})))" if predicates else ""
+        return declared + ([(left_over, None)] if left_over else [])
     predicates = [cfg_predicate(target) for target, _ in declared]
     left_over = f"cfg(not(any({', '.join(predicates)})))" if predicates else ""
     if selected_is_declared:

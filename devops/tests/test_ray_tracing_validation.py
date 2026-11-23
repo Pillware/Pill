@@ -78,8 +78,8 @@ SDK_SKIP_REASON = "Vulkan SDK not installed"
 VALIDATION_LAYER_MANIFEST = "VkLayer_khronos_validation.json"
 LAYER_PATH_VARIABLES = ("VK_LAYER_PATH", "VK_ADD_LAYER_PATH")
 
-RAY_TRACING_TOKEN = "ray tracing |"
-SHADOW_TOKEN = "ray traced shadows |"
+RAY_TRACING_TOKEN = "ray tracing"
+SHADOW_TOKEN = "ray traced shadows"
 
 # What the validation layer turns into a log line when the code made a mistake.
 GPU_ERROR_TOKEN = "GPU error;"
@@ -129,8 +129,21 @@ def field(pattern: re.Pattern, text: str) -> str:
 
 
 def ray_tracing_lines(text: str) -> list:
-    """Every `ray tracing |` line in `text`."""
-    return [line for line in text.splitlines() if RAY_TRACING_TOKEN in line]
+    """Every `ray tracing` line that carries the decision's state."""
+    return [
+        line
+        for line in text.splitlines()
+        if RAY_TRACING_TOKEN in line and "state=" in line
+    ]
+
+
+def evidence_lines(text: str) -> list:
+    """Every `ray traced shadows` line that carries a shadowed count."""
+    return [
+        line
+        for line in text.splitlines()
+        if SHADOW_TOKEN in line and "shadowed=" in line
+    ]
 
 
 def check(text: str) -> list:
@@ -141,7 +154,7 @@ def check(text: str) -> list:
             "the renderer reported the ray tracing path on",
         ),
         (
-            SHADOW_TOKEN in text,
+            bool(evidence_lines(text)),
             "the shadow pass counted its pixels",
         ),
         (

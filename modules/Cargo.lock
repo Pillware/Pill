@@ -1296,12 +1296,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "host_project_cube_rust"
+name = "host_module_pill_spline"
 version = "0.1.0"
 dependencies = [
- "glam 0.33.7",
+ "pill_engine",
+ "pill_spline",
+]
+
+[[package]]
+name = "host_project_native"
+version = "0.1.0"
+dependencies = [
+ "pill_core",
  "pill_engine",
  "pill_rendering",
+ "pill_spline",
+ "serde",
+ "tracing",
 ]
 
 [[package]]

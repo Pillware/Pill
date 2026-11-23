@@ -82,6 +82,22 @@ pub(crate) struct ShadowPushConstants {
     pub(crate) reserved: [u32; 2],
 }
 
+/// What one surface's dispatch traces against and where its mask goes.
+pub(crate) struct ShadowDispatch {
+    /// The mask buffer the ray generation stage writes, as a Vulkan handle.
+    pub(crate) mask: vk::Buffer,
+    /// The top-level structure the frame built.
+    pub(crate) top_level: vk::AccelerationStructureKHR,
+    /// The mask's width and height in pixels.
+    pub(crate) size: (u32, u32),
+    /// The surface camera's world-to-clip matrix, inverted.
+    pub(crate) inverse_view_projection: [[f32; 4]; 4],
+    /// The surface the dispatch fills, so two surfaces keep their own sets.
+    pub(crate) surface: u32,
+    /// Which slot of the frame ring the structure came from.
+    pub(crate) slot: usize,
+}
+
 // =============================================================================
 // Shadow pass
 // =============================================================================
@@ -290,6 +306,8 @@ impl ShadowPass {
                 .descriptor_count(8),
         ];
         let descriptor_pool = unsafe {
+            // SAFETY: the pool sizes name live descriptor types, and the pool is
+            // created on this pass's own device.
             raw.device().create_descriptor_pool(
                 &vk::DescriptorPoolCreateInfo::default()
                     .max_sets(8)
@@ -327,18 +345,19 @@ impl ShadowPass {
         &mut self,
         raw: &RawDevice,
         command_buffer: vk::CommandBuffer,
-        slot: usize,
-        surface: u32,
-        top_level: vk::AccelerationStructureKHR,
-        mask: vk::Buffer,
-        size: (u32, u32),
-        inverse_view_projection: [[f32; 4]; 4],
+        dispatch: ShadowDispatch,
     ) -> Result<(), String> {
-        let set = self.set_for(raw, slot, surface, top_level, mask)?;
+        let set = self.set_for(
+            raw,
+            dispatch.slot,
+            dispatch.surface,
+            dispatch.top_level,
+            dispatch.mask,
+        )?;
         let push = ShadowPushConstants {
-            inverse_view_projection,
-            mask_width: size.0.max(1),
-            mask_height: size.1.max(1),
+            inverse_view_projection: dispatch.inverse_view_projection,
+            mask_width: dispatch.size.0.max(1),
+            mask_height: dispatch.size.1.max(1),
             reserved: [0, 0],
         };
         let push_bytes: &[u8] = bytemuck::bytes_of(&push);

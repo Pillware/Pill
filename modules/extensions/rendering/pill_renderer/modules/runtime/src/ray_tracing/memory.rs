@@ -242,8 +242,10 @@ mod tests {
     /// The memory types the test device offers: type 0 is device-local only and
     /// type 1 is host-visible coherent.
     fn two_types() -> vk::PhysicalDeviceMemoryProperties {
-        let mut properties = vk::PhysicalDeviceMemoryProperties::default();
-        properties.memory_type_count = 2;
+        let mut properties = vk::PhysicalDeviceMemoryProperties {
+            memory_type_count: 2,
+            ..Default::default()
+        };
         properties.memory_types[0].property_flags = vk::MemoryPropertyFlags::DEVICE_LOCAL;
         properties.memory_types[1].property_flags =
             vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
@@ -256,7 +258,6 @@ mod tests {
             size: 256,
             alignment: 64,
             memory_type_bits: 0b01,
-            ..Default::default()
         }
     }
 

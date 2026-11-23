@@ -1676,10 +1676,12 @@ impl State {
     pub(crate) fn traces_rays(&self) -> bool {
         #[cfg(all(feature = "ray_tracing", not(target_arch = "wasm32")))]
         {
-            return self.ray_tracing.is_some();
+            self.ray_tracing.is_some()
         }
         #[cfg(not(all(feature = "ray_tracing", not(target_arch = "wasm32"))))]
-        false
+        {
+            false
+        }
     }
 
     /// Marks a mesh's acceleration structure stale, because its buffers were

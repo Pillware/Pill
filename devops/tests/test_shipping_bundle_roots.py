@@ -389,7 +389,17 @@ def main() -> int:
     )
 
     # A project that names a target-specific renderer gets no renderer on the
-    # targets it leaves over, rather than one it did not ask for.
+    # targets it leaves over, rather than one it did not ask for, and so does a
+    # build that links none at all: an arm for every target is what keeps the
+    # generated `static_renderer` from having an empty body.
+    expect(
+        "a build that links no renderer still arms the targets left over",
+        generator.renderer_target_arms(REPOSITORY_ROOT, None)
+        == [
+            ('cfg(target_os = "espidf")', "pill_embedded_renderer"),
+            ('cfg(not(any(target_os = "espidf")))', None),
+        ],
+    )
     with tempfile.TemporaryDirectory() as temporary:
         tagged = Path(temporary) / "modules" / "extensions" / "rendering"
         runtime = tagged / "device" / "modules" / "runtime"

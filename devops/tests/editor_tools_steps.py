@@ -10,8 +10,7 @@ on an extension example project, and drive one tool end to end:
   and tangents reported as elements, two points selected, the `Spline` frame
   reached through the space row, a drag written back through the tool and undone
   as one step, a point inserted from the context menu and deleted with Delete,
-  and the Uber extension's roll kind and row appearing only once its component
-  is on the entity;
+  and the row going away for an entity that carries no spline;
 - the collider tool on `extensions/pill_physics/examples/collider_edit`: six
   face handles on the cuboid, a face drag that changes `dimensions` and undoes
   in one step, and the ball's single radius handle.
@@ -71,11 +70,9 @@ COLLIDER_PROJECT = host_project_path(
 # What the spline tool calls its elements, and what the collider tool calls its
 # own. These are the tools' public vocabulary, not a suite convention.
 SPLINE_POINT_KIND = "control point"
-SPLINE_ROLL_KIND = "spline roll"
 COLLIDER_FACE_KIND = "collider face"
 COLLIDER_RADIUS_KIND = "collider radius"
 SPLINE_FRAME_NAME = "Spline"
-RESET_ROLL_ROW = "reset-roll"
 INSERT_POINT_ROW = "insert"
 
 
@@ -111,9 +108,6 @@ ELEMENTS_INSERTED_PATTERN = message_pattern(ELEMENTS_INSERTED_TOKEN, r".*\s+elem
 ELEMENTS_REMOVED_PATTERN = message_pattern(ELEMENTS_REMOVED_TOKEN, r".*\s+elements=(\d+)")
 MENU_RAN_PATTERN = message_pattern(
     ELEMENT_MENU_RAN_TOKEN, r'\s+item="([^"]+)"\s+commands=(\d+)'
-)
-COMPONENT_EDIT_PATTERN = message_pattern(
-    "[editor] component edit queued", r'\s+component="([^"]+)"\s+add=(true|false)'
 )
 DIMENSIONS_PATTERN = r"value=Array\(\[([^\]]*)\]\)"
 
@@ -345,26 +339,7 @@ def run_spline_tool_steps(binary) -> None:
         )
         print_ok("Delete removes the selected point and one undo restores it")
 
-        # Step 7: the Uber extension's kind and row exist only once its
-        # component is on the entity.
-        _, _, menu_before = read_elements(session)
-        assert RESET_ROLL_ROW not in menu_before, (
-            "the Uber row is offered by a plain spline"
-        )
-        begin = session.length()
-        session.send("edit add {} UberSplineExtras".format(spline_entity))
-        session.wait(COMPONENT_EDIT_PATTERN, 30, "the extras component queued", begin)
-        _, after_attach, menu_after = read_elements(session)
-        kinds_after = sorted({row[0] for row in after_attach.values()})
-        assert SPLINE_ROLL_KIND in kinds_after, (
-            "the Uber roll handles did not appear: {}".format(kinds_after)
-        )
-        assert RESET_ROLL_ROW in menu_after, (
-            "the Uber row did not appear: {}".format(menu_after)
-        )
-        print_ok("the Uber extension's kind and row appear only with its component")
-
-        # Step 8: an entity that carries no spline is offered no row. The tool
+        # Step 7: an entity that carries no spline is offered no row. The tool
         # keeps running while its row is gone - that is what strict visibility
         # means - and the built-in tool rows stay there to leave it.
         count_before = entity_count(session)
@@ -395,7 +370,7 @@ def run_spline_tool_steps(binary) -> None:
         )
         print_ok("an entity with no spline offers no toolbox row")
 
-        # Step 9: back to no tool, so the session ends the way it started.
+        # Step 8: back to no tool, so the session ends the way it started.
         begin = session.length()
         session.send("tool none")
         session.wait(

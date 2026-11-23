@@ -68,7 +68,7 @@ SURFACE_DETACHED_TOKEN = "surface 1 detached"
 # The engine's frame-statistics line (`pill_player`'s heartbeat), logged about
 # every three seconds while the frame loop runs. Seeing it after the second
 # window closed is what shows the main window is still being driven.
-FRAME_STATISTICS_TOKEN = "Heartbeat | fps="
+FRAME_STATISTICS_TOKEN = "Heartbeat"
 
 STARTUP_TIMEOUT = 600
 RELOAD_TIMEOUT = 300

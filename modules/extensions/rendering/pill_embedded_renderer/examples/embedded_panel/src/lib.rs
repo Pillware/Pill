@@ -347,8 +347,8 @@ mod tests {
     fn the_panel_rectangle_is_the_bars_corners() {
         let rect = panel_rect();
 
-        assert_eq!((rect.min.x, rect.min.y), PANEL_BAR.0);
-        assert_eq!((rect.max.x, rect.max.y), PANEL_BAR.1);
+        assert_eq!([rect.min.x, rect.min.y], PANEL_BAR.0);
+        assert_eq!([rect.max.x, rect.max.y], PANEL_BAR.1);
     }
 
     /// Building the scene twice adds no second copy of anything, which is what

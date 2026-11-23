@@ -115,7 +115,7 @@ mod tests {
             Some("yes"),
             Some("on"),
         ] {
-            assert!(!asked_for(Some(value)), "{value:?} should leave it off");
+            assert!(!asked_for(value), "{value:?} should leave it off");
         }
     }
 

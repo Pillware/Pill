@@ -526,16 +526,15 @@ impl RayTracingScene {
                     return;
                 };
                 let command_buffer = hal_encoder.raw_handle();
-                if let Err(error) = pass.record(
-                    raw,
-                    command_buffer,
-                    slot,
-                    surface,
+                let dispatch = shadow_pass::ShadowDispatch {
+                    mask: raw_mask,
                     top_level,
-                    raw_mask,
                     size,
                     inverse_view_projection,
-                ) {
+                    surface,
+                    slot,
+                };
+                if let Err(error) = pass.record(raw, command_buffer, dispatch) {
                     failure = Some(error);
                     return;
                 }
@@ -706,12 +705,14 @@ impl RayTracingScene {
                     record_commands(
                         raw,
                         command_buffer,
-                        pending,
-                        scratch_address,
-                        instance_address,
-                        frame_scratch_address,
-                        frame_structure,
-                        instance_count,
+                        FrameBuild {
+                            pending,
+                            scratch_address,
+                            instance_address,
+                            frame_scratch_address,
+                            frame_structure,
+                            instance_count,
+                        },
                     );
                 });
             }
@@ -747,6 +748,22 @@ impl RayTracingScene {
 // Free Functions
 // =============================================================================
 
+/// The addresses and handles one frame's builds are recorded against.
+struct FrameBuild<'a> {
+    /// The mesh structures this frame builds, in queue order.
+    pending: &'a [PendingMesh],
+    /// Where the mesh builds find their shared scratch memory.
+    scratch_address: vk::DeviceAddress,
+    /// Where the top-level build reads the instance records.
+    instance_address: vk::DeviceAddress,
+    /// Where the top-level build finds its own scratch memory.
+    frame_scratch_address: vk::DeviceAddress,
+    /// The top-level structure this frame fills.
+    frame_structure: vk::AccelerationStructureKHR,
+    /// How many instance records it holds.
+    instance_count: u32,
+}
+
 /// Records the barriers and the builds themselves.
 ///
 /// The first barrier waits for everything recorded before it - the frame's
@@ -758,17 +775,20 @@ impl RayTracingScene {
 /// # Safety
 ///
 /// `command_buffer` must be recording on `raw`'s device, and every structure and
-/// address passed in must still be alive when the command buffer is submitted.
+/// address in `build` must still be alive when the command buffer is submitted.
 unsafe fn record_commands(
     raw: &RawDevice,
     command_buffer: vk::CommandBuffer,
-    pending: &[PendingMesh],
-    scratch_address: vk::DeviceAddress,
-    instance_address: vk::DeviceAddress,
-    frame_scratch_address: vk::DeviceAddress,
-    frame_structure: vk::AccelerationStructureKHR,
-    instance_count: u32,
+    build: FrameBuild<'_>,
 ) {
+    let FrameBuild {
+        pending,
+        scratch_address,
+        instance_address,
+        frame_scratch_address,
+        frame_structure,
+        instance_count,
+    } = build;
     let device = raw.device();
     let build_stage = vk::PipelineStageFlags::ACCELERATION_STRUCTURE_BUILD_KHR;
     let memory_write = vk::MemoryBarrier::default()
