@@ -179,7 +179,6 @@ pub use assets::{
 // alias here.
 pub use scene::{saved_references, startup_scene};
 pub use services::{debug_draw, diagnostics, gizmos, input, profiling, time};
-pub use settings::manager_settings;
 
 // The hot_reload group's modules, under the names callers have always used.
 pub use hot_reload::{hot_patch, persistence};
@@ -227,11 +226,14 @@ pub use services::input::{
     PlayerId, RumbleRequest, ScrollDelta,
 };
 pub use services::time::Time;
-pub use settings::manager_settings::{
-    ManagerSettingsApplied, ManagerSettingsFailure, ManagerSettingsReport, ManagerSettingsSurface,
-    MissingManagerSettings,
+pub use settings::project::{
+    apply_module_settings, parse_environment_value, register_settings, resolve, ApplyTiming,
+    DeclaredSettings, ModuleSettings, ModuleSettingsRegistration, ModuleSettingsSchema,
+    ResolvedSettings, ResolvedValue, SettingDefault, SettingKind, SettingSource, SettingSpec,
+    SettingsDiagnostic, SettingsDocument, SettingsDocumentError, SettingsEnvironment,
+    SettingsErrors, SettingsOutcome, SettingsResolutionInput, SettingsValue, ENABLED_KEY,
+    ENVIRONMENT_PREFIX, ENVIRONMENT_SEPARATOR, PROJECT_METADATA_KEYS,
 };
-pub use settings::settings::{SettingsAssetManager, SettingsAssetOps, SettingsOutcome};
 pub use systems::scheduler::{RunPhase, SystemAccess, SystemScheduler, TypeKey};
 pub use systems::scripting::{
     CreateCause, CreateInfo, DestroyCause, DestroyInfo, ScriptComponent, ScriptContext,
@@ -263,7 +265,7 @@ pub use pill_engine_macros::{
     asset, component, pill_hot, pill_hot_fn, pill_hot_resolver, pill_mirror_fn, pill_mirror_impl,
     pill_mirror_method, pill_mirror_object, pill_mirror_resource, pill_module, pill_project,
     pill_value_type, resource, script, system, PillAsset, PillComponent, PillLayout, PillMirror,
-    PillResource,
+    PillResource, PillSettings,
 };
 
 // World container and its entity-builder and error types.

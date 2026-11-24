@@ -851,7 +851,7 @@ class HostPosture:
 
 
 # The postures in use. The dev host pins `pill_engine/development` in its
-# manifest and `PILL_FUNCTION_HOT_PATCHING` decides at startup whether the fast
+# manifest and `PILL__HOST__FUNCTION_HOT_PATCHING` decides at startup whether the fast
 # path runs, so `HOST_DEV_HOT_PATCH` and `HOST_DEV` are two names for one graph,
 # as are the two rendering postures. Both names stay because a suite's posture
 # is also its log line and its `--skip-build` identity.

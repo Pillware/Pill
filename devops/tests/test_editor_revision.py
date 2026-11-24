@@ -61,7 +61,12 @@ TEST_PROJECT_SETTINGS = """\
 name: "Editor Revision Test"
 build_binary_name: "EditorRevisionTest"
 modules:
-  - "pill_spline"
+  pill_rendering:
+    enabled: true
+  pill_renderer:
+    enabled: true
+  pill_spline:
+    enabled: true
 """
 
 PROBE_PREFIX = "midpoint ("

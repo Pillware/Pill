@@ -111,6 +111,11 @@ BUNDLE_DIRECTORY = Path("build") / BUNDLE_CRATE_NAME
 
 # File names the generator reads and writes.
 PROJECT_SETTINGS_FILE_NAME = "project_settings.yaml"
+# The local override beside it: read only when `--local_project_settings` asks,
+# because a shipped artifact must be the one the committed settings describe.
+LOCAL_PROJECT_SETTINGS_FILE_NAME = "project_settings.local.yaml"
+# Set from `--local_project_settings`; every settings reader obeys it.
+INCLUDE_LOCAL_SETTINGS = False
 PROJECT_MANIFEST_FILE_NAME = "Cargo.toml"
 # Where a native project's sources live; the generator scans them for the
 # `register` half of the project's entry point.
@@ -143,11 +148,8 @@ CSHARP_BRIDGE_CRATE_DIRECTORY = Path("modules") / "csharp" / "pill_csharp_bridge
 # the first static module in every shipping build, headless included; a windowed
 # build also links the GPU module and hands the host its entry points as
 # `StaticRenderer`.
-DEFAULT_RENDERER = "pill_renderer"
+# The `host.renderer` value that selects no renderer at all.
 NO_RENDERER = "none"
-# Renderer names a settings file may still carry from before the rename, and
-# the crate each one now selects.
-RENDERER_ALIASES = {"pill_master_renderer": DEFAULT_RENDERER}
 # The manifest key, under `[package.metadata.pill]`, through which a renderer
 # names its data crate. Two renderers can share one.
 RENDERER_DATA_TAG = "renderer_data"
@@ -397,10 +399,13 @@ def repository_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent
 
 
-def load_module_list(project_root: Path) -> list:
-    """Loads the extension list from the project's settings file.
+def load_settings(project_root: Path) -> dict:
+    """Loads the project's settings file, or raises FileNotFoundError.
 
-    Raises FileNotFoundError when the settings file is missing.
+    One loader serves every key, so a generator that reads three keys parses
+    the file once per key but always agrees with itself about the shape. When
+    [`INCLUDE_LOCAL_SETTINGS`] is set, `project_settings.local.yaml` is merged
+    over it, entry by entry and module by module.
     """
     settings_path = project_root / PROJECT_SETTINGS_FILE_NAME
     if not settings_path.is_file():
@@ -409,42 +414,126 @@ def load_module_list(project_root: Path) -> list:
         )
     with settings_path.open(encoding="utf-8") as handle:
         data = yaml.safe_load(handle) or {}
-    modules = data.get("modules") or []
-    return [str(name) for name in modules]
+    if not isinstance(data, dict):
+        raise ValueError(f"{settings_path}: the top level is not a mapping")
+    local_path = project_root / LOCAL_PROJECT_SETTINGS_FILE_NAME
+    if INCLUDE_LOCAL_SETTINGS and local_path.is_file():
+        with local_path.open(encoding="utf-8") as handle:
+            local = yaml.safe_load(handle) or {}
+        if not isinstance(local, dict):
+            raise ValueError(f"{local_path}: the top level is not a mapping")
+        data = merge_settings(data, local)
+    return data
+
+
+def merge_settings(base: dict, override: dict) -> dict:
+    """Returns `base` with `override` laid over it, table by table."""
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = merge_settings(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def settings_section(project_root: Path, entry: str) -> dict:
+    """Returns one entry's settings (`host`, `engine` or `editor`)."""
+    section = load_settings(project_root).get(entry) or {}
+    if not isinstance(section, dict):
+        raise ValueError(
+            f"{project_root / PROJECT_SETTINGS_FILE_NAME}: `{entry}:` must be a mapping"
+        )
+    return section
+
+
+def load_module_list(project_root: Path) -> list:
+    """Loads the enabled modules, in the order the file lists them."""
+    settings_path = project_root / PROJECT_SETTINGS_FILE_NAME
+    modules = load_settings(project_root).get("modules") or {}
+    if not isinstance(modules, dict):
+        raise ValueError(f"{settings_path}: `modules:` must be a mapping of module entries")
+    enabled = []
+    for name, entry in modules.items():
+        if entry is None:
+            continue
+        if not isinstance(entry, dict):
+            raise ValueError(f"{settings_path}: `modules.{name}` must be a mapping")
+        if entry.get("enabled") is True:
+            enabled.append(str(name))
+    return enabled
 
 
 def load_renderer(project_root: Path):
-    """Returns the renderer the project selects, or None for `renderer: none`.
+    """Returns the renderer the enabled modules select, or None for headless.
 
-    Reads the settings file's `renderer:` key; absent means DEFAULT_RENDERER,
-    and a name the renderer carried before the rename selects the crate it is
-    an old name of.
+    A renderer is an enabled module whose manifest names the data crate it
+    draws with (`renderer_data`). `host.renderer: none` selects none; a
+    `host.renderer` name must be an enabled module, and a renderer's data crate
+    must be enabled too.
     """
     settings_path = project_root / PROJECT_SETTINGS_FILE_NAME
-    with settings_path.open(encoding="utf-8") as handle:
-        data = yaml.safe_load(handle) or {}
-    name = str(data.get("renderer") or DEFAULT_RENDERER).strip()
-    if name == NO_RENDERER:
+    root = repository_root()
+    enabled = load_module_list(project_root)
+    requested = str(settings_section(project_root, "host").get("renderer") or "").strip()
+    if requested == NO_RENDERER:
         return None
-    return RENDERER_ALIASES.get(name, name)
+    if requested:
+        if requested not in enabled:
+            raise ValueError(
+                f"{settings_path}: `host.renderer` names {requested}, which the project "
+                "does not list with `enabled: true`"
+            )
+        renderer = requested
+    else:
+        renderers = [
+            name
+            for name in enabled
+            if declared_renderer_data(module_crate_directory(root, name)) is not None
+        ]
+        if not renderers:
+            return None
+        if len(renderers) > 1:
+            raise ValueError(
+                f"{settings_path}: the project enables two renderers, "
+                f"{renderers[0]} and {renderers[1]}: enable one"
+            )
+        renderer = renderers[0]
+    data_crate = declared_renderer_data(module_crate_directory(root, renderer))
+    if data_crate is None:
+        raise ValueError(
+            f"renderer {renderer} does not name its data crate: add "
+            f'`{RENDERER_DATA_TAG} = "<crate>"` under [package.metadata.pill] '
+            "in its manifest"
+        )
+    if data_crate not in enabled:
+        raise ValueError(
+            f"{settings_path}: renderer {renderer} draws with {data_crate}, which the "
+            "project does not list with `enabled: true`: list it too"
+        )
+    return renderer
 
 
 def load_renderer_features(project_root: Path) -> list:
-    """Returns the feature names the project turns on in its renderer.
+    """Returns the renderer build options the project turns on, by name.
 
-    Reads the settings file's `renderer_features:` key, which holds one name or
-    a list of them; absent means none. The names are only checked against the
-    renderer's own manifest later, by `renderer_features_for_arms`, because
-    which renderer a build links is decided per target.
+    A build option is a module setting under `modules.<renderer>.build`; the
+    option's name is the cargo feature it turns on. The renderer's manifest
+    declares which features it has, and the host and this generator check the
+    name against it.
     """
-    settings_path = project_root / PROJECT_SETTINGS_FILE_NAME
-    with settings_path.open(encoding="utf-8") as handle:
-        data = yaml.safe_load(handle) or {}
-    declared = data.get("renderer_features")
-    if declared is None:
+    renderer = load_renderer(project_root)
+    if renderer is None:
         return []
-    names = declared if isinstance(declared, list) else [declared]
-    return [str(name).strip() for name in names if str(name).strip()]
+    modules = load_settings(project_root).get("modules") or {}
+    entry = modules.get(renderer) or {}
+    build = entry.get("build") or {}
+    if not isinstance(build, dict):
+        raise ValueError(
+            f"{project_root / PROJECT_SETTINGS_FILE_NAME}: `modules.{renderer}.build` "
+            "must be a mapping of option names to true or false"
+        )
+    return [str(name) for name, enabled in build.items() if enabled is True]
 
 
 # The log levels the `logging:` section accepts, as `pill_player::LoggingSettings`
@@ -468,7 +557,7 @@ def check_log_level(settings_path: Path, where: str, level) -> str:
 
 
 def load_logging(project_root: Path):
-    """Loads the `logging:` section as
+    """Loads `host.logging` as
     (level, timestamp, source_location, [(target, level), ...]).
 
     `level`, `timestamp` and `source_location` are None when the section does
@@ -479,11 +568,9 @@ def load_logging(project_root: Path):
     ValueError on an unknown key, level, timestamp format, or target.
     """
     settings_path = project_root / PROJECT_SETTINGS_FILE_NAME
-    with settings_path.open(encoding="utf-8") as handle:
-        data = yaml.safe_load(handle) or {}
-    section = data.get("logging") or {}
+    section = settings_section(project_root, "host").get("logging") or {}
     if not isinstance(section, dict):
-        raise ValueError(f"{settings_path}: `logging:` must be a mapping")
+        raise ValueError(f"{settings_path}: `host.logging:` must be a mapping")
     unknown = set(section) - {"level", "timestamp", "source_location", "targets"}
     if unknown:
         raise ValueError(f"{settings_path}: `logging:` has unknown keys {sorted(unknown)}")
@@ -515,35 +602,32 @@ def load_logging(project_root: Path):
 
 
 def load_debug_draw(project_root: Path) -> bool:
-    """Loads the `debug_draw:` key: whether the build starts with debug
-    drawing on. Absent means off. Raises ValueError on anything but a bool.
+    """Loads `engine.debug_draw`: whether the build starts with debug drawing
+    on. Absent means off. Raises ValueError on anything but a bool.
     """
     settings_path = project_root / PROJECT_SETTINGS_FILE_NAME
-    with settings_path.open(encoding="utf-8") as handle:
-        data = yaml.safe_load(handle) or {}
-    value = data.get("debug_draw", False)
+    value = settings_section(project_root, "engine").get("debug_draw", False)
     if value is None:
         return False
     if not isinstance(value, bool):
-        raise ValueError(f"{settings_path}: `debug_draw:` is `{value}`; use true or false")
+        raise ValueError(f"{settings_path}: `engine.debug_draw` is `{value}`; use true or false")
     return value
 
 
 def load_startup_scene(project_root: Path) -> str:
-    """Loads the `startup_scene:` key: the `.scene` the build loads before the
+    """Loads `engine.startup_scene`: the `.scene` the build loads before the
     project's `init` seeds anything. Absent means none. Raises ValueError when
     the value is not a relative `.scene` path below the asset directory.
     """
     settings_path = project_root / PROJECT_SETTINGS_FILE_NAME
-    with settings_path.open(encoding="utf-8") as handle:
-        data = yaml.safe_load(handle) or {}
-    value = data.get("startup_scene")
+    value = settings_section(project_root, "engine").get("startup_scene")
     if value is None:
         return ""
     text = str(value)
     if not text.endswith(".scene") or text.startswith(("/", "\\")) or ".." in text:
         raise ValueError(
-            f"{settings_path}: `startup_scene:` is `{value}`; use a relative path to a .scene file"
+            f"{settings_path}: `engine.startup_scene` is `{value}`; use a relative path "
+            "to a .scene file"
         )
     return text
 
@@ -568,7 +652,9 @@ def modules_with_renderer_data(root: Path, renderer, modules: list) -> list:
 
     The data crate is the one the renderer's manifest names through
     `renderer_data`; a renderer that names none is an error rather than a
-    silently different module set.
+    silently different module set. The renderer itself is dropped from the
+    list: a shipped build links it as its own dependency, and the development
+    host loads it only through the renderer module.
     """
     if renderer is None:
         return list(modules)
@@ -579,7 +665,9 @@ def modules_with_renderer_data(root: Path, renderer, modules: list) -> list:
             f'`{RENDERER_DATA_TAG} = "<crate>"` under [package.metadata.pill] '
             "in its manifest"
         )
-    return [data] + [name for name in modules if name.strip() != data]
+    return [data] + [
+        name for name in modules if name.strip() not in (data, renderer)
+    ]
 
 
 def module_asset_roots(root: Path, modules: list) -> list:
@@ -1420,6 +1508,7 @@ def main() -> int:
     web = False
     editor = False
     restore = False
+    include_local = False
     editor_frontend = DEFAULT_EDITOR_FRONTEND
     rid = "win-x64"
     positional = []
@@ -1441,6 +1530,10 @@ def main() -> int:
             restore = True
         elif argument == "--csharp-aot":
             aot = True
+        elif argument == "--local_project_settings":
+            # A build the person runs locally may read the uncommitted override;
+            # the released artifact must not, so this is off unless asked for.
+            include_local = True
         elif argument == "--web":
             # A browser build always draws: it links the renderer.
             web = True
@@ -1467,6 +1560,8 @@ def main() -> int:
         else:
             positional.append(argument)
         index += 1
+    global INCLUDE_LOCAL_SETTINGS
+    INCLUDE_LOCAL_SETTINGS = include_local
     if editor_frontend not in EDITOR_FRONTENDS:
         print(
             "error: --editor-frontend must be one of "
@@ -1518,6 +1613,16 @@ def main() -> int:
     # from it against the engine workspace root. Forward slashes keep the path
     # valid when it is emitted inside generated Rust string literals.
     project_path = os.path.relpath(project_root, root).replace(os.sep, "/")
+
+    # A build that does not read the local override says so once, when there is
+    # one to ignore: silence would look like it had been applied.
+    if not INCLUDE_LOCAL_SETTINGS:
+        local_settings = project_root / LOCAL_PROJECT_SETTINGS_FILE_NAME
+        if local_settings.is_file():
+            print(
+                f"  [INFO] ignoring {LOCAL_PROJECT_SETTINGS_FILE_NAME}: pass "
+                "--local_project_settings to read it"
+            )
 
     # Step 1: read the project's scripting language, module selection, package
     # name, and required display name + artifact binary name. A native project

@@ -36,6 +36,7 @@ from editor_step_support import (
     occurrence_count,
     wait_applied,
     wait_for_entity_count,
+    write_editor_theme,
     write_theme_file,
 )
 
@@ -236,7 +237,7 @@ def run_preferences_and_theme_steps(state: StepState) -> None:
     # Step 4d2: the editor's theme layers. Three layers
     # sit over the code default - the user's file, named by the `theme`
     # preference and read from the state directory, and the project's file
-    # under `res/editor/`, named by `editor_settings.yaml` - and the
+    # under `res/editor/`, named by the settings' `editor.theme` - and the
     # project wins where both name the same item. Every step goes through
     # the files a person would edit; `dump theme` reports the merge the
     # shell installs.
@@ -328,16 +329,14 @@ def run_preferences_and_theme_steps(state: StepState) -> None:
         )
     )
 
-    # 4. `editor_settings.yaml` points the project layer at another file
+    # 4. The settings' `editor.theme` points the project layer at another file
     # without a restart.
     write_theme_file(
         state.theme_root / "alt.theme",
         "000000000000000000000000000000b2",
         {"palette": {"accent": "#d17a33"}},
     )
-    state.editor_settings_path.write_text(
-        'editor_theme: "editor/alt.theme"\n', encoding="utf-8"
-    )
+    write_editor_theme(state.project_settings_path, "editor/alt.theme")
     begin = session.length()
     session.wait(
         log_layout.message_then_fields_pattern(re.escape(EDITOR_THEME_RESOLVED_TOKEN), r"\s+layers=code,user,project\s+generation=\d+"),
@@ -362,7 +361,7 @@ def run_preferences_and_theme_steps(state: StepState) -> None:
 
     # 5. A path outside `editor/` is refused with the rule, and the
     # remaining layers still apply.
-    state.editor_settings_path.write_text('editor_theme: "ui/x.theme"\n', encoding="utf-8")
+    write_editor_theme(state.project_settings_path, "ui/x.theme")
     begin = session.length()
     session.wait(
         re.escape(EDITOR_THEME_REFUSED_TOKEN)
@@ -389,7 +388,7 @@ def run_preferences_and_theme_steps(state: StepState) -> None:
 
     # 6. A name an earlier build understood names no file: it is reported
     # once, and the project layer still applies.
-    state.editor_settings_path.unlink(missing_ok=True)
+    write_editor_theme(state.project_settings_path, None)
     begin = session.length()
     session.send("edit preference theme dark")
     session.wait(

@@ -1,13 +1,11 @@
 # A pure simulation, managed side: no renderer, no assets, no window.
 #
-# The twin of `headless_rust`: same ticker world, same report cadence, same
-# `renderer: none`. Nothing here draws, so nothing here needs a GPU or a
-# presentation surface.
+# The twin of `headless_rust`: same ticker world, same report cadence, and no
+# module listed, so nothing draws and nothing needs a GPU.
 
 name: "Headless (C#)"
 build_binary_name: "HeadlessCsharp"
 version: "0.1.0"
 description: "An ECS-only simulation with no renderer, no assets and no window, in C#."
 
-renderer: "none"
-modules: []
+modules: {}

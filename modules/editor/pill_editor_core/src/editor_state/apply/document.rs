@@ -76,6 +76,42 @@ pub(super) fn apply(
             Ok(CommandOutcome::plain())
         }
 
+        EditorCommand::SetProjectSetting {
+            directory,
+            path,
+            value,
+            local,
+        } => {
+            crate::project_settings::write_setting(
+                std::path::Path::new(directory),
+                path,
+                value,
+                *local,
+            )
+            .map_err(|message| format!("{command:?}: {message}"))?;
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                setting = path.as_str(),
+                local = *local,
+                "[editor] project setting written"
+            );
+            Ok(CommandOutcome::plain())
+        }
+
+        EditorCommand::ResetProjectSetting { directory, path } => {
+            crate::project_settings::remove_setting_everywhere(
+                std::path::Path::new(directory),
+                path,
+            )
+            .map_err(|message| format!("{command:?}: {message}"))?;
+            pill_core::info!(
+                target: telemetry_target::EDITOR,
+                setting = path.as_str(),
+                "[editor] project setting reset"
+            );
+            Ok(CommandOutcome::plain())
+        }
+
         EditorCommand::SceneNew => {
             let removed_entity_count = crate::scene_workflow::new_scene(engine);
             pill_core::info!(

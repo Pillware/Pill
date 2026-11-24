@@ -36,8 +36,8 @@ use std::sync::Arc;
 
 // External crates
 use pill_core::error::{HostError, LibraryError, ModuleError};
+use pill_core::info;
 use pill_core::telemetry::telemetry_target;
-use pill_core::{info, warn};
 use pill_engine::{Engine, SystemOwner};
 
 // Current crate
@@ -181,11 +181,11 @@ pub struct StaticProject {
     /// The `logging:` section of the project's settings, as the bundle
     /// generator validated it; [`StaticLogging::NONE`] for none.
     pub logging: StaticLogging,
-    /// Whether debug drawing starts on: the settings' `debug_draw:` key,
-    /// `false` when absent. A system can still switch it at runtime.
+    /// Whether debug drawing starts on: the settings' `engine.debug_draw`
+    /// entry, `false` when absent. A system can still switch it at runtime.
     pub debug_draw: bool,
     /// The scene the project's settings named as its startup scene, loaded once
-    /// every component is registered (`startup_scene:` in
+    /// every component is registered (`engine.startup_scene` in
     /// `project_settings.yaml`).
     ///
     /// A natively linked project gets it before its `init` seeds anything; an
@@ -286,11 +286,15 @@ impl StaticProject {
             external = project_guard.is_some(),
             "project linked"
         );
-        // Step 3: Every manager's settings asset, out of the pack the frontend
-        // mounted. After the project, because a manager may be one the project
-        // registers itself. A bundle has no writable project directory, so a
-        // manager without a file keeps its document defaults.
-        apply_manager_settings(engine);
+        // Step 3: The modules are up. A shipped build carries no
+        // `project_settings.yaml`, so every manager starts at its declared
+        // defaults; baking the project's values into the bundle is follow-up
+        // work, and until it lands a shipped build cannot tune them.
+        info!(
+            target: telemetry_target::LINK,
+            modules = self.modules.len(),
+            "[settings] a shipped build starts every module at its declared defaults"
+        );
         Ok(project_guard)
     }
 }
@@ -341,50 +345,6 @@ impl StaticLogging {
 // =============================================================================
 // Free Functions
 // =============================================================================
-
-/// Applies every manager's settings asset, reading each one from the mounted
-/// asset roots - in a bundle, the pack.
-///
-/// A settings asset is an ordinary file under `res/settings`, so a shipped
-/// build needs nothing baked: the pack answers the conventional path the same
-/// way a project directory does. A manager with no file keeps its document
-/// defaults, which is what a bundle that ships no settings for it means.
-///
-/// A refusal is the manager's own call, and a file that does not fit is the
-/// project's - both are logged and neither stops the build.
-fn apply_manager_settings(engine: &mut Engine) {
-    let world = engine.world_mut();
-    for manager in world.settings_asset_manager_ids() {
-        let Some(surface) = world.manager_settings_surface(manager) else {
-            continue;
-        };
-        let Some(path) = world.manager_settings_path(manager) else {
-            continue;
-        };
-        match world.apply_manager_settings_asset(manager) {
-            Some(Ok(pill_engine::SettingsOutcome::Applied)) => info!(
-                target: telemetry_target::LINK,
-                manager = surface.settings_name.as_str(),
-                path = path.as_str(),
-                "[settings] applied manager settings"
-            ),
-            Some(Ok(pill_engine::SettingsOutcome::Refused)) => warn!(
-                target: telemetry_target::LINK,
-                manager = surface.settings_name.as_str(),
-                path = path.as_str(),
-                "[settings] refused manager settings; the manager keeps its values"
-            ),
-            Some(Err(reason)) => warn!(
-                target: telemetry_target::LINK,
-                manager = surface.settings_name.as_str(),
-                path = path.as_str(),
-                reason = reason.as_str(),
-                "[settings] no settings asset was applied; the manager keeps its document defaults"
-            ),
-            None => {}
-        }
-    }
-}
 
 /// Queue and load a project's startup scene, warning when it cannot be read.
 ///

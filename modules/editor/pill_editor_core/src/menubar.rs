@@ -355,6 +355,7 @@ fn menu_entry_for_command(command: &CommandView, view: &MenuView<'_>) -> Option<
             MenuAction::WriteAssetMeta
         }
         "editor.preferences_open" => MenuAction::ActivateTab(EditorTab::Preferences),
+        "editor.project_settings_open" => MenuAction::ActivateTab(EditorTab::ProjectSettings),
         "editor.scene_new_view" => MenuAction::NewSceneView,
         "editor.quit" => MenuAction::Quit,
         "editor.about" => MenuAction::About,
@@ -598,7 +599,15 @@ mod tests {
         let disabled_entries = entries(Menu::Edit, &view_over(&snapshot, &selection, &commands));
         assert_eq!(
             labels(&disabled_entries),
-            vec!["Undo", "Redo", "Copy", "Cut", "Paste", "Delete Entity"]
+            vec![
+                "Undo",
+                "Redo",
+                "Copy",
+                "Cut",
+                "Paste",
+                "Delete Entity",
+                "Project Settings"
+            ]
         );
         let action_rows = action_states(&disabled_entries);
         assert!(!action_rows[0].1, "no undo history yet");

@@ -449,6 +449,35 @@ pub enum EditorCommand {
         /// `(key, text)` pairs. The keys are the file's own, and dots nest.
         values: Vec<(String, String)>,
     },
+    /// Write one setting into a project's settings file.
+    ///
+    /// The write goes to `project_settings.yaml` unless `local` asks for the
+    /// local override, and it keeps every comment and the key order of the file
+    /// it touches: see [`crate::project_settings_file`]. The host's watcher then
+    /// re-applies whatever the setting governs.
+    SetProjectSetting {
+        /// The project root the settings files live in.
+        directory: String,
+        /// The setting's full dotted path, entry first:
+        /// `modules.pill_audio.audio.ambient_sinks`.
+        path: String,
+        /// The text the row holds. It is read as YAML, so a number stays a
+        /// number and anything else is stored as text.
+        value: String,
+        /// Whether the write goes to `project_settings.local.yaml`.
+        local: bool,
+    },
+    /// Remove one setting from whichever settings files hold it.
+    ///
+    /// A reset removes the key from `project_settings.yaml` and from the local
+    /// override, so the declared default is what is left, and it takes the
+    /// groups the removal empties with it.
+    ResetProjectSetting {
+        /// The project root the settings files live in.
+        directory: String,
+        /// The setting's full dotted path, entry first.
+        path: String,
+    },
     /// Start an empty scene: every entity is removed, no file is open, and the
     /// selection and history are cleared.
     ///
@@ -589,6 +618,8 @@ impl EditorCommand {
             | EditorCommand::CycleGizmoSpace
             | EditorCommand::StepOnce
             | EditorCommand::SetPreferences { .. }
+            | EditorCommand::SetProjectSetting { .. }
+            | EditorCommand::ResetProjectSetting { .. }
             | EditorCommand::ImportFiles { .. }
             | EditorCommand::RemoveFiles { .. }
             | EditorCommand::CreateStandaloneAsset { .. }
@@ -690,6 +721,8 @@ impl EditorCommand {
             | EditorCommand::RunElementMenu { .. }
             | EditorCommand::StepOnce
             | EditorCommand::SetPreferences { .. }
+            | EditorCommand::SetProjectSetting { .. }
+            | EditorCommand::ResetProjectSetting { .. }
             | EditorCommand::ImportFiles { .. }
             | EditorCommand::RemoveFiles { .. }
             | EditorCommand::CreateStandaloneAsset { .. }
@@ -750,6 +783,8 @@ impl EditorCommand {
             | EditorCommand::RestoreSelection { .. }
             | EditorCommand::ArmEntityPick { .. } => CommandFamily::Selection,
             EditorCommand::SetPreferences { .. }
+            | EditorCommand::SetProjectSetting { .. }
+            | EditorCommand::ResetProjectSetting { .. }
             | EditorCommand::SceneNew
             | EditorCommand::SceneOpen { .. }
             | EditorCommand::SceneSave

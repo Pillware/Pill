@@ -66,10 +66,11 @@ pill_assets = { path = "../../../../../assets/pill_assets" }
 
 [features]
 # The hardware ray tracing path. Off by default: an ordinary build carries no
-# ray tracing code, and the renderer opens the device it always did. The
-# development host's generated wrapper enables every declared feature, so under
-# the host this is compiled in and `PILL_RAY_TRACING` decides at run time
-# whether the path runs.
+# ray tracing code, and the renderer opens the device it always did. It is a
+# build option (`[package.metadata.pill.settings.build]` below), so a project
+# turns it on with `modules.pill_renderer.build.ray_tracing: true`; once the
+# build carries it, `PILL_RAY_TRACING` decides at run time whether the path
+# runs.
 ray_tracing = ["dep:ash"]
 
 [package.metadata.pill]
@@ -77,3 +78,11 @@ ray_tracing = ["dep:ash"]
 # materials. Naming it here rather than deriving `<renderer>_data` is what lets
 # two renderers share one data crate.
 renderer_data = "pill_rendering"
+
+# The build options a project may turn on from `modules.pill_renderer.build`.
+# A row's name is the cargo feature it turns on; a feature this table does not
+# mention is internal to the module and always compiled in. The development
+# host's generated wrapper and the shipping bundle both read these rows, so the
+# module build and the shipped build carry the same features.
+[package.metadata.pill.settings.build]
+ray_tracing = { default = false, description = "Hardware ray tracing shadows" }

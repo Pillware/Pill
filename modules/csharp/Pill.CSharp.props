@@ -7,8 +7,8 @@
   - Reference the managed runtime, the named-query-row generator and the
     gameplay scripting analyzers.
   - Compile the C# mirrors of exactly the extensions the project loads:
-    `generated/*.g.cs` and `managed/*.cs` of the renderer's data crate and of
-    every module `project_settings.yaml` lists.
+    `generated/*.g.cs` and `managed/*.cs` of every module `project_settings.yaml`
+    switches on.
   - Switch on the NativeAOT shipping posture when `EnablePillAot=true`: the
     `unsafe` keyword, the `PILL_AOT` define, the AOT registry generator (which
     also emits the loader's export forwarders) and `PublishAot`.
@@ -33,7 +33,9 @@
   The module list is read from `project_settings.yaml` while MSBuild evaluates
   the project - no file is generated - so the host, the shipping build, the
   IDE and the tests all compile the same mirrors. A module the project does not
-  load would otherwise compile fine and fail only when called.
+  load would otherwise compile fine and fail only when called. Every module is
+  off unless the project lists it and switches it on, the renderer and its data
+  crate included.
 
   Properties a project may set before the import:
   - `PillExtensionMirrors` (default `true`): compile the extension mirrors.
@@ -152,39 +154,31 @@
        ===================================================================== -->
 
   <!-- The modules the project loads, read from `project_settings.yaml` the way
-       the host reads it (`pill_development_host::config`): the renderer's data
-       crate first - `renderer:` absent means `pill_renderer`, `none` means no
-       renderer, and `pill_master_renderer` is the name older settings carry -
-       then every name under `modules:`, in either
-       YAML list style. Property functions return escaped text, which is why
-       the results are unescaped before they become paths. -->
+       the host reads it (`pill_development_host::config`): every entry under
+       `modules:` whose `enabled:` is true. The renderer and its data crate are
+       ordinary entries here - the project lists both - so this file derives
+       nothing about which crate plays which part. Property functions return
+       escaped text, which is why the results are unescaped before they become
+       paths. -->
   <PropertyGroup Condition="'$(PillExtensionMirrors)' == 'true' And Exists('$(PillProjectSettings)')">
     <_PillSettingsText>$([System.IO.File]::ReadAllText('$(PillProjectSettings)'))</_PillSettingsText>
 
-    <_PillRenderer>$([System.Text.RegularExpressions.Regex]::Match($(_PillSettingsText), '(?m)^renderer:[ \t]*["'']?([A-Za-z0-9_]+)').Groups[1].Value)</_PillRenderer>
-    <_PillRenderer Condition="'$(_PillRenderer)' == ''">pill_renderer</_PillRenderer>
-    <_PillRenderer Condition="'$(_PillRenderer)' == 'pill_master_renderer'">pill_renderer</_PillRenderer>
+    <!-- The modules table: `modules:` and every line indented under it. -->
+    <_PillModuleSection>$([System.Text.RegularExpressions.Regex]::Match($(_PillSettingsText), '(?m)^modules:[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*').Value)</_PillModuleSection>
 
-    <!-- The data crate is the one the renderer names in its own manifest
-         (`renderer_data` under `[package.metadata.pill]`). A renderer crate
-         sits either inside a group folder or directly under `extensions/`. -->
-    <_PillRendererManifest Condition="Exists('$(PillEngineRoot)extensions/rendering/$(_PillRenderer)/modules/runtime/Cargo.toml')">$(PillEngineRoot)extensions/rendering/$(_PillRenderer)/modules/runtime/Cargo.toml</_PillRendererManifest>
-    <_PillRendererManifest Condition="'$(_PillRendererManifest)' == '' And Exists('$(PillEngineRoot)extensions/$(_PillRenderer)/modules/runtime/Cargo.toml')">$(PillEngineRoot)extensions/$(_PillRenderer)/modules/runtime/Cargo.toml</_PillRendererManifest>
-    <_PillRendererData Condition="'$(_PillRendererManifest)' != ''">$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(_PillRendererManifest)')), 'renderer_data[ \t]*=[ \t]*"([A-Za-z0-9_]+)"').Groups[1].Value)</_PillRendererData>
+    <!-- An entry is `  <module>:` with `enabled: true` on the next line, in the
+         order the host writes it. The replace keeps the name of every entry
+         that is on, separated by `;`; a disabled entry keeps nothing. -->
+    <_PillModuleNames>$([System.Text.RegularExpressions.Regex]::Replace($(_PillModuleSection), '(?m)^  ([A-Za-z0-9_-]+):[ \t]*\r?\n    enabled:[ \t]*true[ \t]*\r?$', '$1;'))</_PillModuleNames>
+    <_PillModuleNames>$([System.Text.RegularExpressions.Regex]::Replace($(_PillModuleNames), '(?m)^modules:[^\r\n]*\r?\n?|[\r\n]+|;\z', ''))</_PillModuleNames>
 
-    <_PillModuleSection>$([System.Text.RegularExpressions.Regex]::Match($(_PillSettingsText), '(?m)^modules:[^\r\n]*(?:\r?\n[ \t]*-[^\r\n]*)*').Value)</_PillModuleSection>
-    <_PillModules>$([System.Text.RegularExpressions.Regex]::Replace($(_PillModuleSection), '#[^\r\n]*|^modules:|[\[\]"'' \t]', '', System.Text.RegularExpressions.RegexOptions.Multiline))</_PillModules>
-    <_PillModules>$([MSBuild]::Unescape($([System.Text.RegularExpressions.Regex]::Replace($(_PillModules), '[\r\n,-]+', ';').Trim(';'))))</_PillModules>
-
-    <!-- The data crate goes first and only once, as the host loads it. -->
-    <_PillModules Condition="'$(_PillRendererData)' != ''">$([MSBuild]::Unescape($([System.Text.RegularExpressions.Regex]::Replace(';$(_PillModules);', ';$(_PillRendererData)(?=;)', ''))))</_PillModules>
-    <_PillModules>$([MSBuild]::Unescape($([System.Text.RegularExpressions.Regex]::Replace('$(_PillRendererData);$(_PillModules)', ';+', ';').Trim(';'))))</_PillModules>
+    <_PillModules>$([MSBuild]::Unescape($(_PillModuleNames)))</_PillModules>
 
     <_PillExtensions>$(PillEngineRoot)extensions/</_PillExtensions>
     <!-- A mirror is `<crate>/generated/<module>_Components.g.cs`, and the
          crate sits under `<extension>/modules/` or, inside a group folder,
          under `<group>/<extension>/modules/`, so `**` spans those levels in
-         both layouts. -->
+         both layouts. A module with no mirror simply matches no file. -->
     <_PillMirrorGlobs Condition="'$(_PillModules)' != ''">$([MSBuild]::Unescape('$(_PillExtensions)*/modules/**/generated/$(_PillModules.Replace(';', '_Components.g.cs;$(_PillExtensions)*/modules/**/generated/'))_Components.g.cs'))</_PillMirrorGlobs>
     <_PillMirrorGlobs Condition="'$(_PillModules)' != ''">$(_PillMirrorGlobs);$([MSBuild]::Unescape('$(_PillExtensions)*/*/modules/**/generated/$(_PillModules.Replace(';', '_Components.g.cs;$(_PillExtensions)*/*/modules/**/generated/'))_Components.g.cs'))</_PillMirrorGlobs>
   </PropertyGroup>

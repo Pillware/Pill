@@ -59,44 +59,6 @@ impl World {
         self.insert_resource_with_table(resource, ErasedResourceOps::of::<T>());
     }
 
-    /// Inserts a manager resource whose tuning lives in a settings asset.
-    ///
-    /// The value is stored exactly like [`Self::insert_resource`] stores one,
-    /// and its per-type table carries the surface the type declared
-    /// ([`SettingsAssetManager`](crate::settings::SettingsAssetManager)): the
-    /// settings name, the asset type's extension and the two appliers that
-    /// render a created file and apply an edited one. That is what lets a host
-    /// create, bind and re-apply the manager's settings without knowing its
-    /// document type.
-    ///
-    /// A manager that must survive a reload needs a `shared_name`: an id built
-    /// from `TypeId` differs in every generation, so the value would be retired
-    /// instead of kept (see [`Resource::shared_name`]).
-    pub fn insert_settings_asset_manager<T: crate::settings::SettingsAssetManager>(
-        &mut self,
-        resource: T,
-    ) {
-        self.insert_resource_with_surface(resource, |table| table.with_settings_asset::<T>());
-    }
-
-    /// The insert half both manager paths share: keep whatever surface the
-    /// recorded table already carries, so a type that declares two of them -
-    /// a flat document and a settings asset - keeps both.
-    fn insert_resource_with_surface<T: Resource>(
-        &mut self,
-        resource: T,
-        add_surface: impl FnOnce(ErasedResourceOps) -> ErasedResourceOps,
-    ) {
-        let id = ResourceId::of::<T>();
-        let base = self
-            .resource_factories
-            .get(&id)
-            .copied()
-            .filter(|resource_ops| !resource_ops.foreign)
-            .unwrap_or_else(ErasedResourceOps::of::<T>);
-        self.insert_resource_with_table(resource, add_surface(base));
-    }
-
     /// The ids of the live resources whose play state is `play_state`.
     ///
     /// The stop half of a play session uses it to find the `Restore` resources
@@ -207,39 +169,7 @@ impl World {
         self.resource_clone_functions.insert(id, T::clone_erased);
         // Step 3: Record the table too, so a later reload can re-home this
         // value even if the next generation never inserts it again.
-        let table = self.table_keeping_recorded_surface(id, table);
         self.resource_factories.insert(id, table);
-    }
-
-    /// The table to record for `id`: `incoming`, keeping the settings surface an
-    /// earlier registration recorded when the incoming table carries none.
-    ///
-    /// A module that owns a manager records the surface in its own `register`.
-    /// A project that links the module declares the same derived type from its
-    /// own image, and that plain table would otherwise erase the surface,
-    /// leaving the host unable to find the manager's settings asset. The
-    /// surface describes the type, so a declaration that says nothing about
-    /// settings must not remove it.
-    ///
-    /// A foreign table neither gains nor donates one: its bytes have no Rust
-    /// type for an applier to cast to.
-    fn table_keeping_recorded_surface(
-        &self,
-        id: ResourceId,
-        incoming: ErasedResourceOps,
-    ) -> ErasedResourceOps {
-        if incoming.foreign {
-            return incoming;
-        }
-        match self.resource_factories.get(&id) {
-            Some(recorded) if !recorded.foreign && incoming.settings_asset.is_none() => {
-                ErasedResourceOps {
-                    settings_asset: recorded.settings_asset,
-                    ..incoming
-                }
-            }
-            _ => incoming,
-        }
     }
 
     /// Returns a shared reference to the resource, or `None` when nothing is
@@ -339,41 +269,6 @@ impl World {
     /// Declares that this artifact owns a manager type whose tuning lives in a
     /// settings asset, without inserting a value.
     ///
-    /// The manager counterpart of [`Self::register_resource`]: the stored table
-    /// gains the type's settings-asset surface, so a host that already holds the
-    /// live value - or that finds no value at all - still knows the settings
-    /// name, the extension and the appliers.
-    ///
-    /// A manager's crate calls this from its own `register`, which runs on every
-    /// generation: the surface holds function pointers into the image that
-    /// registered it, so each generation re-points them.
-    pub fn register_settings_asset_manager<T: crate::settings::SettingsAssetManager>(&mut self) {
-        self.register_resource_surface::<T>(|table| table.with_settings_asset::<T>());
-    }
-
-    /// The declaration half both manager registrations share.
-    ///
-    /// Whatever surface the recorded table already carries is kept: another
-    /// registration in the same generation put it there, so it points at code
-    /// that is still mapped.
-    fn register_resource_surface<T: Resource>(
-        &mut self,
-        add_surface: impl FnOnce(ErasedResourceOps) -> ErasedResourceOps,
-    ) {
-        let id = ResourceId::of::<T>();
-        if !self.claim_shared_resource_name::<T>() {
-            return;
-        }
-        let base = self
-            .resource_factories
-            .get(&id)
-            .copied()
-            .filter(|resource_ops| !resource_ops.foreign)
-            .unwrap_or_else(ErasedResourceOps::of::<T>);
-        self.resource_factories.insert(id, add_surface(base));
-        self.note_resource_registration(id);
-    }
-
     /// The declaration half of every register path, taking the per-type table
     /// the caller built.
     fn register_resource_with_table<T: Resource>(&mut self, table: ErasedResourceOps) -> bool {
@@ -381,7 +276,6 @@ impl World {
         if !self.claim_shared_resource_name::<T>() {
             return false;
         }
-        let table = self.table_keeping_recorded_surface(id, table);
         self.resource_factories.insert(id, table);
         self.note_resource_registration(id);
         true

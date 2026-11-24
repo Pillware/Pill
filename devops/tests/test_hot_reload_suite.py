@@ -116,6 +116,12 @@ PILL_TEST_RS = MODULES_ROOT / "extensions" / "pill_test" / "modules" / "runtime"
 # Session settings: only the extension list lives in a file now; the
 # project itself is selected by PROJECT_PATH per session.
 #
+# The rendering pair is listed because this project's `init` imports a probe
+# shader whose vertex stage is a file of the renderer module's own `res`; a run
+# without the renderer leaves the project unable to initialize. A renderer
+# module also means a window, which this suite needs only for the project's own
+# render chain to load.
+#
 # `engine::hot_reload` runs at debug so the scenarios can read the layer's own
 # statement of what it dropped (`FORGOTTEN_DROP_TOKEN`). The drop is otherwise
 # invisible whenever the scene re-seeds the witness it removed, and a count
@@ -123,21 +129,33 @@ PILL_TEST_RS = MODULES_ROOT / "extensions" / "pill_test" / "modules" / "runtime"
 SESSION_A_SETTINGS = """\
 name: "Suite Session A"
 build_binary_name: "SuiteSessionA"
-renderer: "none"
 modules:
-  - "pill_spline"
-  - "pill_test"
-logging:
-  targets:
-    engine::hot_reload: debug
+  pill_rendering:
+    enabled: true
+  pill_renderer:
+    enabled: true
+  pill_spline:
+    enabled: true
+  pill_test:
+    enabled: true
+host:
+  logging:
+    targets:
+      engine::hot_reload: debug
 """
 
 SESSION_B_SETTINGS = """\
 name: "Suite Session B"
 build_binary_name: "SuiteSessionB"
 modules:
-  - "pill_spline"
-  - "pill_test"
+  pill_rendering:
+    enabled: true
+  pill_renderer:
+    enabled: true
+  pill_spline:
+    enabled: true
+  pill_test:
+    enabled: true
 """
 
 # --- Suite-specific output tokens --------------------------------------------
@@ -219,7 +237,7 @@ def launch_host(project_path: str):
     # installing a patch, which is what the scenarios wait for (`hot reload
     # complete`, "crates rebuilt by cargo"). `test_hot_patch_coverage.py` is
     # where the patch route is asserted.
-    environment["PILL_FUNCTION_HOT_PATCHING"] = "0"
+    environment["PILL__HOST__FUNCTION_HOT_PATCHING"] = "0"
     return launch_process([str(HOST_EXE)], MODULES_ROOT, environment)
 
 # The scenario model and runner are shared: `core/scenario.py`.

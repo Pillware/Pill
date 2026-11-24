@@ -187,9 +187,8 @@ def main() -> int:
         in script,
     )
 
-    # A manager's settings are an ordinary file under `res/settings`, so the
-    # pack carries them and the player reads them through the asset store,
-    # exactly where the development host reads the project's copy.
+    # A shipped build carries no project settings file, so the bundle names no
+    # settings document: every module starts at its declared defaults.
     source = generator.build_library_source(
         "bundle_package",
         "Bundle Project",
@@ -201,11 +200,7 @@ def main() -> int:
     )
     expect(
         "the bundle bakes no manager settings documents",
-        "manager_settings" not in source and "StaticManagerSettings" not in source,
-    )
-    expect(
-        "the settings directory travels in the project's pack",
-        generator.ASSETS_DIRECTORY_NAME == "res",
+        "manager_settings" not in source and "SettingsAsset" not in source,
     )
 
     # A renderer that tags a target is linked for that target only: the bundle
@@ -324,30 +319,43 @@ def main() -> int:
     else:
         expect("a feature no linked renderer declares is reported, not dropped", False)
 
-    # The key is read from the project's own settings, as one name or a list.
+    # The options are read from the renderer's own module entry.
     with tempfile.TemporaryDirectory() as temporary:
         project = Path(temporary)
         settings = project / generator.PROJECT_SETTINGS_FILE_NAME
-        settings.write_text('name: "P"\nbuild_binary_name: "P"\n', encoding="utf-8")
+        settings.write_text(
+            'name: "P"\nbuild_binary_name: "P"\n'
+            "modules:\n"
+            "  pill_rendering:\n    enabled: true\n"
+            "  pill_renderer:\n    enabled: true\n",
+            encoding="utf-8",
+        )
         expect(
-            "a project that names no renderer feature asks for none",
+            "a project that sets no build option asks for no feature",
             generator.load_renderer_features(project) == [],
         )
         settings.write_text(
-            'name: "P"\nbuild_binary_name: "P"\nrenderer_features: ray_tracing\n',
+            'name: "P"\nbuild_binary_name: "P"\n'
+            "modules:\n"
+            "  pill_rendering:\n    enabled: true\n"
+            "  pill_renderer:\n    enabled: true\n"
+            "    build:\n      ray_tracing: true\n",
             encoding="utf-8",
         )
         expect(
-            "one renderer feature is read as a one-name list",
+            "one build option is read as a one-name list",
             generator.load_renderer_features(project) == ["ray_tracing"],
         )
         settings.write_text(
-            'name: "P"\nbuild_binary_name: "P"\nrenderer_features:\n'
-            "  - ray_tracing\n  - another\n",
+            'name: "P"\nbuild_binary_name: "P"\n'
+            "modules:\n"
+            "  pill_rendering:\n    enabled: true\n"
+            "  pill_renderer:\n    enabled: true\n"
+            "    build:\n      ray_tracing: true\n      another: true\n",
             encoding="utf-8",
         )
         expect(
-            "a list of renderer features is read in order",
+            "several build options are read in order",
             generator.load_renderer_features(project) == ["ray_tracing", "another"],
         )
 

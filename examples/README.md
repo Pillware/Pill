@@ -9,7 +9,7 @@ can be compared directly.
 | [`cube`](cube/README.md)                     | The smallest drawn scene, with its mesh and material authored as files under `res`.          |
 | [`cube_no_editor`](cube_no_editor/README.md) | The same cube from one OBJ file and no metadata: no `.meta`, no scene file, no editor layer. |
 | [`pills`](pills/README.md)                   | 200,000 pills drifting through a curl noise field, with an in-game tuning overlay.           |
-| [`headless`](headless/README.md)             | An ECS-only simulation: `renderer: none`, no window, no GPU.                                 |
+| [`headless`](headless/README.md)             | An ECS-only simulation: no module listed, no window, no GPU.                                |
 
 ## Running one
 
@@ -63,7 +63,7 @@ module that ships it and is always run.
 ## Logging from a project
 
 A project logs through the same `tracing` macros the engine uses, re-exported
-as `pill_engine::tracing`, so the `logging:` settings in its
+as `pill_engine::tracing`, so the `host.logging:` settings in its
 `project_settings.yaml` decide what prints:
 
 ```rust
@@ -90,14 +90,15 @@ pill_engine::tracing::info!(target: "project", entities = spawned, "[project] wa
   could not do what it set out to do, `warn` when it carried on in a degraded
   way (and the line says how), `info` for a step worth seeing, `debug` and
   `trace` for detail.
-- **The `logging:` settings** choose what prints, per target, at `off`,
+- **The `host.logging:` settings** choose what prints, per target, at `off`,
   `error`, `warn`, `info`, `debug` or `trace`:
 
   ```yaml
-  logging:
-    level: info          # every target at once (optional)
-    targets:
-      project: debug     # this project's own lines, details too
+  host:
+    logging:
+      level: info          # every target at once (optional)
+      targets:
+        project: debug     # this project's own lines, details too
   ```
 
   A shipping or web build bakes the same settings into its bundle.

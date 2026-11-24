@@ -80,6 +80,9 @@ pub enum EditorTab {
     /// The preferences file's editor-wide rows and the current project's
     /// remembered gizmo choices.
     Preferences,
+    /// Every setting the project and its modules declare, with where each
+    /// value comes from and an edit that writes it back.
+    ProjectSettings,
     /// A panel a module registered: the payload is the panel's slot in the
     /// registry, which stays the same across that module's reload. The tab's
     /// title comes from the registry, which adds a note once the panel's
@@ -89,7 +92,7 @@ pub enum EditorTab {
 
 impl EditorTab {
     /// Every built-in tab, in the order the Window menu lists them.
-    pub const ALL: [EditorTab; 11] = [
+    pub const ALL: [EditorTab; 12] = [
         EditorTab::Scene(0),
         EditorTab::Scene(1),
         EditorTab::Game,
@@ -101,6 +104,7 @@ impl EditorTab {
         EditorTab::Problems,
         EditorTab::Statistics,
         EditorTab::Preferences,
+        EditorTab::ProjectSettings,
     ];
 
     /// The view index, when this is a scene view's tab.
@@ -128,6 +132,7 @@ impl EditorTab {
             EditorTab::Problems => "Problems".to_string(),
             EditorTab::Statistics => "Statistics".to_string(),
             EditorTab::Preferences => "Preferences".to_string(),
+            EditorTab::ProjectSettings => "Project Settings".to_string(),
             // A module panel's title belongs to the registry, not here: the
             // shell asks the registry, because the title changes when the
             // module unloads.
@@ -150,6 +155,7 @@ impl EditorTab {
             EditorTab::Problems => "problems".to_string(),
             EditorTab::Statistics => "statistics".to_string(),
             EditorTab::Preferences => "preferences".to_string(),
+            EditorTab::ProjectSettings => "project_settings".to_string(),
             EditorTab::Module(_) => "module".to_string(),
         }
     }
@@ -220,6 +226,7 @@ impl<'de> Deserialize<'de> for EditorTab {
                 "Problems" => Ok(EditorTab::Problems),
                 "Statistics" => Ok(EditorTab::Statistics),
                 "Preferences" => Ok(EditorTab::Preferences),
+                "ProjectSettings" => Ok(EditorTab::ProjectSettings),
                 other => Err(D::Error::custom(format!("unknown editor tab {other}"))),
             };
         }
@@ -311,7 +318,11 @@ impl EditorDock {
         let [_inspector, _systems] = tree.split_below(
             right_column,
             INSPECTOR_COLUMN_FRACTION,
-            vec![EditorTab::Systems, EditorTab::Preferences],
+            vec![
+                EditorTab::Systems,
+                EditorTab::Preferences,
+                EditorTab::ProjectSettings,
+            ],
         );
         Self {
             schema_version: super::LAYOUT_SCHEMA_VERSION,
@@ -612,7 +623,8 @@ mod tests {
             vec![EditorTab::Scene(0), EditorTab::Scene(1), EditorTab::Game]
         );
         // The right column stacks the inspector above the systems list,
-        // with the preferences form tabbed beside the list.
+        // with the preferences form and the project settings tabbed beside
+        // the list.
         let column = rest.right();
         assert!(
             state[surface][column].is_vertical(),
@@ -621,7 +633,11 @@ mod tests {
         assert_eq!(tabs_at(column.left()), vec![EditorTab::Inspector]);
         assert_eq!(
             tabs_at(column.right()),
-            vec![EditorTab::Systems, EditorTab::Preferences]
+            vec![
+                EditorTab::Systems,
+                EditorTab::Preferences,
+                EditorTab::ProjectSettings
+            ]
         );
         // Each side column ends up one `SIDE_COLUMN_FRACTION` of the window's
         // width: the entity split gives its column that share directly, and
@@ -691,6 +707,7 @@ mod tests {
             EditorTab::Console,
             EditorTab::Problems,
             EditorTab::Statistics,
+            EditorTab::ProjectSettings,
         ] {
             assert!(dock.pop_out(tab), "{tab:?} could not be popped out");
         }

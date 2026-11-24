@@ -430,11 +430,13 @@ def remove_misc_artifacts(
     return kept
 
 
-def load_project_settings(project_root: Path) -> dict:
+def load_project_settings(project_root: Path, include_local: bool = False) -> dict:
     """Loads the project's settings file for the build report.
 
     Returns {} when the file is missing or unreadable; the report then simply
-    omits the fields the file would have supplied.
+    omits the fields the file would have supplied. `include_local` reads
+    `project_settings.local.yaml` over it, as a `--local_project_settings` build
+    does.
     """
     settings_path = project_root / "project_settings.yaml"
     if not settings_path.is_file():
@@ -446,6 +448,12 @@ def load_project_settings(project_root: Path) -> dict:
     try:
         with settings_path.open(encoding="utf-8") as handle:
             data = yaml.safe_load(handle) or {}
+        local_path = project_root / "project_settings.local.yaml"
+        if include_local and local_path.is_file():
+            with local_path.open(encoding="utf-8") as handle:
+                local = yaml.safe_load(handle) or {}
+            if isinstance(data, dict) and isinstance(local, dict):
+                data = {**data, **local}
     except yaml.YAMLError:
         return {}
     return data if isinstance(data, dict) else {}
@@ -888,6 +896,7 @@ class BuildRequest:
     profile_arguments: List[str]
     managed_manifest: Optional[Path]
     analyze_size: bool
+    local_project_settings: bool
     start_time: float
 
 
@@ -908,6 +917,14 @@ def resolve_build_request(argv: List[str]) -> BuildRequest:
     arguments = [argument for argument in arguments if argument != "--analyze_size"]
     aot = "--csharp-aot" in arguments
     arguments = [argument for argument in arguments if argument != "--csharp-aot"]
+    # A local build may read the uncommitted settings override; the released
+    # artifact must not, so the generator reads it only when this asks.
+    local_project_settings = "--local_project_settings" in arguments
+    arguments = [
+        argument
+        for argument in arguments
+        if argument != "--local_project_settings"
+    ]
     try:
         project_path, arguments = extract_project_argument(arguments)
     except ValueError as error:
@@ -985,6 +1002,7 @@ def resolve_build_request(argv: List[str]) -> BuildRequest:
         profile_arguments=profile_arguments,
         managed_manifest=managed_manifest,
         analyze_size=analyze_size,
+        local_project_settings=local_project_settings,
         start_time=start_time,
     )
 
@@ -1006,6 +1024,8 @@ def generate_bundle(request: BuildRequest) -> int:
         command += ["--csharp-aot", "--rid", dotnet_rid()]
     for feature in sorted(request.requested_features):
         command += ["--feature", feature]
+    if request.local_project_settings:
+        command.append("--local_project_settings")
     generated = subprocess.run(command, cwd=str(request.repository_root))
     if generated.returncode != 0:
         return generated.returncode
@@ -1077,7 +1097,12 @@ def build_managed_side(request: BuildRequest) -> int:
 def collect_project_settings(request: BuildRequest) -> None:
     """Reads the project's settings file into the request for the report."""
     request.project_settings = (
-        load_project_settings(request.project_root) if request.project_root else {}
+        load_project_settings(
+            request.project_root,
+            include_local=request.local_project_settings,
+        )
+        if request.project_root
+        else {}
     )
 
 
@@ -1229,9 +1254,14 @@ def print_build_report(request: BuildRequest, copied_artifacts: List[str]) -> No
         description = project_settings.get("description")
         if description:
             branches.append(("description:", [str(description)]))
-        modules = project_settings.get("modules") or []
-        if modules:
-            branches.append(("modules:", [str(name) for name in modules]))
+        modules = project_settings.get("modules") or {}
+        enabled = [
+            str(name)
+            for name, entry in (modules.items() if isinstance(modules, dict) else [])
+            if isinstance(entry, dict) and entry.get("enabled") is True
+        ]
+        if enabled:
+            branches.append(("modules:", enabled))
     if copied_artifacts:
         artifact_entries = []
         for name in copied_artifacts:

@@ -45,5 +45,5 @@ its own mesh rows out of the Inspector's body.
   build, so an editor theme stays a development-time document.
 - Assets that have a `.meta` sidecar keep it; the store resolves their identity
   through it, and the asset suites edit, corrupt, move and restore those files.
-- A managed test project's `modules:` list drives C# mirror generation. List only
-  modules that expose components or mirrored value types.
+- A managed test project's `modules:` table drives C# mirror generation. Switch
+  on only the modules that expose components or mirrored value types.

@@ -11,4 +11,8 @@ build_binary_name: "CubeNoEditorRust"
 version: "0.1.0"
 description: "A spinning cube from one OBJ file with no metadata, in Rust."
 
-modules: []
+modules:
+  pill_rendering:
+    enabled: true
+  pill_renderer:
+    enabled: true

@@ -241,6 +241,11 @@ pub mod tab_preferences;
 
 pub use tab_preferences::preferences_tab;
 
+/// The [`tab_project_settings`] module: the project settings tab: every declared setting with its source.
+pub mod tab_project_settings;
+
+pub use tab_project_settings::project_settings_tab;
+
 /// The [`tab_inspector`] module: the inspector tab: the selection's components and their rows.
 pub mod tab_inspector;
 
@@ -654,7 +659,7 @@ pub fn run_frame(
     // The play session's tab focus, decided before the dock draws. Entering
     // Play remembers the tab that was in front and brings the Game view
     // forward, so the person sees what the session shows; Stop puts that tab
-    // back. The switch in the project's `editor_settings.yaml` can turn the
+    // back. The switch in the project's `editor.focus_game_on_play` can turn the
     // focus off, and then nothing moves.
     if state.last_run_mode != Some(snapshot.run_mode) {
         let entering_play = snapshot.run_mode == pill_engine::RunMode::Playing;
@@ -1153,6 +1158,7 @@ pub fn tab_body(viewer: &mut EditorTabViewer<'_>, ui: &mut egui::Ui, tab: Editor
             viewer.preferences_draft,
             viewer.pending,
         ),
+        EditorTab::ProjectSettings => project_settings_tab(ui, viewer.snapshot, viewer.pending),
         EditorTab::Console => console_tab(ui, viewer.snapshot, viewer.console_filters),
         EditorTab::Problems => problems_tab(ui, viewer.snapshot, &mut viewer.requests.problem_open),
         EditorTab::Statistics => {

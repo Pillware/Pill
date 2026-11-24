@@ -75,6 +75,7 @@ use pill_editor_core::placements::CommandDraws;
 use pill_editor_core::preferences::{self, PreferencesView};
 use pill_editor_core::previews;
 use pill_editor_core::problems::{self as problem_parser, Severity};
+use pill_editor_core::project_settings::{ProjectSettingsView, SettingProvenance};
 use pill_editor_core::requests::HistoryRequest;
 use pill_editor_core::scripted::{
     AssetEdit, Dump, KeyChord, PaletteRequest, ScriptedCommand, ScriptedTarget, ToolbarAction,
@@ -2352,6 +2353,10 @@ impl EditorWindow {
         let listing_refreshed = self.refresh_asset_listing();
         self.refresh_asset_detail(listing_refreshed);
         // Step 2: Capture this frame's snapshot.
+        // The settings tab's rows, read before the engine borrow below: the
+        // rows come from the host and the engine together, and the host hands
+        // the engine out mutably for the rest of this capture.
+        let project_settings_view = capture_project_settings(self.host.host());
         let engine = self.host.host_mut().engine_mut();
         if engine.world().get_resource::<EditorSnapshot>().is_none() {
             return;
@@ -2385,11 +2390,12 @@ impl EditorWindow {
             &self.preferences_document,
             self.gizmo_project.as_deref(),
         );
+        snapshot.project_settings = project_settings_view;
         // The theme the shell installs. The executable owns the layers, so the
         // merged theme travels on the snapshot together with the generation
         // number that tells the shell whether to install it again.
-        // The project's switch for the Game tab focus, read from
-        // `editor_settings.yaml` and defaulting to on when the file says
+        // The project's switch for the Game tab focus, read from the
+        // settings' `editor:` entry and defaulting to on when it says
         // nothing.
         snapshot.focus_game_on_play = self
             .theme_watch
@@ -2826,7 +2832,8 @@ impl EditorWindow {
     ///
     /// Two layers sit over the code default: the user's file, named by the
     /// `theme` preference and read from disk, and the project's, named by
-    /// `editor_settings.yaml` and loaded through the project's asset store so
+    /// the settings' `editor.theme` and loaded through the project's
+    /// asset store so
     /// the host's watcher reimports an edited file. Where both name the same
     /// item, the project wins.
     ///
@@ -2876,12 +2883,21 @@ impl EditorWindow {
         let settings_stamp = project_directory
             .as_ref()
             .map(|directory| {
-                FileStamp::of(&directory.join(pill_development_host::EDITOR_SETTINGS_FILE))
+                FileStamp::of(&directory.join(pill_development_host::PROJECT_SETTINGS_FILE))
             })
             .unwrap_or_default();
-        if settings_stamp != self.theme_watch.settings_stamp || self.theme_watch.settings.is_none()
+        let local_settings_stamp = project_directory
+            .as_ref()
+            .map(|directory| {
+                FileStamp::of(&directory.join(pill_development_host::PROJECT_SETTINGS_LOCAL_FILE))
+            })
+            .unwrap_or_default();
+        if settings_stamp != self.theme_watch.settings_stamp
+            || local_settings_stamp != self.theme_watch.local_settings_stamp
+            || self.theme_watch.settings.is_none()
         {
             self.theme_watch.settings_stamp = settings_stamp;
+            self.theme_watch.local_settings_stamp = local_settings_stamp;
             self.theme_watch.settings = Some(match &project_directory {
                 Some(directory) => pill_development_host::read_editor_settings(directory),
                 None => Ok(pill_development_host::EditorSettings::default()),
@@ -4992,6 +5008,96 @@ fn engine_asset_rows(
             },
         )
         .collect()
+}
+
+/// The Project Settings tab's rows: every setting the host, the engine, the
+/// editor and the loaded modules declare, with the value each source holds.
+///
+/// The declarations come from the host (`host`, `engine`, `editor`) and from
+/// the engine's registry (every module that registered a settings surface), and
+/// the values come from three places at once: the two settings documents the
+/// host read, the process environment, and the resolved values the run applies.
+/// A row is built even for an entry the run has not loaded - its declared
+/// default is still worth showing - so the tab lists a module the project
+/// disables too, marked by its `enabled` row.
+fn capture_project_settings(host: &pill_development_host::DevHost) -> ProjectSettingsView {
+    let Some(directory) = host.project_directory() else {
+        return ProjectSettingsView::default();
+    };
+    let Some(settings) = host.project_settings() else {
+        return ProjectSettingsView {
+            directory: Some(directory.display().to_string()),
+            refusal: Some("the project's settings are not readable".to_string()),
+            ..ProjectSettingsView::default()
+        };
+    };
+    let mut schemas: Vec<pill_engine_core::ModuleSettingsSchema> =
+        pill_development_host::declared_settings_schemas().to_vec();
+    for schema in host.engine().module_settings_schemas() {
+        // A module registers its surface once per generation; a reload leaves
+        // one entry, but the same name arriving twice must not double its rows.
+        if schemas.iter().all(|known| known.module != schema.module) {
+            schemas.push(schema);
+        }
+    }
+    let resolved = settings.resolved();
+    let mut rows = Vec::new();
+    for schema in &schemas {
+        for spec in schema.settings {
+            let path = spec.path();
+            let entry = schema.module;
+            let imported = resolved.value(entry, path.as_str());
+            let project_text = settings
+                .project_document()
+                .value_at(entry, path.as_str())
+                .map(pill_editor_core::project_settings::describe_value);
+            let local_text = settings
+                .local_document()
+                .value_at(entry, path.as_str())
+                .map(pill_editor_core::project_settings::describe_value);
+            let variable = spec.environment_variable(entry);
+            let environment = std::env::var(variable.as_str())
+                .ok()
+                .map(|value| format!("{variable}={value}"));
+            rows.push(pill_editor_core::project_settings::ProjectSettingRow {
+                entry: entry.to_string(),
+                group: spec.group.to_string(),
+                path: path.clone(),
+                full_path: spec.full_path(entry),
+                description: spec.description.to_string(),
+                kind: spec.kind(),
+                minimum: spec.minimum,
+                maximum: spec.maximum,
+                timing: spec.timing,
+                default_text: pill_editor_core::project_settings::describe_value(
+                    &spec.default.value(),
+                ),
+                project_text,
+                local_text,
+                environment,
+                effective_text: pill_editor_core::project_settings::describe_value(
+                    &imported
+                        .map(|value| value.value.clone())
+                        .unwrap_or_else(|| spec.default.value()),
+                ),
+                provenance: match imported.map(|value| value.source) {
+                    Some(pill_engine_core::SettingSource::Project) => SettingProvenance::Project,
+                    Some(pill_engine_core::SettingSource::Local) => SettingProvenance::Local,
+                    Some(pill_engine_core::SettingSource::Environment) => {
+                        SettingProvenance::Environment
+                    }
+                    Some(pill_engine_core::SettingSource::Default) | None => {
+                        SettingProvenance::Default
+                    }
+                },
+            });
+        }
+    }
+    ProjectSettingsView {
+        directory: Some(directory.display().to_string()),
+        rows,
+        refusal: None,
+    }
 }
 
 /// Whether the listing already shows the store asset `name` carries.

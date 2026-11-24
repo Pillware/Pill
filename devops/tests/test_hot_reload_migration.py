@@ -76,7 +76,11 @@ modules: []
 PROJECT_SETTINGS_PATH = TEST_PROJECT_ROOT / "project_settings.yaml"
 
 RELOAD_COMPLETE_TOKEN = "hot reload complete"
-FAST_PATH_TOKEN = "schema unchanged for all persistable component types"
+# A reload whose rebuilt image gives a persistable type the same `TypeId` and
+# the same layout moves no rows: the columns keep their allocations. A rebuilt
+# image that hands a type a new id migrates it instead, which the scenarios that
+# change something assert through `SELECTIVE_START_TOKEN`.
+FAST_PATH_TOKEN = "no persistable component type moved"
 SELECTIVE_START_TOKEN = MIGRATION_START_TOKEN
 SELECTIVE_FINISHED_TOKEN = MIGRATION_FINISHED_TOKEN
 FRAMECOUNTER_MIGRATE_LOG_TOKEN = "'native::FrameCounter' -> migrating"

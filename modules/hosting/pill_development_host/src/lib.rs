@@ -66,6 +66,9 @@ mod notices;
 /// The loaded project module: its startup build and load, and each reload
 /// after that.
 mod project_module;
+/// The project's settings: its declarations, its file pair and the resolution
+/// every consumer asks.
+mod project_settings;
 /// The steps every reload runs once its replacement image is loaded.
 mod reload;
 /// What this run's watchers are allowed to do, read from the `PILL_*` switches.
@@ -94,11 +97,9 @@ mod scratch;
 // Re-exports
 // =============================================================================
 
-/// The editor-only settings file's name in the project root.
-pub use config::EDITOR_SETTINGS_FILE;
-/// The editor's own settings file and its reader, used by the editor
-/// executable and never by a game build.
-pub use config::{read_editor_settings, resolve_editor_theme, EditorSettings};
+/// The editor's project layer and its reader, used by the editor executable
+/// and never by a game build.
+pub use config::resolve_editor_theme;
 /// The host's configuration: the project, the extensions to load and the
 /// selected renderer.
 pub use config::{ExtensionConfig, HostConfig, ProjectModuleBackend, ProjectModuleConfig};
@@ -122,6 +123,12 @@ pub use pill_csharp_bridge::CSharpModuleConfig;
 /// What a frontend's loop needs from whatever runs the game. The development
 /// host implements it, as the shipping runtimes do.
 pub use pill_player::FrameDriver;
+/// The project's settings: the file pair, the declarations and the editor's
+/// layer.
+pub use project_settings::{
+    declared_settings_schemas, read_editor_settings, EditorSettings, ProjectSettings,
+    PROJECT_SETTINGS_FILE, PROJECT_SETTINGS_LOCAL_FILE,
+};
 
 /// The project's assets as an editor tool sees them, plus the standalone asset
 /// types a new asset can be created for.

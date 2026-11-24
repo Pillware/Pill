@@ -1,24 +1,23 @@
-//! The manager's tuning document and its settings asset.
+//! The simulation's declared settings.
 //!
 //! # Responsibilities
 //!
-//! - Declares [`PhysicsSettings`], the values a project tunes in one file.
-//! - Declares [`PhysicsSettingsAsset`], the `.physics_settings` file the values
-//!   are read from and written to.
-//! - Applies a loaded document to the running manager, refusing values the
+//! - Declares [`PhysicsSettings`], the values a project tunes under
+//!   `modules.pill_physics.physics`.
+//! - Applies a resolved value to the running manager, refusing values the
 //!   simulation cannot run with.
 //!
 //! # Design
 //!
-//! The document holds plain numbers, as every value on this crate's boundary
-//! does. A file is hand-editable, so a value that would make the simulation
-//! meaningless - a zero timestep, a negative gravity scale - is refused by name
-//! rather than clamped, and the manager keeps what it had.
+//! Every value is a plain scalar, because a declared setting is one row: world
+//! gravity is three of them, and [`PhysicsSettings::gravity`] composes the
+//! vector the simulation reads. A value that would make the simulation
+//! meaningless - a zero timestep, a gravity that is not a number - is refused by
+//! name rather than clamped, and the manager keeps what it had.
 
 // External crates
 use pill_core::telemetry::telemetry_target;
-use pill_engine::*;
-use serde::{Deserialize, Serialize};
+use pill_engine::{PillSettings, SettingsOutcome};
 
 // Current crate
 pub use crate::manager::PhysicsManager;
@@ -29,32 +28,69 @@ use crate::manager::{DEFAULT_FIXED_TIMESTEP_SECONDS, DEFAULT_GRAVITY, MAXIMUM_SU
 // =============================================================================
 
 /// The tuning of the simulation.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone, Copy, PartialEq, PillSettings)]
+#[pill(module = "pill_physics", group = "physics")]
 pub struct PhysicsSettings {
-    /// World gravity in world units per second squared. The default is the
-    /// earth's, pointing down.
-    pub gravity: [f32; 3],
-    /// The length of one simulation step in seconds. Every step advances the
-    /// world by exactly this much, so the same scene settles the same way at
-    /// any frame rate.
+    /// World gravity along x, in world units per second squared.
+    #[pill(
+        default = 0.0,
+        description = "World gravity along x, in world units per second squared."
+    )]
+    pub gravity_x: f32,
+    /// World gravity along y, in world units per second squared.
+    #[pill(
+        default = -9.81,
+        description = "World gravity along y, in world units per second squared. A negative value points down."
+    )]
+    pub gravity_y: f32,
+    /// World gravity along z, in world units per second squared.
+    #[pill(
+        default = 0.0,
+        description = "World gravity along z, in world units per second squared."
+    )]
+    pub gravity_z: f32,
+    /// The length of one simulation step in seconds.
+    #[pill(
+        default = 0.016666668,
+        min = 0.0001,
+        description = "The length of one simulation step in seconds. Every frame advances the world by whole steps of exactly this length."
+    )]
     pub fixed_timestep: f32,
-    /// The most steps one frame may run, so a long frame cannot spiral into a
-    /// longer one.
+    /// The most steps one frame may run.
+    #[pill(
+        default = 8,
+        min = 1,
+        description = "The most simulation steps one frame may run, so a long frame cannot spiral into a longer one."
+    )]
     pub max_substeps: u32,
-    /// Whether a body's drawn pose is blended between its last two steps. It
-    /// smooths motion at frame rates that are not a multiple of the step rate.
+    /// Whether a body's drawn pose is blended between its last two steps.
+    #[pill(
+        default = false,
+        description = "Whether a body's drawn pose is blended between its last two steps, which smooths motion at frame rates that are not a multiple of the step rate."
+    )]
     pub interpolate: bool,
-    /// Whether the colliders are drawn as outlines, for looking at what the
-    /// simulation actually sees.
+    /// Whether colliders are drawn as outlines.
+    #[pill(
+        default = false,
+        description = "Whether every collider is drawn as an outline, for looking at what the simulation sees."
+    )]
     pub debug_draw: bool,
+}
+
+impl PhysicsSettings {
+    /// World gravity as the simulation reads it.
+    pub fn gravity(&self) -> [f32; 3] {
+        [self.gravity_x, self.gravity_y, self.gravity_z]
+    }
 }
 
 impl std::default::Default for PhysicsSettings {
     /// World gravity, sixty steps a second, no interpolation and no outlines.
     fn default() -> Self {
         Self {
-            gravity: DEFAULT_GRAVITY,
+            gravity_x: DEFAULT_GRAVITY[0],
+            gravity_y: DEFAULT_GRAVITY[1],
+            gravity_z: DEFAULT_GRAVITY[2],
             fixed_timestep: DEFAULT_FIXED_TIMESTEP_SECONDS,
             max_substeps: MAXIMUM_SUBSTEPS_PER_FRAME,
             interpolate: false,
@@ -64,52 +100,11 @@ impl std::default::Default for PhysicsSettings {
 }
 
 // =============================================================================
-// PhysicsSettingsAsset
+// ModuleSettings
 // =============================================================================
 
-/// The `.physics_settings` document a project tunes the simulation through.
-///
-/// The file lives at `res/settings/pill_physics.physics_settings`. The loaded
-/// value is only a carrier: the manager reads the document, not the asset.
-///
-/// The attribute declares the type, so every generation of the module registers
-/// it with the world's asset store without a call in `register`.
-#[asset(standalone)]
-#[derive(Debug, Default)]
-pub struct PhysicsSettingsAsset {
-    /// The settings the file holds.
-    pub settings: PhysicsSettings,
-}
-
-impl pill_engine::Asset for PhysicsSettingsAsset {
-    fn shared_name() -> Option<&'static str> {
-        Some("pill_physics::PhysicsSettingsAsset")
-    }
-}
-
-impl pill_engine::StandaloneAsset for PhysicsSettingsAsset {
-    type Document = PhysicsSettings;
-    const FILE_EXTENSION: &'static str = "physics_settings";
-
-    fn from_document(
-        _name: &str,
-        document: PhysicsSettings,
-        _assets: &AssetManager,
-    ) -> AssetLoadResult<Self> {
-        Ok(Self { settings: document })
-    }
-}
-
-// =============================================================================
-// SettingsAssetManager
-// =============================================================================
-
-impl pill_engine::SettingsAssetManager for PhysicsManager {
-    type Settings = PhysicsSettingsAsset;
-
-    fn settings_name() -> &'static str {
-        "pill_physics"
-    }
+impl pill_engine::ModuleSettings for PhysicsManager {
+    type Values = PhysicsSettings;
 
     fn apply_settings(&mut self, settings: &PhysicsSettings) -> SettingsOutcome {
         // Step 1: Refuse values no simulation can run with, naming the field so
@@ -132,7 +127,8 @@ impl pill_engine::SettingsAssetManager for PhysicsManager {
             );
             return SettingsOutcome::Refused;
         }
-        if settings.gravity.iter().any(|value| !value.is_finite()) {
+        let gravity = settings.gravity();
+        if gravity.iter().any(|value| !value.is_finite()) {
             pill_core::warn!(
                 target: telemetry_target::ECS,
                 manager = "pill_physics",
@@ -145,7 +141,7 @@ impl pill_engine::SettingsAssetManager for PhysicsManager {
         // Step 2: Everything a running simulation can take, takes effect at
         // once: gravity, the step rate, the interpolation switch and the
         // outlines.
-        self.set_gravity(settings.gravity);
+        self.set_gravity(gravity);
         self.set_fixed_timestep(settings.fixed_timestep, settings.max_substeps);
         let interpolate = settings.interpolate;
         let debug_draw = settings.debug_draw;
@@ -153,9 +149,9 @@ impl pill_engine::SettingsAssetManager for PhysicsManager {
         self.set_debug_draw(debug_draw);
         pill_core::info!(
             target: telemetry_target::ECS,
-            gravity_x = settings.gravity[0],
-            gravity_y = settings.gravity[1],
-            gravity_z = settings.gravity[2],
+            gravity_x = gravity[0],
+            gravity_y = gravity[1],
+            gravity_z = gravity[2],
             fixed_timestep = settings.fixed_timestep,
             max_substeps = settings.max_substeps,
             interpolate,
@@ -172,13 +168,16 @@ impl pill_engine::SettingsAssetManager for PhysicsManager {
 
 #[cfg(test)]
 mod tests {
+    use pill_engine::ModuleSettings;
+
     use super::*;
 
     #[test]
-    fn the_document_defaults_to_the_manager_s_defaults() {
+    fn the_declared_defaults_are_the_manager_s() {
         let settings = PhysicsSettings::default();
-        assert_eq!(settings.gravity, DEFAULT_GRAVITY);
+        assert_eq!(settings.gravity(), DEFAULT_GRAVITY);
         assert_eq!(settings.fixed_timestep, DEFAULT_FIXED_TIMESTEP_SECONDS);
+        assert_eq!(settings.max_substeps, MAXIMUM_SUBSTEPS_PER_FRAME);
         assert!(!settings.interpolate);
         assert!(!settings.debug_draw);
     }
@@ -195,10 +194,12 @@ mod tests {
     }
 
     #[test]
-    fn a_document_moves_the_world_gravity_and_the_step_rate() {
+    fn a_setting_moves_the_world_gravity_and_the_step_rate() {
         let mut manager = PhysicsManager::new();
         let settings = PhysicsSettings {
-            gravity: [0.0, 0.0, 0.0],
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
             fixed_timestep: 1.0 / 30.0,
             max_substeps: 4,
             interpolate: true,

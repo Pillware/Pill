@@ -617,11 +617,71 @@ pub(crate) fn declared_features(workspace_root: &Path, package_name: &str) -> Op
 /// Reads a package's declared features without caching them, for
 /// [`declared_features`].
 ///
+/// See [`read_package_manifest`] for how the manifest is found.
+fn read_declared_features(workspace_root: &Path, package_name: &str) -> Option<Vec<String>> {
+    let document = read_package_manifest(workspace_root, package_name)?;
+    let features = document
+        .get("features")
+        .and_then(|item| item.as_table_like())
+        .map(|table| table.iter().map(|(key, _)| key.to_string()).collect())
+        .unwrap_or_default();
+    Some(features)
+}
+
+/// One build option a module's manifest declares: a cargo feature a project may
+/// turn on from `modules.<module>.build`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BuildOption {
+    /// The option's name, which is the cargo feature it turns on.
+    pub(crate) name: String,
+    /// Whether the option is on when the project says nothing.
+    pub(crate) default_on: bool,
+}
+
+/// Returns the build options the package declares, read from
+/// `[package.metadata.pill.settings.build]` in its manifest, or `None` when no
+/// manifest names the package.
+///
+/// A feature the table does not mention is an internal flag of the module: the
+/// host's wrapper always enables it, so the module build and the project build
+/// agree. A feature the table mentions follows the project.
+pub(crate) fn declared_build_options(
+    workspace_root: &Path,
+    package_name: &str,
+) -> Option<Vec<BuildOption>> {
+    let document = read_package_manifest(workspace_root, package_name)?;
+    let rows = document
+        .get("package")
+        .and_then(|item| item.get("metadata"))
+        .and_then(|item| item.get("pill"))
+        .and_then(|item| item.get("settings"))
+        .and_then(|item| item.get("build"))
+        .and_then(|item| item.as_table_like())?;
+    let options = rows
+        .iter()
+        .map(|(name, row)| BuildOption {
+            name: name.to_string(),
+            default_on: row
+                .get("default")
+                .and_then(|default| default.as_bool())
+                .unwrap_or(false),
+        })
+        .collect();
+    Some(options)
+}
+
+/// Reads the manifest of the package that names itself `package_name`, out of
+/// the workspace members up to [`MEMBER_SEARCH_DEPTH`] directories below
+/// `workspace_root`.
+///
 /// It first tries the manifest of the extension crate the package names
 /// ([`crate::config::extension_crate_directory`]), then every `Cargo.toml` up
 /// to [`MEMBER_SEARCH_DEPTH`] levels under `workspace_root`, and returns the
-/// features of the first manifest whose package name matches.
-fn read_declared_features(workspace_root: &Path, package_name: &str) -> Option<Vec<String>> {
+/// first manifest whose package name matches.
+fn read_package_manifest(
+    workspace_root: &Path,
+    package_name: &str,
+) -> Option<toml_edit::DocumentMut> {
     let mut manifests =
         vec![
             crate::config::extension_crate_directory(workspace_root, package_name)
@@ -636,12 +696,7 @@ fn read_declared_features(workspace_root: &Path, package_name: &str) -> Option<V
         if declared_package_name != package_name {
             return None;
         }
-        let features = document
-            .get("features")
-            .and_then(|item| item.as_table_like())
-            .map(|table| table.iter().map(|(key, _)| key.to_string()).collect())
-            .unwrap_or_default();
-        Some(features)
+        Some(document)
     })
 }
 

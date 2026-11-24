@@ -5,8 +5,8 @@
 //!
 //! - Prove that a derived resource is declared before the artifact's `register`
 //!   half runs, and that storing a value afterwards still works.
-//! - Prove that a manager resource declares its settings-asset surface from its
-//!   own `register`, which runs on every generation.
+//! - Prove that a manager resource declares its settings surface from its own
+//!   `register`, which runs on every generation.
 //!
 //! # Design
 //!
@@ -17,7 +17,9 @@
 
 // External crates
 use pill_engine::component_registry::run_artifact_registration;
-use pill_engine::{resource, Engine, ResourceId, SettingsAssetManager, SettingsOutcome};
+use pill_engine::{
+    resource, DeclaredSettings, Engine, ModuleSettings, PillSettings, ResourceId, SettingsOutcome,
+};
 
 // =============================================================================
 // Declarations
@@ -47,65 +49,29 @@ struct SessionPoints {
     points: u32,
 }
 
-/// The document a declared manager's settings asset holds.
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-struct DeclaredManagerDocument {
+/// The settings a declared manager reads.
+#[derive(Clone, Debug, PillSettings)]
+#[pill(module = "declared_manager", group = "probe")]
+struct DeclaredManagerSettings {
     /// A number the applier reads.
+    #[pill(default = 0, description = "How many documents the test applied.")]
     applied_count: u32,
 }
 
-/// The standalone asset a declared manager reads.
-#[derive(Debug, Default)]
-struct DeclaredManagerSettingsAsset {
-    /// The settings the file holds.
-    settings: DeclaredManagerDocument,
-}
-
-impl pill_engine::Asset for DeclaredManagerSettingsAsset {
-    fn shared_name() -> Option<&'static str> {
-        Some("automatic_resources::DeclaredManagerSettingsAsset")
+impl Default for DeclaredManagerSettings {
+    /// Nothing applied yet.
+    fn default() -> Self {
+        Self { applied_count: 0 }
     }
 }
 
-pill_engine::trait_type_map::impl_trait_accessible!(dyn pill_engine::Asset; DeclaredManagerSettingsAsset);
+impl ModuleSettings for DeclaredManager {
+    type Values = DeclaredManagerSettings;
 
-impl pill_engine::StandaloneAsset for DeclaredManagerSettingsAsset {
-    type Document = DeclaredManagerDocument;
-    const FILE_EXTENSION: &'static str = "declared_manager_settings";
-
-    fn from_document(
-        _name: &str,
-        document: Self::Document,
-        _assets: &pill_engine::AssetManager,
-    ) -> pill_engine::AssetLoadResult<Self> {
-        Ok(Self { settings: document })
-    }
-}
-
-impl SettingsAssetManager for DeclaredManager {
-    type Settings = DeclaredManagerSettingsAsset;
-
-    fn settings_name() -> &'static str {
-        "declared_manager"
-    }
-
-    fn apply_settings(&mut self, settings: &DeclaredManagerDocument) -> SettingsOutcome {
+    fn apply_settings(&mut self, settings: &DeclaredManagerSettings) -> SettingsOutcome {
         self.applied_count = settings.applied_count;
         SettingsOutcome::Applied
     }
-}
-
-/// The asset builds from its document, which is what a load does.
-#[test]
-fn the_settings_asset_builds_from_its_document() {
-    let asset = <DeclaredManagerSettingsAsset as pill_engine::StandaloneAsset>::from_document(
-        "settings/declared_manager.declared_manager_settings",
-        DeclaredManagerDocument { applied_count: 2 },
-        &pill_engine::AssetManager::new(),
-    )
-    .expect("the document builds the asset");
-
-    assert_eq!(asset.settings.applied_count, 2);
 }
 
 // =============================================================================
@@ -121,12 +87,10 @@ fn store_countdown(engine: &mut Engine) -> u32 {
     0
 }
 
-/// The half that declares a manager's settings-asset surface, as a module's own
+/// The half that declares a manager's settings surface, as a module's own
 /// `register` does on every generation.
 fn declare_manager(engine: &mut Engine) -> u32 {
-    engine
-        .world_mut()
-        .register_settings_asset_manager::<DeclaredManager>();
+    pill_engine::register_settings::<DeclaredManager>(engine);
     0
 }
 
@@ -151,27 +115,25 @@ fn a_derived_resource_is_declared_by_the_entry_point() {
     assert_eq!(stored.map(|countdown| countdown.frames_left), Some(3));
 }
 
-/// A manager resource declares its settings-asset surface from its own
-/// `register`, which runs after the entry point's declarations.
+/// A manager resource declares its settings surface from its own `register`,
+/// which runs after the entry point's declarations.
 #[test]
-fn a_manager_declares_its_settings_asset_surface_from_register() {
+fn a_manager_declares_its_settings_surface_from_register() {
     let mut engine = Engine::new();
 
     let status = run_artifact_registration(&mut engine, declare_manager);
 
     assert_eq!(status, 0);
-    let surface = engine
-        .world()
-        .manager_settings_surface(ResourceId::of::<DeclaredManager>())
+    let schemas = engine.module_settings_schemas();
+    let schema = schemas
+        .iter()
+        .find(|schema| schema.module == "declared_manager")
         .expect("a manager that declared its surface reports it");
-    assert_eq!(surface.settings_name, "declared_manager");
-    assert_eq!(
-        surface.path,
-        "settings/declared_manager.declared_manager_settings"
-    );
-    // The surface is reported without a value: a manager is only listed once
+    assert_eq!(schema.settings.len(), 2, "`enabled` plus the declared row");
+    assert_eq!(DeclaredManagerSettings::MODULE, "declared_manager");
+    // The surface is declared without a value: a manager is only listed once
     // it is stored, which no declaration does on its own.
-    assert!(engine.world().settings_asset_manager_ids().is_empty());
+    assert!(engine.world().get_resource::<DeclaredManager>().is_none());
 }
 
 /// A derived resource that derives `Clone` records its copy hook at the type's

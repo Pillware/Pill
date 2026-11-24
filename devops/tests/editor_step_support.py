@@ -48,6 +48,30 @@ def print_ok(label: str) -> None:
     print_step_ok(label)
 
 
+def write_editor_theme(project_settings_path: Path, theme) -> None:
+    """Sets or removes `editor.theme` in a project's settings file.
+
+    `theme=None` removes the key, and the `editor:` entry with it when nothing
+    else is left. Every other key is kept, so a step changes one value and the
+    project keeps the module list it runs with.
+    """
+    data = yaml.safe_load(project_settings_path.read_text(encoding="utf-8")) or {}
+    editor = data.get("editor")
+    if not isinstance(editor, dict):
+        editor = {}
+    if theme is None:
+        editor.pop("theme", None)
+    else:
+        editor["theme"] = theme
+    if editor:
+        data["editor"] = editor
+    else:
+        data.pop("editor", None)
+    project_settings_path.write_text(
+        yaml.safe_dump(data, sort_keys=False), encoding="utf-8"
+    )
+
+
 def read_budget_exceeded(session: EditorSession) -> bool:
     """Whether this run read far more log text than the log itself holds.
 
@@ -676,7 +700,7 @@ class StepState:
         self.cube_meta = None
         self.flip_before = None
         self.count_before = None
-        self.editor_settings_path = None
+        self.project_settings_path = None
         self.theme_root = None
         self.font_generation = None
         self.showcase_rows = None

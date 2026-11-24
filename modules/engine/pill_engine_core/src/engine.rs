@@ -578,6 +578,16 @@ pub struct Engine {
     /// memory instead of failing to compile. An unused empty map costs a few
     /// bytes; the difference would cost correctness.
     hot_patch_registry: crate::hot_patch::HotPatchRegistry,
+    /// The settings surface every loaded manager registered, keyed by entry
+    /// name.
+    ///
+    /// Unconditional for the same reason as the hot-patch registry: it is
+    /// reached through a raw `&mut Engine`, so a feature that changed the
+    /// layout would corrupt memory. A module's registration replaces the entry
+    /// its previous generation left, which is what keeps the applier pointing
+    /// into the newest image.
+    module_settings:
+        std::collections::BTreeMap<String, crate::settings::ModuleSettingsRegistration>,
 }
 
 impl Engine {
@@ -664,6 +674,7 @@ impl Engine {
             active_owner: SystemOwner::PROJECT,
             disabled_owners: Vec::new(),
             hot_patch_registry: crate::hot_patch::HotPatchRegistry::new(),
+            module_settings: std::collections::BTreeMap::new(),
         };
 
         // The ECS state report is opt-in: only `set_ecs_diagnostics_interval`
@@ -2338,6 +2349,74 @@ impl Engine {
             }
         }
         self.world.system_last_run = 0;
+    }
+}
+
+// =============================================================================
+// Settings
+// =============================================================================
+
+impl Engine {
+    /// Registers one manager's settings surface, replacing an earlier
+    /// registration for the same entry.
+    ///
+    /// A module calls this from its registration half, so a reload replaces the
+    /// applier with one that points into the new image.
+    pub fn register_module_settings<T: crate::settings::ModuleSettings>(&mut self) {
+        let registration = crate::settings::ModuleSettingsRegistration {
+            module: <T::Values as crate::settings::DeclaredSettings>::MODULE,
+            schema: <T::Values as crate::settings::DeclaredSettings>::schema,
+            apply: crate::settings::apply_module_settings::<T>,
+        };
+        self.module_settings
+            .insert(registration.module.to_string(), registration);
+    }
+
+    /// The declared schema of every registered surface, in entry order.
+    pub fn module_settings_schemas(&self) -> Vec<crate::settings::ModuleSettingsSchema> {
+        self.module_settings
+            .values()
+            .map(|registration| (registration.schema)())
+            .collect()
+    }
+
+    /// Every registered surface, in entry order.
+    pub fn module_settings_registrations(
+        &self,
+    ) -> impl Iterator<Item = &crate::settings::ModuleSettingsRegistration> {
+        self.module_settings.values()
+    }
+
+    /// Applies the resolved settings to every live manager, in entry order.
+    ///
+    /// A manager that has no live value contributes nothing; a manager that
+    /// refuses keeps its previous value and reports the refusal through
+    /// [`crate::settings::SettingsOutcome`].
+    pub fn apply_resolved_settings(
+        &mut self,
+        resolved: &crate::settings::ResolvedSettings,
+    ) -> Vec<(&'static str, crate::settings::SettingsOutcome)> {
+        type Applier = fn(
+            &mut World,
+            &crate::settings::ResolvedSettings,
+        ) -> Option<crate::settings::SettingsOutcome>;
+        let appliers: Vec<(&'static str, Applier)> = self
+            .module_settings
+            .values()
+            .map(|registration| (registration.module, registration.apply))
+            .collect();
+        let mut outcomes = Vec::new();
+        for (module, apply) in appliers {
+            if let Some(outcome) = apply(self.world_mut(), resolved) {
+                outcomes.push((module, outcome));
+            }
+        }
+        outcomes
+    }
+
+    /// Whether an entry registered a settings surface.
+    pub fn has_module_settings(&self, module: &str) -> bool {
+        self.module_settings.contains_key(module)
     }
 }
 

@@ -981,6 +981,10 @@ fn builtin_commands() -> Vec<CommandSpec> {
         CommandSpec::new("editor.preferences_open", "Editor preferences")
             .menu(&["File", "Editor preferences"])
             .separator(),
+        // Edit's row for the settings tab: every declared project and module
+        // setting, with the file each value comes from.
+        CommandSpec::new("editor.project_settings_open", "Project Settings")
+            .menu(&["Edit", "Project Settings"]),
         CommandSpec::new("editor.quit", "Quit Editor")
             .menu(&["File", "Quit Editor"])
             .separator(),

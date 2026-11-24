@@ -52,6 +52,9 @@ egui_dock = { version = "0.21.1", default-features = false, features = [
     "serde",
 ] }
 serde = { version = "1", features = ["derive"] }
+# The settings tab's file editor reads a typed value as YAML, so a row's text
+# keeps its kind when it is written back.
+serde_yaml = "0.9"
 serde_json = "1"
 thiserror = "2"
 miette = { version = "7", features = ["derive"] }

@@ -114,8 +114,12 @@ CSHARP_SETTINGS = """\
 name: "C# Bridge Test"
 build_binary_name: "CSharpBridgeTest"
 modules:
-  - "pill_spline"
-  - "pill_test"
+  pill_rendering:
+    enabled: true
+  pill_spline:
+    enabled: true
+  pill_test:
+    enabled: true
 """
 
 # The C# half of the bridge assertions.

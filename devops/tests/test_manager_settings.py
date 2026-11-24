@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-A manager's settings asset is created, applied and re-applied live.
+A module's declared settings reach its manager, live and across a reload.
 
-PROTECTS: A project with no settings asset gets one written from the manager's own document defaults, an edit reaches the running manager with no reload, and a refused document changes nothing.
+PROTECTS: `modules.<module>.<group>.*` in project_settings.yaml is resolved against the schema the module registered, applied to the live manager, re-applied on an edit, and refused when the manager says the value is unusable.
 TIER: host
 
 REQUIREMENTS
@@ -10,32 +10,29 @@ REQUIREMENTS
   - Rust toolchain (cargo)
 
 DESCRIPTION
-    A manager is a resource that owns a subsystem. It declares a settings
-    asset - a standalone asset type whose document is its own tunable shape -
-    and the development host keeps `res/settings/<settings_name>.<extension>` in
-    step with it: created from the document defaults when missing, applied after
-    the project loads, and re-applied when the file's bytes change.
+    A module declares its settings in its own crate and registers the surface
+    from its registration half. The development host resolves the project's
+    documents against every registered schema once the modules have loaded,
+    hands each manager its values, and does it again when either settings file
+    changes or a reload replaced the manager.
 
-    The test project carries the subject for this
-    (`devops/tests/projects/native/src/settings_probe.rs`): a manager with three
-    knobs whose applier prints what it was asked to apply. One host run covers
-    the four behaviours:
+    The `pill_test` extension carries the subject: a manager with three knobs
+    (`modules.pill_test.fixture`) whose applier prints what it was asked to
+    apply. The test project already sets `gain: 1.5`, so one host run covers
+    four behaviours:
 
-      1. created - the project starts with no `res/settings` directory. The host
-         logs `created the manager settings asset` and writes an asset file
-         holding the manager's whole default document, and the manager reports
-         the defaults.
-      2. live - editing a value in that file re-applies it with
-         `changed=true`, the manager reports the new value, and no project
-         rebuild happens: the run's reload line never follows the edit.
-      3. kept across a reload - a source edit reloads the project, and the
-         regenerated manager takes the document again, so the edited value is
-         still in effect afterwards.
-      4. refused - a document with a value the manager cannot use is refused by
-         the manager and by the host, and the manager keeps what it had.
+      1. applied - the project's value reaches the manager at startup, and the
+         host logs the module it applied.
+      2. live - editing the value in `project_settings.yaml` re-applies it to
+         the running manager, and the manager reports the new value.
+      3. reported - a key nobody declares is named by its path, once.
+      4. kept across a reload - a source edit reloads the project, and the
+         regenerated manager takes the project's value again.
+      5. refused - a value the manager cannot use is refused by the manager and
+         reported by the host, and the manager keeps what it had.
 
-    The `res/settings` directory the suite caused is removed again, so the
-    test project is left byte-identical.
+    The project file is restored byte for byte, and the source edit is undone,
+    so the test project is left as it was.
 
 USAGE
   python devops/tests/test_manager_settings.py [--timeout-scale S] [--skip-build]
@@ -49,14 +46,17 @@ EXAMPLE USAGE
 
 import argparse
 import os
-import shutil
 import sys
 from pathlib import Path
 
 # Standalone-runnable: `devops/` holds `core`, and the suites sit beside it.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from core.projects import NATIVE_PROJECT_PATH, NATIVE_PROJECT_ROOT  # noqa: E402
+from core.projects import (  # noqa: E402
+    NATIVE_PROJECT_PATH,
+    NATIVE_PROJECT_ROOT,
+    project_settings_yaml,
+)
 from core.suite_common import (  # noqa: E402
     HOST_DEV_RENDERING,
     MODULES_ROOT,
@@ -75,36 +75,33 @@ from core.suite_common import (  # noqa: E402
 
 PROJECT_ROOT = NATIVE_PROJECT_ROOT
 SOURCE_DIRECTORY = PROJECT_ROOT / "src"
-RES_DIRECTORY = PROJECT_ROOT / "res"
-SETTINGS_DIRECTORY = RES_DIRECTORY / "settings"
-SETTINGS_FILE = SETTINGS_DIRECTORY / "fixture_manager.fixture_settings"
+SETTINGS_FILE = project_settings_yaml(PROJECT_ROOT)
 
-# The declared default document, as the test project's document spells it in YAML.
-DEFAULT_ENABLED = "enabled: true"
-DEFAULT_GAIN = "gain: 1.0"
-
-# The edit scenario 2 writes and scenario 3 expects to survive a reload.
+# What the test project sets, and what the scenarios edit it to.
+PROJECT_GAIN = "gain: 1.5"
 EDITED_GAIN = "gain: 4.5"
-
-# The value scenario 4 writes: a gain no sound could use.
 REFUSED_GAIN = "gain: -1.0"
+EDITED_LABEL = "label: fixture"
+# A key nobody declares, to prove the resolution reports it under its path.
+UNKNOWN_KEY = "\n      nonsense: 1\n"
 
-# An unrelated project source, edited to force a reload in scenario 3.
+# An unrelated project source, edited to force a reload in the reload scenario.
 RELOAD_SOURCE = SOURCE_DIRECTORY / "simulation_time.rs"
-RELOAD_EDIT = "\n// manager-settings suite: an edit that only reloads the project\n"
+RELOAD_EDIT = "\n// module-settings suite: an edit that only reloads the project\n"
 
-# Host and test project log lines this suite asserts on.
-CREATED_TOKEN = "[settings] created the manager settings asset"
-APPLIED_TOKEN = "[settings] applied manager settings"
-REFUSED_TOKEN = "[settings] refused manager settings"
+# Host and module log lines this suite asserts on.
+APPLIED_TOKEN = "[settings] applied a module's declared settings"
+REFUSED_TOKEN = "[settings] refused a module's declared settings"
 MANAGER_APPLIED_TOKEN = "[test] fixture manager applied"
 MANAGER_REFUSED_TOKEN = "[test] fixture manager refused"
+UNUSED_SETTING_TOKEN = "a project setting is not used"
+STRICT_ERROR_TOKEN = "do not resolve; every module keeps the values it has"
 RELOAD_STARTED_TOKEN = "building project module"
 RELOAD_COMPLETE_TOKEN = "hot reload complete"
 
 # The host builds the project DLL on its first run; a cold one is slow.
 STARTUP_TIMEOUT_SECONDS = 240
-# A settings apply is milliseconds; this is slack for the watcher's debounce.
+# A settings apply is milliseconds; this is slack for the file stamp's frame.
 SETTINGS_TIMEOUT_SECONDS = 60
 # One project rebuild and reload is seconds once the host is up.
 RELOAD_TIMEOUT_SECONDS = 120
@@ -120,12 +117,6 @@ def lines_with(text: str, token: str) -> list:
     return [line for line in text.splitlines() if token in line]
 
 
-def first_line_with(text: str, token: str) -> str:
-    """The first line in `text` that carries `token`, or an empty string."""
-    matches = lines_with(text, token)
-    return matches[0] if matches else ""
-
-
 def report(checks: list) -> int:
     """Prints every check and returns the number that failed."""
     failures = 0
@@ -136,77 +127,70 @@ def report(checks: list) -> int:
     return failures
 
 
-def check_created(text: str, file_text: str) -> list:
-    """One `(ok, description)` pair per assertion about the created file."""
-    # Another loaded module may own a manager of its own (the audio device
-    # does, on a machine with a sound card), so the check looks for this
-    # manager's line rather than the first one.
-    created = [
-        line for line in lines_with(text, CREATED_TOKEN) if "fixture_manager" in line
-    ]
-    return [
-        (
-            bool(created),
-            "the host reported creating the fixture manager's settings asset",
-        ),
-        (
-            DEFAULT_ENABLED in file_text and DEFAULT_GAIN in file_text,
-            "the created file spells out every default",
-        ),
-        (
-            "asset_type" in file_text and "format_version" in file_text,
-            "the created file is a settings asset, header included",
-        ),
-        (
-            bool(lines_with(text, MANAGER_APPLIED_TOKEN)),
-            "the manager applied its defaults",
-        ),
-    ]
+def rewrite_settings(settings_text: str, old: str, new: str) -> str:
+    """`settings_text` with `old` replaced by `new`, refusing a no-op."""
+    if old not in settings_text:
+        raise SystemExit("error: `{}` is not in {}".format(old, SETTINGS_FILE))
+    return settings_text.replace(old, new, 1)
 
 
-def check_live_edit(text: str) -> list:
-    """One `(ok, description)` pair per assertion about the live edit."""
-    applied = [
-        line for line in lines_with(text, APPLIED_TOKEN) if "changed=true" in line
-    ]
-    manager_applied = [
-        line for line in lines_with(text, MANAGER_APPLIED_TOKEN) if "gain=4.5" in line
-    ]
-    return [
-        (
-            bool(applied),
-            "the host applied the edited document as a change",
-        ),
-        (
-            bool(manager_applied),
-            "the manager took the edited value (gain=4.5)",
-        ),
-        (
-            not lines_with(text, RELOAD_STARTED_TOKEN),
-            "no project rebuild started for a settings edit",
-        ),
-    ]
+def strict_run_reports(settings_text: str, scale: float) -> list:
+    """Starts a host with strict settings and a key nobody declares.
+
+    A strict run turns what would be a warning into a configuration error. The
+    modules are already loaded by the time their entries can be checked, so the
+    run reports the error and keeps the values it has instead of tearing down a
+    live world; the check is that the error is reported and named.
+    """
+    SETTINGS_FILE.write_text(
+        settings_text.replace(EDITED_LABEL, EDITED_LABEL + UNKNOWN_KEY, 1),
+        encoding="utf-8",
+        newline="",
+    )
+    environment = dict(
+        os.environ,
+        PROJECT_PATH=NATIVE_PROJECT_PATH,
+        PILL__HOST__STRICT_SETTINGS="1",
+    )
+    process = None
+    monitor = None
+    try:
+        process, monitor = launch_process(
+            host_command(HOST_DEV_RENDERING), MODULES_ROOT, environment
+        )
+        reported = monitor.wait_for(
+            STRICT_ERROR_TOKEN, STARTUP_TIMEOUT_SECONDS * scale
+        )
+        output = monitor.output_since(0)
+        return [
+            (reported, "a strict run reports an undeclared module setting as an error"),
+            (
+                bool([line for line in lines_with(output, STRICT_ERROR_TOKEN) if "nonsense" in line]),
+                "the error names the undeclared key",
+            ),
+        ]
+    finally:
+        if process is not None and monitor is not None:
+            terminate_process(process, monitor)
 
 
 def main() -> int:
-    """Runs the host, drives the four scenarios, and restores the test project."""
+    """Runs the host, drives the scenarios, and restores the test project."""
     parser = argparse.ArgumentParser(
-        description="Check that a manager's settings file is created and applied."
+        description="Check that a module's declared settings are applied and re-applied."
     )
     add_common_suite_arguments(parser)
     arguments = parser.parse_args()
     scale = arguments.timeout_scale
 
-    print("\n  Manager settings suite")
+    print("\n  Module settings suite")
     print("  Project: {}".format(PROJECT_ROOT))
 
-    # Step 1: The scenario assumes the project has no settings asset. If an
-    # earlier run left one behind, it is removed first so the "created" path is
-    # the one under test. The directory is only removed again when this run made
-    # it, so nothing the project tracks is touched.
-    if SETTINGS_DIRECTORY.exists():
-        shutil.rmtree(SETTINGS_DIRECTORY)
-    created_settings_directory = not SETTINGS_DIRECTORY.exists()
+    settings_bytes = SETTINGS_FILE.read_bytes()
+    settings_text = settings_bytes.decode("utf-8")
+    if PROJECT_GAIN not in settings_text:
+        print("  [FAIL] the test project does not set `{}`".format(PROJECT_GAIN))
+        return 1
     source_bytes = RELOAD_SOURCE.read_bytes()
 
     ensure_host_lock()
@@ -222,50 +206,112 @@ def main() -> int:
             host_command(HOST_DEV_RENDERING), MODULES_ROOT, environment
         )
         if not monitor.wait_for(MANAGER_APPLIED_TOKEN, STARTUP_TIMEOUT_SECONDS * scale):
-            print("  [FAIL] the fixture manager never applied anything; last output was:")
+            print("  [FAIL] the manager never applied anything; last output was:")
             print(monitor.output_since(0)[-1500:])
             return 1
-        if not SETTINGS_FILE.is_file():
-            print("  [FAIL] the host created no {}".format(SETTINGS_FILE.name))
+        failures += report(
+            [
+                (
+                    bool(
+                        [
+                            line
+                            for line in lines_with(
+                                monitor.output_since(0), MANAGER_APPLIED_TOKEN
+                            )
+                            if "gain=1.5" in line
+                        ]
+                    ),
+                    "the project's value reached the manager at startup (gain=1.5)",
+                ),
+                (
+                    bool(
+                        [
+                            line
+                            for line in lines_with(monitor.output_since(0), APPLIED_TOKEN)
+                            if "pill_test" in line
+                        ]
+                    ),
+                    "the host reported applying the module's declared settings",
+                ),
+            ]
+        )
+
+        # Step 2: Edit the value while the host runs. The manager takes it with
+        # no restart.
+        start = monitor.line_count
+        SETTINGS_FILE.write_text(
+            rewrite_settings(settings_text, PROJECT_GAIN, EDITED_GAIN),
+            encoding="utf-8",
+            newline="",
+        )
+        if not monitor.wait_for(
+            MANAGER_APPLIED_TOKEN, SETTINGS_TIMEOUT_SECONDS * scale, start
+        ):
+            print("  [FAIL] the edited value was never applied; last output was:")
+            print(monitor.output_since(start)[-1500:])
             return 1
         failures += report(
-            check_created(
-                monitor.output_since(0),
-                SETTINGS_FILE.read_text(encoding="utf-8"),
-            )
+            [
+                (
+                    bool(
+                        [
+                            line
+                            for line in lines_with(
+                                monitor.output_since(start), MANAGER_APPLIED_TOKEN
+                            )
+                            if "gain=4.5" in line
+                        ]
+                    ),
+                    "the manager took the edited value while the host ran (gain=4.5)",
+                )
+            ]
         )
 
-        # Step 2: Edit the document while the host runs. The manager takes the
-        # new value with no reload, which is what the theme pipeline's change
-        # detection does for a theme file.
+        # Step 3: A key nobody declares is reported by its path.
         start = monitor.line_count
-        edited_text = SETTINGS_FILE.read_text(encoding="utf-8").replace(
-            DEFAULT_GAIN, EDITED_GAIN
+        edited = rewrite_settings(settings_text, PROJECT_GAIN, EDITED_GAIN)
+        SETTINGS_FILE.write_text(
+            edited.replace(EDITED_LABEL, EDITED_LABEL + UNKNOWN_KEY, 1),
+            encoding="utf-8",
+            newline="",
         )
-        SETTINGS_FILE.write_text(edited_text, encoding="utf-8", newline="")
-        if not monitor.wait_for(APPLIED_TOKEN, SETTINGS_TIMEOUT_SECONDS * scale, start):
-            print("  [FAIL] the edited file was never applied; last output was:")
+        if not monitor.wait_for(
+            UNUSED_SETTING_TOKEN, SETTINGS_TIMEOUT_SECONDS * scale, start
+        ):
+            print("  [FAIL] an undeclared key was not reported; last output was:")
             print(monitor.output_since(start)[-1500:])
             return 1
-        if not monitor.wait_for(MANAGER_APPLIED_TOKEN, SETTINGS_TIMEOUT_SECONDS * scale, start):
-            print("  [FAIL] the manager reported no apply after the edit; last output was:")
-            print(monitor.output_since(start)[-1500:])
-            return 1
-        # A little slack so a reload queued by the edit would have shown up by
-        # now: the watcher has already delivered the edit, and a rebuild would
-        # have logged its first line.
-        monitor.wait_for(RELOAD_STARTED_TOKEN, 2.0 * scale, start)
-        failures += report(check_live_edit(monitor.output_since(start)))
-
-        # Step 3: A source edit reloads the project. The regenerated manager
-        # takes the document again, so the edited value survives.
+        failures += report(
+            [
+                (
+                    bool(
+                        [
+                            line
+                            for line in lines_with(
+                                monitor.output_since(start), UNUSED_SETTING_TOKEN
+                            )
+                            if "nonsense" in line
+                        ]
+                    ),
+                    "the report names the undeclared key",
+                )
+            ]
+        )
+        # Step 4: A source edit reloads the project, and the regenerated
+        # manager takes the project's value again. The anchor is taken before
+        # either write, so nothing the host reports in between is lost.
         start = monitor.line_count
+        SETTINGS_FILE.write_text(edited, encoding="utf-8", newline="")
         RELOAD_SOURCE.write_bytes(source_bytes + RELOAD_EDIT.encode("utf-8"))
-        if not monitor.wait_for(RELOAD_STARTED_TOKEN, RELOAD_TIMEOUT_SECONDS * scale, start):
+        if not monitor.wait_for(
+            RELOAD_STARTED_TOKEN, RELOAD_TIMEOUT_SECONDS * scale, start
+        ):
             print("  [FAIL] the source edit started no reload; last output was:")
             print(monitor.output_since(start)[-1500:])
             return 1
-        if not monitor.wait_for(RELOAD_COMPLETE_TOKEN, RELOAD_TIMEOUT_SECONDS * scale, start):
+        if not monitor.wait_for(
+            RELOAD_COMPLETE_TOKEN, RELOAD_TIMEOUT_SECONDS * scale, start
+        ):
             print("  [FAIL] the reload never completed; last output was:")
             print(monitor.output_since(start)[-1500:])
             return 1
@@ -281,23 +327,23 @@ def main() -> int:
                             if "gain=4.5" in line
                         ]
                     ),
-                    "the manager kept the edited value across the reload (gain=4.5)",
+                    "the manager kept the project's value across the reload (gain=4.5)",
                 )
             ]
         )
 
-        # Step 4: A document the manager cannot use is refused, and the manager
+        # Step 5: A value the manager cannot use is refused, and the manager
         # keeps what it had.
         start = monitor.line_count
         SETTINGS_FILE.write_text(
-            SETTINGS_FILE.read_text(encoding="utf-8").replace(
-                EDITED_GAIN, REFUSED_GAIN
-            ),
+            rewrite_settings(edited, EDITED_GAIN, REFUSED_GAIN),
             encoding="utf-8",
             newline="",
         )
-        if not monitor.wait_for(MANAGER_REFUSED_TOKEN, SETTINGS_TIMEOUT_SECONDS * scale, start):
-            print("  [FAIL] the out-of-range document was not refused; last output was:")
+        if not monitor.wait_for(
+            MANAGER_REFUSED_TOKEN, SETTINGS_TIMEOUT_SECONDS * scale, start
+        ):
+            print("  [FAIL] the unusable value was not refused; last output was:")
             print(monitor.output_since(start)[-1500:])
             return 1
         failures += report(
@@ -314,22 +360,28 @@ def main() -> int:
                         )
                         if "gain=-1" in line
                     ],
-                    "the refused document was not applied",
+                    "the refused value was not applied",
                 ),
             ]
         )
     finally:
+        SETTINGS_FILE.write_bytes(settings_bytes)
         RELOAD_SOURCE.write_bytes(source_bytes)
-        if created_settings_directory and SETTINGS_DIRECTORY.exists():
-            shutil.rmtree(SETTINGS_DIRECTORY)
         if process is not None and monitor is not None:
             print("\n  [CLEANUP] Stopping the host...")
             terminate_process(process, monitor)
 
+    # Step 6: A strict run reports the same key as an error rather than a
+    # warning. It cannot stop a run that has already loaded its modules, so the
+    # check is that the report arrives and the host still refuses nothing it
+    # could apply - see the stage's record for the follow-up.
+    failures += report(strict_run_reports(settings_text, scale))
+    SETTINGS_FILE.write_bytes(settings_bytes)
+
     if failures:
         print("\n  [FAIL] {} check(s) failed".format(failures))
         return 1
-    print("\n  [OK] the manager's settings were created, applied live and kept")
+    print("\n  [OK] the module's declared settings were applied live and kept")
     return 0
 
 

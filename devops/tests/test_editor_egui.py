@@ -34,7 +34,7 @@ reaches the file and the reader, the saved snapping step steering a
 snapped drag, the history trimming at a tiny cap, and a tool choice
 persisting into the project's remembered entry), the editor's theme layers
 (a user file named by the `theme` preference, a project file under
-`res/editor/` that `editor_settings.yaml` re-points, an out-of-scope path
+`res/editor/` that the settings' `editor.theme` re-points, an out-of-scope path
 refused with the rule, a legacy name reported and a broken user file
 refused while the other layer applies - each checked through `dump theme`),
 the Game tab's viewport
@@ -270,7 +270,8 @@ def main() -> int:
     # the project root; the example ships neither, so the step writes them and
     # the finally block takes them off the disk again.
     theme_root = asset_root / "editor"
-    editor_settings_path = asset_root.parent / "editor_settings.yaml"
+    project_settings_path = asset_root.parent / "project_settings.yaml"
+    original_project_settings = project_settings_path.read_bytes()
     # The phases wait for two row heartbeats, a scene-selection probe, a
     # gizmo drag phase, the assets pipeline and a patch compile; the
     # executable's seconds deadline is a hang guard, kept comfortably above
@@ -313,7 +314,7 @@ def main() -> int:
     state = StepState()
     state.session = session
     state.asset_root = asset_root
-    state.editor_settings_path = editor_settings_path
+    state.project_settings_path = project_settings_path
     state.theme_root = theme_root
     state.original_source = original_source
     state.original_systems_source = original_systems_source
@@ -384,7 +385,7 @@ def main() -> int:
                 elif theme_file.is_dir():
                     theme_file.rmdir()
             theme_root.rmdir()
-        editor_settings_path.unlink(missing_ok=True)
+        project_settings_path.write_bytes(original_project_settings)
 
     return 0
 

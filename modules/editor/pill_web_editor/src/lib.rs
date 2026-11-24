@@ -884,6 +884,10 @@ fn scripted_name(command: &ScriptedCommand) -> &'static str {
         // picker for a settings row, so neither verb has anything to open.
         ScriptedCommand::Reveal(_) => "reveal",
         ScriptedCommand::PickReference { .. } => "pick reference",
+        // A page writes no project settings file: its project is a bundle it
+        // reads, so both settings verbs parse and are refused here.
+        ScriptedCommand::EditProjectSetting { .. } => "edit setting",
+        ScriptedCommand::ResetProjectSetting { .. } => "reset setting",
     }
 }
 

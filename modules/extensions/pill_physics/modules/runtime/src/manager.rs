@@ -172,7 +172,7 @@ impl PhysicsManager {
     pub fn new() -> Self {
         let mut simulation = rapier3d::prelude::PhysicsWorld::default();
         let settings = PhysicsSettings::default();
-        simulation.gravity = vector_from_array(settings.gravity);
+        simulation.gravity = vector_from_array(settings.gravity());
         simulation.integration_parameters.dt = settings.fixed_timestep;
         let (collision_sender, collision_events) = channel();
         let (contact_force_sender, contact_force_events) = channel();
@@ -237,7 +237,9 @@ impl PhysicsManager {
     /// The settings keep the value too, so a rebuilt simulation starts from the
     /// tuning this one was given rather than from the default.
     pub fn set_gravity(&mut self, gravity: [f32; 3]) {
-        self.settings.gravity = gravity;
+        self.settings.gravity_x = gravity[0];
+        self.settings.gravity_y = gravity[1];
+        self.settings.gravity_z = gravity[2];
         self.simulation.gravity = vector_from_array(gravity);
     }
 

@@ -44,7 +44,7 @@ use crate::error::LayoutPersistenceError;
 /// back with this version. Any other one - older than the oldest rule, or
 /// newer than this build - is replaced by the default layout, with one log
 /// line.
-pub const LAYOUT_SCHEMA_VERSION: u32 = 13;
+pub const LAYOUT_SCHEMA_VERSION: u32 = 14;
 
 /// The application directory inside the per-user state directory.
 const APPLICATION_DIRECTORY: &str = "RustHybridEcs";
@@ -136,10 +136,15 @@ fn load_from_path(path: &Path) -> EditorDock {
 /// several versions old gets every missing tab in one pass, in tab-strip
 /// order, and no tab the user arranged moves.
 fn migrate(dock: &mut EditorDock) -> Option<u32> {
-    const TAB_ADDITIONS: [(u32, super::EditorTab, super::EditorTab); 3] = [
+    const TAB_ADDITIONS: [(u32, super::EditorTab, super::EditorTab); 4] = [
         (7, super::EditorTab::Assets, super::EditorTab::Console),
         (8, super::EditorTab::Console, super::EditorTab::Problems),
         (9, super::EditorTab::Problems, super::EditorTab::Statistics),
+        (
+            14,
+            super::EditorTab::Preferences,
+            super::EditorTab::ProjectSettings,
+        ),
     ];
     let previous_schema_version = dock.schema_version();
     if !(7..LAYOUT_SCHEMA_VERSION).contains(&previous_schema_version) {

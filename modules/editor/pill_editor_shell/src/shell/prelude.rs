@@ -53,6 +53,7 @@ pub use pill_editor_core::placements::{
     CommandDrawContext, CommandDraws, CommandState, CommandStates, UiSlot,
 };
 pub use pill_editor_core::preferences;
+pub use pill_editor_core::project_settings;
 pub use pill_editor_core::requests::{HistoryRequest, ShellRequests};
 pub use pill_editor_core::session::{
     EguiShellState, InspectorSession, LoggedRects, LoggedTexts, MenubarSession, MenubarSlot,

@@ -2,12 +2,12 @@
 
   <!-- Everything this project needs from the engine - the runtime and its
        generators and analyzers, the AOT posture, and the mirrors of exactly
-       the extensions project_settings.yaml loads (the renderer's data crate;
-       this project lists no modules) - comes from the shared import the other
-       examples use. It reads the settings file while MSBuild evaluates the
-       project, so no hand-written glob decides which mirrors compile.
-       PillEngineRoot only locates the import: the host and the shipping build
-       pass it, and this fallback serves an IDE build. -->
+       the extensions project_settings.yaml switches on (here the rendering
+       data crate; the renderer itself carries no managed mirror) - comes from
+       the shared import the other examples use. It reads the settings file
+       while MSBuild evaluates the project, so no hand-written glob decides
+       which mirrors compile. PillEngineRoot only locates the import: the host
+       and the shipping build pass it, and this fallback serves an IDE build. -->
   <PropertyGroup>
     <PillEngineRoot Condition="'$(PillEngineRoot)' == ''">../../../modules/</PillEngineRoot>
   </PropertyGroup>

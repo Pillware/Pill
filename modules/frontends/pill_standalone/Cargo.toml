@@ -35,8 +35,8 @@ pill_shipping_bundle = { path = "../../../build/pill_shipping_bundle", optional 
 # Exactly one of `development` and `shipping`; `main.rs` refuses neither or both.
 default = ["development"]
 # Development mode: the host builds, loads, watches and reloads modules. Which
-# watchers a run starts is a startup switch (`PILL_HOT_RELOADING` and friends),
-# not a feature.
+# watchers a run starts is a startup switch (`PILL__HOST__HOT_RELOADING` and
+# friends, or the `host:` entry of the project's settings), not a feature.
 development = ["dep:pill_development_host"]
 # Shipping mode: the bundle's project runs statically. Build with
 # `--package pill_standalone`, never `--workspace`, which would union the

@@ -44,6 +44,7 @@ from editor_step_support import (
     toolbox_panel,
     toolbox_row,
     wait_applied,
+    write_editor_theme,
     write_theme_file,
 )
 
@@ -70,9 +71,7 @@ def run_scene_views_and_toolboxes_steps(state: StepState) -> None:
             "fonts": {"body": "editor/fonts/missing.ttf"},
         },
     )
-    state.editor_settings_path.write_text(
-        'editor_theme: "editor/font.theme"\n', encoding="utf-8"
-    )
+    write_editor_theme(state.project_settings_path, "editor/font.theme")
     begin = session.length()
     session.wait(
         re.escape(EDITOR_FONT_REFUSED_TOKEN) + r"[^\n]*missing\.ttf",

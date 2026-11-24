@@ -74,7 +74,7 @@ pub use manager::{
 };
 pub use queries::RayHit;
 pub use restore::physics_restore;
-pub use settings::{PhysicsSettings, PhysicsSettingsAsset};
+pub use settings::PhysicsSettings;
 
 // =============================================================================
 // Artifact entry points
@@ -117,38 +117,6 @@ pub fn register(engine: &mut Engine) -> u32 {
     // idempotent, so a world that already has it is unaffected.
     pill_engine::register_transform_component(engine.world_mut());
 
-    // Step 3: How the settings document draws in the Inspector. The declaration
-    // is repeated on every generation, so nothing it holds points at code the
-    // reload unloaded.
-    if let Some(registry) = engine.world_mut().get_resource_mut::<ImportRegistry>() {
-        registry.declare_field_decorators(
-            "pill_physics::PhysicsSettingsAsset",
-            &[
-                (
-                    "gravity",
-                    FieldDecorator::Tooltip(
-                        "World gravity in units per second squared. The earth's is [0, -9.81, 0]; all zeros floats everything."
-                            .to_owned(),
-                    ),
-                ),
-                (
-                    "fixed_timestep",
-                    FieldDecorator::Tooltip(
-                        "The length of one simulation step in seconds. Every step advances the world by exactly this much."
-                            .to_owned(),
-                    ),
-                ),
-                (
-                    "max_substeps",
-                    FieldDecorator::Tooltip(
-                        "The most steps one frame may run, so a long frame cannot spiral into a longer one."
-                            .to_owned(),
-                    ),
-                ),
-            ],
-        );
-    }
-
     // Step 4: Insert what the module owns once; everything else here is
     // per-frame data and starts empty.
     // A manager kept from an earlier image holds a rapier world that points
@@ -164,11 +132,7 @@ pub fn register(engine: &mut Engine) -> u32 {
         }
     }
     if engine.world().get_resource::<PhysicsManager>().is_none() {
-        // The manager insert, not the plain one: it records the settings
-        // surface the project tunes the simulation with.
-        engine
-            .world_mut()
-            .insert_settings_asset_manager(PhysicsManager::new());
+        engine.world_mut().insert_resource(PhysicsManager::new());
     }
     // A manager built while a session runs describes the world that session
     // restored to, so it must not clear itself on the first frame.
@@ -186,19 +150,14 @@ pub fn register(engine: &mut Engine) -> u32 {
         engine.world_mut().insert_resource(DebugDraw::new(false));
     }
 
-    // Step 5: Declare the settings asset the simulation is tuned through. This
+    // Step 5: Declare the settings surface the simulation is tuned through. This
     // runs after the manager is live, and repeats on every generation so the
     // surface never points at code the reload unloaded.
-    engine
-        .world_mut()
-        .register_settings_asset_manager::<PhysicsManager>();
+    pill_engine::register_settings::<PhysicsManager>(engine);
 
-    // Step 6: Announce the registration, with the count the host uses to find
-    // managers to create and apply settings for: zero means the document is
-    // never read.
+    // Step 6: Announce the registration.
     pill_core::info!(
         target: telemetry_target::ECS,
-        settings_managers = engine.world().settings_asset_manager_ids().len(),
         "pill_physics module registered"
     );
     0

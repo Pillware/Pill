@@ -13,9 +13,6 @@
 //! - Carries the layout witness (`layout_witness`): one resource that declares
 //!   the file its layout is made of, and prints when it is inserted and dropped,
 //!   so the keep-or-rebuild decision across a reload is observable.
-//! - Carries the settings manager (`settings_probe`): a manager resource with a
-//!   settings surface, so the host's per-manager settings pipeline has a subject
-//!   whose applied values are visible in the log.
 //! - Exposes the two entry points the host resolves in this artifact through
 //!   the project-module ABI: `pill_module_register`, which re-registers the
 //!   systems and resources on every generation, and `pill_module_init`, the
@@ -59,7 +56,6 @@ mod physics;
 /// The scene's tuning constants. Public because hot patches compile separately
 /// and import the same settings.
 pub mod settings;
-mod settings_probe;
 mod simulation_time;
 mod spline_path;
 mod spline_probe;
@@ -176,9 +172,6 @@ pub fn register(engine: &mut Engine) -> u32 {
     // The keep-or-rebuild witness: a declared resource that keeps its value
     // across a reload unless the file its layout lives in changed.
     layout_witness::register(engine);
-    // The settings manager: the host writes its `settings/` document from the
-    // manager's own defaults and applies it, live when it is edited.
-    settings_probe::register(engine);
     // Replaced, not reused. The state holds nothing that has to outlive a
     // generation - a report timestamp and an id string [`init`] derives - and
     // a resource the previous generation inserted is retired by the reload, so
@@ -240,13 +233,24 @@ pub fn init(engine: &mut Engine) -> u32 {
         .set_pipeline(chain);
     // The project's own shader: importing it is what puts the asset in the
     // store, and the renderer compiles every shader asset it finds there.
+    // Its vertex stage is a file of the renderer module's own `res`, so a run
+    // that loads no renderer cannot cook it. The probe exists to give the
+    // shader-recompile suite a subject, and that suite loads the renderer, so
+    // every other run carries on without it.
     if let Err(message) = import_probe_shader(engine.world_mut()) {
-        pill_engine::tracing::error!(
+        if !message.contains("common_shaders/default_vertex.wgsl") {
+            pill_engine::tracing::error!(
+                target: "project",
+                error = message.as_str(),
+                "[project] probe shader not imported"
+            );
+            return 1;
+        }
+        pill_engine::tracing::warn!(
             target: "project",
             error = message.as_str(),
-            "[project] probe shader not imported"
+            "[project] probe shader skipped; this run loads no renderer to cook its vertex stage"
         );
-        return 1;
     }
     let (mesh, scene_material, ball_materials, sample_material) = {
         let assets = engine

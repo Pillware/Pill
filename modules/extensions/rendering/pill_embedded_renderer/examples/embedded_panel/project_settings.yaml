@@ -6,8 +6,10 @@ description: "A textured quad, a light, a UI panel and debug lines, drawn by the
 
 # The renderer this project is proved with. It draws on the processor into an
 # RGB565 panel instead of onto a GPU surface, which is why a preview shows a
-# 240x240 frame enlarged into the window.
-renderer: "pill_embedded_renderer"
-
-# Nothing else to load: the renderer's data crate comes with the renderer.
-modules: []
+# 240x240 frame enlarged into the window. Its data crate is the one every
+# renderer names, and it is listed because an entry nobody lists is off.
+modules:
+  pill_rendering:
+    enabled: true
+  pill_embedded_renderer:
+    enabled: true

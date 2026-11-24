@@ -977,9 +977,9 @@ pub struct EditorSnapshot {
     pub asset_detail: Option<AssetDetail>,
     /// Whether the engine's system phase is paused.
     pub paused: bool,
-    /// Whether Play brings the Game tab forward, from the project's
-    /// `editor_settings.yaml`. The executable fills it in; a snapshot captured
-    /// without one assumes the switch is on.
+    /// Whether Play brings the Game tab forward, from `editor.focus_game_on_play`
+    /// in the project's settings. The executable fills it in; a snapshot
+    /// captured without one assumes the switch is on.
     pub focus_game_on_play: bool,
     /// Whether the frame is edited or played. While playing, the menu bar and
     /// the dock's frame are tinted and Play has become Stop.
@@ -1011,6 +1011,10 @@ pub struct EditorSnapshot {
     /// The preferences file's values and the current project's remembered
     /// entry. The Preferences tab's rows read them.
     pub preferences: crate::preferences::PreferencesView,
+    /// Every declared setting of the project, its modules, the engine, the host
+    /// and the editor, with where each value comes from. The Project Settings
+    /// tab draws them.
+    pub project_settings: crate::project_settings::ProjectSettingsView,
     /// The theme the editor's UI paints with: the code
     /// default merged with the user's and the project's layers.
     pub theme: pill_ui_theme::Theme,
@@ -1181,6 +1185,7 @@ impl EditorSnapshot {
                 })
                 .unwrap_or_default(),
             preferences: crate::preferences::PreferencesView::default(),
+            project_settings: crate::project_settings::ProjectSettingsView::default(),
             // The code default, until the executable resolves its layers. This
             // way every posture's first frame paints the editor's own look
             // rather than the crate's neutral fallback.

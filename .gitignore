@@ -76,6 +76,10 @@ AGENTS.md
 # fresh clone does not carry them.
 /examples/local/
 
+# A project's local settings override is a person's own: the same shape as
+# `project_settings.yaml`, never committed.
+project_settings.local.yaml
+
 # Measurement and profiling output.
 performance_benchmarks/cache/artifacts/
 /devops/pill_lab/measurements/

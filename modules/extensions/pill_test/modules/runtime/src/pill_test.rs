@@ -33,6 +33,15 @@ use pill_engine::*;
 /// [`mirror::tint_alpha`].
 pub mod mirror;
 
+/// The declared-settings probe the module-settings suite drives.
+pub mod settings_probe;
+
+/// Printed by the settings probe, once per applied value.
+pub const SETTINGS_APPLIED_TOKEN: &str = "[test] fixture manager applied";
+
+/// Printed by the settings probe when it refuses a value.
+pub const SETTINGS_REFUSED_TOKEN: &str = "[test] fixture manager refused";
+
 // =============================================================================
 // Constants
 // =============================================================================
@@ -114,6 +123,10 @@ fn module_test_processor(mut query: Query<&mut ModuleTest>) -> Result<(), System
 /// Returns 1 when an entity cannot be created. The host reads any non-zero
 /// status as a failed generation and rolls back to the previous library.
 pub fn register(engine: &mut Engine) -> u32 {
+    // Step 0: Declare the probe's settings surface before anything reads the
+    // project's values under this entry.
+    settings_probe::register(engine);
+
     // Step 1: Fill the world up to the target count instead of spawning a
     // fresh batch, because a reload keeps the entities the previous generation
     // created - and fills back up when a dropped column took them with it.

@@ -2887,10 +2887,10 @@ fn self_type_ident(self_type: &syn::Type) -> Option<&syn::Ident> {
 /// - `layout_dependencies = ["..."]` - the crates whose resolved version can
 ///   change the type's layout, as package names.
 ///
-/// A manager resource declares itself with
-/// `World::register_settings_asset_manager` in its crate's `register` instead:
-/// the settings surface holds function pointers into the image that declared
-/// it, so every generation re-points them.
+/// A manager resource declares its settings with `#[derive(PillSettings)]` and
+/// `pill_engine::register_settings` in its crate's `register`: the settings
+/// surface holds function pointers into the image that declared it, so every
+/// generation re-points them.
 ///
 /// [`resource`]: macro@resource
 #[proc_macro_derive(PillResource, attributes(pill))]
@@ -4723,6 +4723,346 @@ pub fn pill_project(attribute: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     expanded.into()
+}
+
+// =============================================================================
+// #[derive(PillSettings)]
+// =============================================================================
+
+/// Declares a module's settings: the schema, the defaults, and how one typed
+/// value is read out of the resolved settings.
+///
+/// The struct is a module's setting surface. Its fields become the declared
+/// settings - `enabled` is prepended automatically, so every entry can be
+/// switched off - and the derive writes both the schema a host reads and the
+/// reader that turns the resolved values back into the struct.
+///
+/// # Struct arguments
+///
+/// - `module = "pill_audio"` - the entry name: the crate name of a module, or
+///   `engine`, `host` or `editor`.
+/// - `group = "audio"` - the group every field sits in, unless the field names
+///   its own.
+///
+/// # Field decorators
+///
+/// - `default = <value>` - the declared default. Without it a field defaults to
+///   `false`, `0` or an empty string.
+/// - `description = "..."` - one line for the editor's rows and the settings
+///   dump.
+/// - `min = <number>` / `max = <number>` - the accepted range.
+/// - `timing = "build" | "startup" | "live"` - when a changed value takes
+///   effect; `startup` when absent.
+/// - `group = "..."` - this field's group, overriding the struct's.
+///
+/// # Supported field types
+///
+/// `bool`, the integer types, `f32`, `f64` and `String`.
+///
+/// ```ignore
+/// #[derive(Default, Clone, Debug, PillSettings)]
+/// #[pill(module = "pill_audio", group = "audio")]
+/// pub struct AudioSettings {
+///     #[pill(default = 16, min = 1, max = 64, description = "Ambient inputs the device opens.")]
+///     pub ambient_sinks: u32,
+/// }
+/// ```
+#[proc_macro_derive(PillSettings, attributes(pill))]
+pub fn derive_pill_settings(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    match settings_impl(input) {
+        Ok(expanded) => expanded.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+/// What one field of a settings struct declares.
+struct SettingsField {
+    /// The field's name.
+    name: syn::Ident,
+    /// The decorators a `SettingSpec` is built from.
+    spec: proc_macro2::TokenStream,
+    /// The reader expression that fills the field.
+    reader: proc_macro2::TokenStream,
+}
+
+/// The kinds of field a settings struct can hold.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SettingsFieldKind {
+    /// A flag.
+    Bool,
+    /// A whole number.
+    Integer,
+    /// A number with a fractional part.
+    Float,
+    /// A line of text.
+    Text,
+}
+
+/// Expands `#[derive(PillSettings)]`.
+fn settings_impl(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+    let ident = &input.ident;
+    let mut module: Option<String> = None;
+    let mut struct_group = String::new();
+    for attribute in &input.attrs {
+        if !attribute.path().is_ident("pill") {
+            continue;
+        }
+        attribute.parse_nested_meta(|meta| {
+            if meta.path.is_ident("module") {
+                let literal: syn::LitStr = meta.value()?.parse()?;
+                module = Some(literal.value());
+                return Ok(());
+            }
+            if meta.path.is_ident("group") {
+                let literal: syn::LitStr = meta.value()?.parse()?;
+                struct_group = literal.value();
+                return Ok(());
+            }
+            Err(meta.error("unknown `pill` attribute; expected `module` or `group`"))
+        })?;
+    }
+    let Some(module) = module else {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "`PillSettings` needs `#[pill(module = \"...\")]`, which names the entry",
+        ));
+    };
+    if !input.generics.params.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &input.generics,
+            "`PillSettings` cannot be derived for a generic type",
+        ));
+    }
+    let syn::Data::Struct(data) = &input.data else {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "`PillSettings` is for a struct",
+        ));
+    };
+    let syn::Fields::Named(fields) = &data.fields else {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "`PillSettings` needs named fields, because each field is one setting",
+        ));
+    };
+
+    let mut declared = Vec::with_capacity(fields.named.len());
+    for field in &fields.named {
+        declared.push(settings_field(field, &struct_group)?);
+    }
+
+    let specs = declared.iter().map(|field| &field.spec);
+    let readers = declared.iter().map(|field| {
+        let name = &field.name;
+        let reader = &field.reader;
+        quote! { #name: #reader, }
+    });
+    Ok(quote! {
+        impl ::pill_engine::DeclaredSettings for #ident {
+            const MODULE: &'static str = #module;
+
+            fn schema() -> ::pill_engine::ModuleSettingsSchema {
+                const SETTINGS: &[::pill_engine::SettingSpec] = &[
+                    ::pill_engine::SettingSpec::enabled(),
+                    #(#specs)*
+                ];
+                ::pill_engine::ModuleSettingsSchema::new(#module, SETTINGS)
+            }
+
+            fn from_resolved(
+                resolved: &::pill_engine::ResolvedSettings,
+            ) -> Self {
+                Self {
+                    #(#readers)*
+                }
+            }
+        }
+    })
+}
+
+/// Reads one field's decorators into its schema and its reader.
+fn settings_field(field: &syn::Field, struct_group: &str) -> syn::Result<SettingsField> {
+    let Some(name) = field.ident.clone() else {
+        return Err(syn::Error::new_spanned(field, "a setting needs a name"));
+    };
+    let kind = settings_field_kind(&field.ty)?;
+    let key = name.to_string();
+    let mut group = struct_group.to_string();
+    let mut default: Option<syn::Expr> = None;
+    let mut description: Option<syn::LitStr> = None;
+    let mut minimum: Option<syn::Expr> = None;
+    let mut maximum: Option<syn::Expr> = None;
+    let mut timing: Option<String> = None;
+    for attribute in &field.attrs {
+        if !attribute.path().is_ident("pill") {
+            continue;
+        }
+        attribute.parse_nested_meta(|meta| {
+            if meta.path.is_ident("default") {
+                default = Some(meta.value()?.parse()?);
+                return Ok(());
+            }
+            if meta.path.is_ident("description") {
+                description = Some(meta.value()?.parse()?);
+                return Ok(());
+            }
+            if meta.path.is_ident("min") {
+                minimum = Some(meta.value()?.parse()?);
+                return Ok(());
+            }
+            if meta.path.is_ident("max") {
+                maximum = Some(meta.value()?.parse()?);
+                return Ok(());
+            }
+            if meta.path.is_ident("timing") {
+                let literal: syn::LitStr = meta.value()?.parse()?;
+                let value = literal.value();
+                if !matches!(value.as_str(), "build" | "startup" | "live") {
+                    return Err(syn::Error::new_spanned(
+                        &literal,
+                        "`timing` is `build`, `startup` or `live`",
+                    ));
+                }
+                timing = Some(value);
+                return Ok(());
+            }
+            if meta.path.is_ident("group") {
+                let literal: syn::LitStr = meta.value()?.parse()?;
+                group = literal.value();
+                return Ok(());
+            }
+            Err(meta.error(
+                "unknown `pill` attribute; expected `default`, `description`, `min`, `max`, \
+                 `timing` or `group`",
+            ))
+        })?;
+    }
+
+    let description = description
+        .map(|literal| quote! { #literal })
+        .unwrap_or_else(|| quote! { "" });
+    let path = if group.is_empty() {
+        key.clone()
+    } else {
+        format!("{group}.{key}")
+    };
+    let (default_spec, reader) = settings_default_and_reader(kind, &default, &path)?;
+    let range = match (minimum, maximum) {
+        (Some(minimum), Some(maximum)) => {
+            quote! { .with_range((#minimum) as f64, (#maximum) as f64) }
+        }
+        (Some(minimum), None) => quote! { .with_minimum((#minimum) as f64) },
+        (None, Some(maximum)) => quote! { .with_maximum((#maximum) as f64) },
+        (None, None) => quote! {},
+    };
+    let timing = match timing.as_deref() {
+        Some("build") => quote! { .with_timing(::pill_engine::ApplyTiming::Build) },
+        Some("live") => quote! { .with_timing(::pill_engine::ApplyTiming::Live) },
+        _ => quote! {},
+    };
+    let spec = quote! {
+        ::pill_engine::SettingSpec::new(
+            #group,
+            #key,
+            #default_spec,
+            #description,
+        )
+        #range
+        #timing
+        ,
+    };
+    Ok(SettingsField { name, spec, reader })
+}
+
+/// The kind a field's type declares.
+fn settings_field_kind(ty: &syn::Type) -> syn::Result<SettingsFieldKind> {
+    let syn::Type::Path(path) = ty else {
+        return Err(syn::Error::new_spanned(
+            ty,
+            "a setting is a bool, an integer, f32, f64 or String",
+        ));
+    };
+    let Some(segment) = path.path.segments.last() else {
+        return Err(syn::Error::new_spanned(ty, "a setting needs a type"));
+    };
+    match segment.ident.to_string().as_str() {
+        "bool" => Ok(SettingsFieldKind::Bool),
+        "i8" | "i16" | "i32" | "i64" | "isize" | "u8" | "u16" | "u32" | "u64" | "usize" => {
+            Ok(SettingsFieldKind::Integer)
+        }
+        "f32" | "f64" => Ok(SettingsFieldKind::Float),
+        "String" => Ok(SettingsFieldKind::Text),
+        other => Err(syn::Error::new_spanned(
+            ty,
+            format!("`{other}` is not a setting; use a bool, an integer, f32, f64 or String"),
+        )),
+    }
+}
+
+/// The declared default and the expression that reads the field back.
+fn settings_default_and_reader(
+    kind: SettingsFieldKind,
+    default: &Option<syn::Expr>,
+    path: &str,
+) -> syn::Result<(proc_macro2::TokenStream, proc_macro2::TokenStream)> {
+    match kind {
+        SettingsFieldKind::Bool => {
+            let value = default
+                .clone()
+                .map(|expression| quote! { (#expression) })
+                .unwrap_or_else(|| quote! { false });
+            Ok((
+                quote! { ::pill_engine::SettingDefault::Bool(#value) },
+                quote! { resolved.boolean(Self::MODULE, #path, #value) },
+            ))
+        }
+        SettingsFieldKind::Integer => {
+            let value = default
+                .clone()
+                .map(|expression| quote! { (#expression) })
+                .unwrap_or_else(|| quote! { 0 });
+            Ok((
+                quote! { ::pill_engine::SettingDefault::Integer((#value) as i64) },
+                quote! {
+                    resolved.integer(Self::MODULE, #path, (#value) as i64) as _
+                },
+            ))
+        }
+        SettingsFieldKind::Float => {
+            let value = default
+                .clone()
+                .map(|expression| quote! { (#expression) })
+                .unwrap_or_else(|| quote! { 0.0 });
+            Ok((
+                quote! { ::pill_engine::SettingDefault::Float((#value) as f64) },
+                quote! {
+                    resolved.float(Self::MODULE, #path, (#value) as f64) as _
+                },
+            ))
+        }
+        SettingsFieldKind::Text => {
+            let syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(literal),
+                ..
+            }) = default.clone().unwrap_or_else(|| syn::parse_quote! { "" })
+            else {
+                return Err(syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    "a text setting's default is a string literal",
+                ));
+            };
+            let literal_text = literal.value();
+            Ok((
+                quote! { ::pill_engine::SettingDefault::Text(#literal) },
+                quote! {
+                    resolved
+                        .text(Self::MODULE, #path, #literal_text)
+                        .to_string()
+                },
+            ))
+        }
+    }
 }
 
 // =============================================================================

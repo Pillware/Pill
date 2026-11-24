@@ -99,7 +99,12 @@ TEST_PROJECT_SETTINGS = """\
 name: "Shared Identity Test"
 build_binary_name: "SharedIdentityTest"
 modules:
-  - "pill_spline"
+  pill_rendering:
+    enabled: true
+  pill_renderer:
+    enabled: true
+  pill_spline:
+    enabled: true
 """
 
 # Emitted once per interval by the engine's diagnostics system, which a project

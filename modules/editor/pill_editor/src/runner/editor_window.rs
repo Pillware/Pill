@@ -340,8 +340,8 @@ pub(super) struct EditorWindow {
 /// What the last theme resolution read.
 ///
 /// The executable resolves the layers: it reads the `theme` preference, the
-/// user's file, `editor_settings.yaml` and the project's layer (through the
-/// asset store). Keeping what each read produced lets a poll skip the merge
+/// user's file, the project's `editor:` entry and the project's layer (through
+/// the asset store). Keeping what each read produced lets a poll skip the merge
 /// when nothing moved.
 #[derive(Default)]
 pub(super) struct ThemeWatch {
@@ -351,8 +351,10 @@ pub(super) struct ThemeWatch {
     pub(super) user_stamp: FileStamp,
     /// The legacy name already reported, so one value logs once.
     pub(super) legacy_logged: Option<String>,
-    /// `editor_settings.yaml`'s metadata when it was last read.
+    /// `project_settings.yaml`'s metadata when it was last read.
     pub(super) settings_stamp: FileStamp,
+    /// `project_settings.local.yaml`'s metadata when it was last read.
+    pub(super) local_settings_stamp: FileStamp,
     /// The settings file's last read, or the message that refused it.
     pub(super) settings: Option<Result<pill_development_host::EditorSettings, String>>,
     /// The project layer's path, as last resolved.

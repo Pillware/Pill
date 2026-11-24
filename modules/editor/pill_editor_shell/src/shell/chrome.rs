@@ -66,6 +66,7 @@ pub fn tab_icon(tab: EditorTab) -> icons::Icon {
         EditorTab::Problems => icons::Icon::XCircle,
         EditorTab::Statistics => icons::Icon::Gear,
         EditorTab::Preferences => icons::Icon::Faders,
+        EditorTab::ProjectSettings => icons::Icon::Gear,
         // A module panel belongs to somebody else. The set has no puzzle-piece
         // glyph for an extension, so the panel uses the four-cell grid.
         EditorTab::Module(_) => icons::Icon::GridFour,

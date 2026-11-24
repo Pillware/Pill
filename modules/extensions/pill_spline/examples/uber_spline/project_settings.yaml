@@ -4,16 +4,23 @@ version: "0.1.0"
 author: "Matt Szymonski"
 description: "A spline path edited by the spline tool, with room for an extension's roll handles."
 
-# The runtime crate the editor tools edit. The editor-only parts - the spline
-# tool and the roll extension - are loaded by an editor host and never listed
-# here, because a game build does not build them.
+# The runtime crate the editor tools edit, and the rendering pair the editor's
+# viewports draw through. The editor-only parts - the spline tool and the roll
+# extension - are loaded by an editor host and never listed here, because a game
+# build does not build them.
 modules:
-  - "pill_spline"
+  pill_rendering:
+    enabled: true
+  pill_renderer:
+    enabled: true
+  pill_spline:
+    enabled: true
 
-logging:
-  targets:
-    project: debug
-    # The spline tool's suite locates its row in the floating toolbox through
-    # the shell's debug dumps, and a reader running this example can follow
-    # what the tool reports the same way.
-    engine::editor: debug
+host:
+  logging:
+    targets:
+      project: debug
+      # The spline tool's suite locates its row in the floating toolbox through
+      # the shell's debug dumps, and a reader running this example can follow
+      # what the tool reports the same way.
+      engine::editor: debug

@@ -51,7 +51,6 @@ use pill_core::error;
 use crate::archetype::FieldPlan;
 #[cfg(feature = "development")]
 use crate::error::WorldError;
-use crate::settings::SettingsAssetOps;
 use crate::world::World;
 
 // =============================================================================
@@ -589,13 +588,6 @@ pub struct ErasedResourceOps {
     /// changes, so it is what a record written by one generation is matched
     /// against in the next.
     pub declaring_type_name: Option<&'static str>,
-    /// The manager's settings-asset surface, when the type is a
-    /// [`SettingsAssetManager`](crate::settings::SettingsAssetManager).
-    ///
-    /// The renderer and the applier point into the artifact that registered the
-    /// manager, so they have the same lifetime rule as `drop_in_place` and are
-    /// refreshed with the rest of the table by `World::rehome_resources`.
-    pub settings_asset: Option<SettingsAssetOps>,
 }
 
 impl ErasedResourceOps {
@@ -610,20 +602,7 @@ impl ErasedResourceOps {
             layout_sources: T::layout_sources(),
             layout_dependencies: T::layout_dependencies(),
             declaring_type_name: Some(std::any::type_name::<T>()),
-            // A manager type adds its settings surface with
-            // [`Self::with_settings_asset`]; a plain resource has none.
-            settings_asset: None,
         }
-    }
-
-    /// Adds the settings-asset surface of a manager type.
-    ///
-    /// Called by `World::insert_settings_asset_manager` and
-    /// `World::register_settings_asset_manager`, which are the paths a manager
-    /// whose tuning lives in a settings asset takes.
-    pub fn with_settings_asset<T: crate::settings::SettingsAssetManager>(mut self) -> Self {
-        self.settings_asset = Some(SettingsAssetOps::of::<T>());
-        self
     }
 
     /// Builds the table for a declaration from another language.
@@ -645,9 +624,6 @@ impl ErasedResourceOps {
             layout_sources: None,
             layout_dependencies: None,
             declaring_type_name: None,
-            // No Rust type means no applier to call: a managed manager would
-            // have to expose its own entry point.
-            settings_asset: None,
         }
     }
 }
@@ -1023,17 +999,6 @@ impl ErasedResource {
         }
         // SAFETY: as for `get`, and `&mut self` makes the borrow exclusive.
         Some(unsafe { &mut *self.value_allocation.as_ptr().cast::<T>() })
-    }
-
-    /// The stored value's address, for a caller that holds code knowing the
-    /// type: the world's manager-settings applier, which calls the function
-    /// pointer the type registered.
-    ///
-    /// `pub(crate)` on purpose. A raw pointer into the world is the handle the
-    /// safe API exists to hide, and this one is only sound while the caller's
-    /// type table came from the registration that created this box.
-    pub(crate) fn value_pointer_mut(&mut self) -> *mut u8 {
-        self.value_allocation.as_ptr()
     }
 
     /// Move the stored value out, consuming the box.

@@ -10,10 +10,16 @@ build_binary_name: "PillsCsharp"
 version: "0.1.0"
 description: "A curl noise field of two hundred thousand pills, in C#."
 
-modules: []
+modules:
+  pill_rendering:
+    enabled: true
+  pill_renderer:
+    enabled: true
 
-logging:
-  targets:
-    engine::rendering: info
+host:
+  logging:
+    targets:
+      engine::rendering: info
 
-debug_draw: true
+engine:
+  debug_draw: true

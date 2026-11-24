@@ -20,8 +20,7 @@
 
 // External crates
 use pill_core::telemetry::telemetry_target;
-use pill_engine::{asset, resource, AssetLoadResult, AssetManager, SettingsOutcome};
-use serde::{Deserialize, Serialize};
+use pill_engine::{resource, PillSettings, SettingsOutcome};
 
 // Current crate
 use crate::sound::Sound;
@@ -109,27 +108,38 @@ unsafe impl Sync for AudioManager {}
 // AudioSettings
 // =============================================================================
 
-/// The audio device's tunable settings, as the project's settings asset
-/// describes them.
+/// The audio device's tunable settings, as the project's settings tree
+/// describes them: `modules.pill_audio.audio.*`.
 ///
 /// Pool sizes are fixed when the device opens: a pool grows by allocating a
 /// mixer channel per sink, and a source's `sink` index would point into a pool
-/// that changed under it. A document that asks for different sizes is refused
-/// with that reason, and the host is restarted to change them. Ear separation
-/// can move while the device runs, so it is applied live.
-///
-/// This is the document of [`AudioSettingsAsset`]: the settings file is a real
-/// asset (`res/settings/pill_audio.audio_settings`), so an edit is checked
-/// against this type before it reaches the device, and the Inspector can draw
-/// its fields.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+/// that changed under it. A value that asks for different sizes is refused with
+/// that reason, and the host is restarted to change them. Ear separation can
+/// move while the device runs, so it is applied live.
+#[derive(Debug, Clone, Copy, PartialEq, PillSettings)]
+#[pill(module = "pill_audio", group = "audio")]
 pub struct AudioSettings {
     /// Voices for non-positional playback.
+    #[pill(
+        default = 16,
+        min = 1,
+        description = "Voices for sounds that play without a position. Fixed when the device opens; restart the host to change it."
+    )]
     pub ambient_sinks: usize,
     /// Voices for positional playback.
+    #[pill(
+        default = 16,
+        min = 1,
+        description = "Voices for sounds that play at a position. Fixed when the device opens; restart the host to change it."
+    )]
     pub spatial_sinks: usize,
     /// Half the distance between the listener's ears, in world units.
+    #[pill(
+        default = 1.0,
+        min = 0.1,
+        max = 10.0,
+        description = "Half the distance between the listener's ears, in world units."
+    )]
     pub ear_separation: f32,
 }
 
@@ -145,54 +155,11 @@ impl std::default::Default for AudioSettings {
 }
 
 // =============================================================================
-// AudioSettingsAsset
+// ModuleSettings
 // =============================================================================
 
-/// The standalone asset a project tunes the audio device through.
-///
-/// Its document is [`AudioSettings`], so the file at
-/// `res/settings/pill_audio.audio_settings` names the same three fields the
-/// manager applies. The loaded value is only a carrier: the manager reads the
-/// document, not the asset.
-///
-/// The attribute declares the type, so every generation of the module registers
-/// it with the world's asset store without a call in `register`.
-#[asset(standalone)]
-#[derive(Debug, Default)]
-pub struct AudioSettingsAsset {
-    /// The settings the file holds.
-    pub settings: AudioSettings,
-}
-
-impl pill_engine::Asset for AudioSettingsAsset {
-    fn shared_name() -> Option<&'static str> {
-        Some("pill_audio::AudioSettingsAsset")
-    }
-}
-
-impl pill_engine::StandaloneAsset for AudioSettingsAsset {
-    type Document = AudioSettings;
-    const FILE_EXTENSION: &'static str = "audio_settings";
-
-    fn from_document(
-        _name: &str,
-        document: AudioSettings,
-        _assets: &AssetManager,
-    ) -> AssetLoadResult<Self> {
-        Ok(Self { settings: document })
-    }
-}
-
-// =============================================================================
-// SettingsAssetManager
-// =============================================================================
-
-impl pill_engine::SettingsAssetManager for AudioManager {
-    type Settings = AudioSettingsAsset;
-
-    fn settings_name() -> &'static str {
-        "pill_audio"
-    }
+impl pill_engine::ModuleSettings for AudioManager {
+    type Values = AudioSettings;
 
     fn apply_settings(&mut self, settings: &AudioSettings) -> SettingsOutcome {
         // Step 1: Refuse a document no device could run with. A file is
@@ -489,29 +456,26 @@ impl AudioManager {
 
 #[cfg(test)]
 mod tests {
+    // External crates
+    use pill_engine::DeclaredSettings;
+
     // Current crate
     use super::*;
 
-    /// The settings asset carries exactly the document it was built from, which
-    /// is what a created file holds and what the applier reads back.
+    /// The declared surface carries the three knobs with the defaults the
+    /// manager was built from, and a resolved value reads back typed.
     #[test]
-    fn the_settings_asset_carries_its_document() {
-        let settings = AudioSettings {
-            ambient_sinks: 4,
-            spatial_sinks: 5,
-            ear_separation: 0.5,
-        };
-        let asset = <AudioSettingsAsset as pill_engine::StandaloneAsset>::from_document(
-            "settings/pill_audio.audio_settings",
-            settings,
-            &AssetManager::new(),
-        )
-        .expect("the document builds the asset");
+    fn the_declared_surface_matches_the_manager_defaults() {
+        let settings = AudioSettings::default();
 
-        assert_eq!(asset.settings, settings);
+        assert_eq!(settings.ambient_sinks, DEFAULT_AMBIENT_SINK_COUNT);
+        assert_eq!(settings.spatial_sinks, DEFAULT_SPATIAL_SINK_COUNT);
+        assert_eq!(settings.ear_separation, EAR_SEPARATION);
+        assert_eq!(AudioSettings::MODULE, "pill_audio");
         assert_eq!(
-            <AudioSettingsAsset as pill_engine::StandaloneAsset>::FILE_EXTENSION,
-            "audio_settings"
+            AudioSettings::schema().settings.len(),
+            4,
+            "the surface is `enabled` plus the three knobs"
         );
     }
 }

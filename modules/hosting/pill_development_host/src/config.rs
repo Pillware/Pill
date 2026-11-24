@@ -10,7 +10,8 @@
 //! - Finds the renderer's two crates and an editor host's editor crates, and
 //!   writes the generated workspace members that build the project and each
 //!   extension crate.
-//! - Reads the editor-only `editor_settings.yaml`.
+//! - Reads `editor:` from the project's own settings: the theme and the
+//!   play-time focus switch.
 //! - Copies the host's cargo profile, target triple and dioxus-CLI wrapper
 //!   onto every build the host starts.
 //!
@@ -36,6 +37,9 @@ use pill_core::error::ConfigError;
 use pill_core::telemetry::telemetry_target;
 use pill_csharp_bridge::CSharpModuleConfig;
 use toml_edit::{value, DocumentMut, Item, Table, Value};
+
+// Current crate
+use crate::project_settings::{EditorSettings, ProjectSettings, PROJECT_SETTINGS_FILE};
 
 // =============================================================================
 // Constants
@@ -241,32 +245,22 @@ const DX_RUSTC_WRAPPER_ENVIRONMENT: &str = "DX_RUSTC";
 /// triple, so the subtree appears under `target/hot/build/<triple>/<profile>`.
 pub(crate) const MODULE_BUILD_TARGET_DIRECTORY: &str = "target/hot/build";
 
-/// Project configuration file name, resolved in the project root. A project
-/// that ships one declares its own extension list; the project itself is
-/// selected by `PROJECT_PATH` alone.
-const PROJECT_SETTINGS_FILE: &str = "project_settings.yaml";
-
-/// The editor-only settings file, resolved in the project root beside
-/// `project_settings.yaml`. No game build reads it.
-pub const EDITOR_SETTINGS_FILE: &str = "editor_settings.yaml";
-
 /// A project's source asset directory, relative to the project root.
 const PROJECT_ASSET_DIRECTORY: &str = "res";
 
-/// The editor theme a project's editor layer uses when `editor_settings.yaml`
-/// names none and the file is there.
+/// The editor theme a project's editor layer uses when `editor.theme` names
+/// none and the file is there.
 const DEFAULT_EDITOR_THEME: &str = "editor/editor.theme";
 
-/// The renderer a project draws with when its settings name none.
-pub(crate) const DEFAULT_RENDERER: &str = "pill_renderer";
+/// The renderer the editor requires a project to list, and the data crate that
+/// renderer draws with. Used in the refusal message only: the editor needs a
+/// GPU renderer for its viewports, and it says which two entries to add.
+const EDITOR_RENDERER: &str = "pill_renderer";
+const EDITOR_RENDERER_DATA: &str = "pill_rendering";
 
-/// The `renderer:` value that selects no renderer at all: neither its data
+/// The `host.renderer` value that selects no renderer at all: neither its data
 /// crate nor its GPU module loads.
 const NO_RENDERER: &str = "none";
-
-/// Renderer names a settings file may still carry from before the rename, and
-/// the crate each one now selects. A project keeps loading without an edit.
-const RENDERER_ALIASES: &[(&str, &str)] = &[("pill_master_renderer", DEFAULT_RENDERER)];
 
 /// Manifest key, under `[package.metadata.pill]`, through which a renderer
 /// names the data crate it draws with: `renderer_data = "pill_rendering"`.
@@ -654,6 +648,19 @@ pub struct HostConfig {
     /// it. It loads after the project, because it exists to change the editor
     /// the project runs in.
     pub project_editor: Option<ExtensionConfig>,
+
+    /// The editor's project layer, from the settings' `editor:` entry.
+    /// Filled in every posture; only an editor host reads it.
+    pub editor: EditorSettings,
+
+    /// The project's settings as resolved: its modules, the values in effect
+    /// and where each came from.
+    pub settings: ProjectSettings,
+
+    /// The generated module wrappers this configuration wrote, in the order it
+    /// wrote them, so a later settings edit can rewrite the ones whose build
+    /// options moved.
+    pub wrappers: Vec<WrapperTarget>,
 }
 
 /// The `assets:` section of `project_settings.yaml`.
@@ -667,60 +674,6 @@ pub struct ProjectAssetSettings {
     /// type imports, right after the project starts, and write the metadata
     /// file of each that has none. Development host only.
     pub scan_on_start: bool,
-}
-
-/// The `logging:` section of `project_settings.yaml`, as written.
-///
-/// ```yaml
-/// logging:
-///   level: info                 # every target, replacing the engine's defaults
-///   targets:                    # per target, applied last
-///     engine::rendering: info
-/// ```
-///
-/// Read as text and checked by [`Self::validate`], so a misspelled level is
-/// an error naming it rather than a serde message about an enum.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub struct ProjectLoggingSettings {
-    /// One level for every target: `off`, `error`, `warn`, `info`, `debug` or
-    /// `trace`.
-    pub level: Option<String>,
-    /// How each line writes its local time: `date_time` or `time`.
-    pub timestamp: Option<String>,
-    /// Whether each line ends with its source `file:line` (default false).
-    pub source_location: Option<bool>,
-    /// Per-target levels, by `tracing` target or target prefix.
-    pub targets: BTreeMap<String, String>,
-}
-
-impl ProjectLoggingSettings {
-    /// Check every level and target, and turn them into the runtime's form.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ConfigError::InvalidLoggingSettings`] naming the first level
-    /// or target that does not read.
-    pub fn validate(&self, path: &Path) -> Result<pill_player::LoggingSettings, ConfigError> {
-        let invalid_logging_settings = |details: String| ConfigError::InvalidLoggingSettings {
-            path: path.display().to_string(),
-            details,
-        };
-        let target_levels: Vec<(&str, &str)> = self
-            .targets
-            .iter()
-            .map(|(target, level)| (target.as_str(), level.as_str()))
-            .collect();
-        // One conversion serves the development host and a shipping bundle
-        // alike, so the same text rules refuse a bad level or target in both.
-        pill_player::LoggingSettings::from_text(
-            self.level.as_deref(),
-            self.timestamp.as_deref(),
-            self.source_location,
-            &target_levels,
-        )
-        .map_err(invalid_logging_settings)
-    }
 }
 
 impl HostConfig {
@@ -773,26 +726,22 @@ impl HostConfig {
         let project_path = required_environment(PROJECT_PATH_ENVIRONMENT_VARIABLE)?;
         let project = ProjectModuleConfig::from_path(&project_path)?;
 
-        // Step 2: Load the project's own settings file. It is the only source
-        // of the extension list and of the required `name` /
-        // `build_binary_name`, so a missing file is a configuration error
-        // reported as such, not masked as a missing field.
+        // Step 2: Read the project's settings. The file is the only source of
+        // the module list and of the required `name` / `build_binary_name`, so
+        // a missing file is a configuration error reported as such, not
+        // masked as a missing field.
         let workspace_root = engine_workspace_root()?;
         let project_root = workspace_root.join(&project_path);
         let project_directory = resolved_project_directory(&workspace_root, &project_path);
         let settings_path = project_root.join(PROJECT_SETTINGS_FILE);
-        let project_settings = read_project_settings_file(&project_root)?.ok_or(
-            ConfigError::ProjectSettingsFileMissing {
-                path: settings_path.display().to_string(),
-            },
-        )?;
+        let settings = ProjectSettings::read(&project_root)?;
 
         // Step 3: Resolve the required project name and binary name. The name
         // is the window title. The build binary name is the artifact file base
         // and must be filename-safe (letters, digits and underscores only). A
         // settings file missing either is a configuration error, not a silent
         // default.
-        let project_name = project_settings
+        let project_name = settings
             .name
             .as_deref()
             .map(str::trim)
@@ -801,7 +750,7 @@ impl HostConfig {
                 path: settings_path.display().to_string(),
             })?
             .to_string();
-        let build_binary_name = project_settings
+        let build_binary_name = settings
             .build_binary_name
             .as_deref()
             .map(str::trim)
@@ -811,75 +760,55 @@ impl HostConfig {
             })?
             .to_string();
 
-        // Step 4: Resolve the extensions, checking every name before it is
-        // used in a watch path or a cargo selector. A traversal or duplicate
-        // entry, or a crate that no folder under `extensions/` holds, is a
+        // Step 4: Resolve the modules, checking every name before it is used
+        // in a watch path or a cargo selector. A traversal or duplicate entry,
+        // or a crate that no folder under `extensions/` holds, is a
         // configuration error here. Otherwise the host would watch an
         // arbitrary directory, pass a malformed `--package`, or load a second
         // copy of a module.
         let extensions_root = workspace_root.join(EXTENSION_DIRECTORY);
         validate_extension_crate_names(&extensions_root)?;
-        // The editor always draws with the default renderer: `renderer:` is a
-        // standalone and shipping choice, and honouring `none` here would leave
-        // the editor with no viewport.
-        let renderer_setting = Self::renderer_setting_for_posture(
-            load_editor_crates,
-            project_settings.renderer.as_deref(),
-        );
-        // `PILL_RENDERER` overrides the project's key for a standalone run, so
-        // a preview can be tried without editing the project. The editor always
-        // draws with the default renderer, so it says what it ignored.
-        let requested_renderer = crate::switches::renderer_override();
-        let renderer_setting = match (&requested_renderer, load_editor_crates) {
-            (Some(requested), false) => Some(requested.as_str()),
-            (Some(requested), true) => {
-                tracing::info!(
-                    target: telemetry_target::EDITOR,
-                    variable = crate::switches::RENDERER_VARIABLE,
-                    named = requested.as_str(),
-                    used = DEFAULT_RENDERER,
-                    "the editor ignores the requested renderer"
-                );
-                renderer_setting
-            }
-            (None, _) => renderer_setting,
-        };
-        if renderer_setting != project_settings.renderer.as_deref() {
+        // The editor always needs a renderer: its viewports draw through the
+        // GPU module, so a project that lists none is refused with the two
+        // entries to add.
+        let renderer_setting =
+            Self::renderer_setting_for_posture(load_editor_crates, settings.requested_renderer());
+        if renderer_setting != settings.requested_renderer() {
             tracing::info!(
                 target: telemetry_target::EDITOR,
-                named = project_settings.renderer.as_deref().unwrap_or_default(),
-                used = renderer_setting.unwrap_or_default(),
-                "the editor ignores the project's `renderer:` setting"
+                setting = crate::switches::RENDERER_SETTING,
+                named = settings.requested_renderer().unwrap_or_default(),
+                "the editor ignores the project's renderer setting and follows the enabled modules"
             );
         }
-        let renderer = Self::resolve_renderer(renderer_setting, &extensions_root)?;
-        // `renderer_features:` is checked against the renderer the project ends
-        // up drawing with, so the editor posture checks `pill_renderer` - the
-        // renderer it always uses - and a standalone checks the key's answer.
-        Self::check_renderer_features(
-            &workspace_root,
-            renderer
-                .as_ref()
-                .map(|selection| selection.renderer.as_str()),
-            &project_settings.renderer_features,
+        let renderer = Self::resolve_renderer(
+            renderer_setting,
+            &settings.enabled_modules,
+            &extensions_root,
         )?;
-        if !project_settings.renderer_features.is_empty() {
-            tracing::info!(
-                target: telemetry_target::ENGINE,
-                renderer = renderer
-                    .as_ref()
-                    .map(|selection| selection.renderer.as_str())
-                    .unwrap_or_default(),
-                features = ?project_settings.renderer_features,
-                "the project turns on renderer features"
-            );
+        if load_editor_crates && renderer.is_none() {
+            return Err(ConfigError::EditorRendererRequired {
+                name: EDITOR_RENDERER.to_string(),
+                data_crate: EDITOR_RENDERER_DATA.to_string(),
+            });
         }
         let module_names = Self::module_names_with_renderer_data(
             renderer
                 .as_ref()
                 .map(|selection| selection.data_crate.as_str()),
-            &project_settings.modules,
+            &settings.enabled_modules,
         );
+        // The renderer itself is loaded only by a windowed host, through the
+        // renderer module; a headless host builds its wrapper and loads
+        // nothing. Its data crate stays in the list, first.
+        let module_names: Vec<String> = module_names
+            .into_iter()
+            .filter(|name| {
+                renderer
+                    .as_ref()
+                    .is_none_or(|selection| name != &selection.renderer)
+            })
+            .collect();
         let mut extensions = Self::resolve_extensions(&module_names, &extensions_root)?;
         let mut first_load_optional: Vec<String> = Vec::new();
         // An editor host also loads the editor crates, after every runtime
@@ -942,9 +871,15 @@ impl HostConfig {
         // no longer loads. The renderer module gets one too, with its renderer
         // ABI entry points added to the generated source.
         let mut kept_wrappers: Vec<PathBuf> = Vec::new();
+        let mut wrappers: Vec<WrapperTarget> = Vec::new();
         for extension in &extensions {
-            materialize_host_module_wrapper(&workspace_root, extension, false)?;
+            let options = settings.build_options(&extension.name);
+            materialize_host_module_wrapper(&workspace_root, extension, false, &options)?;
             kept_wrappers.push(workspace_root.join(&extension.wrapper_directory));
+            wrappers.push(WrapperTarget {
+                extension: extension.clone(),
+                is_renderer_module: false,
+            });
         }
         if let Some(renderer_name) = renderer
             .as_ref()
@@ -955,16 +890,19 @@ impl HostConfig {
                     name: renderer_name.to_string(),
                 })?;
             let renderer_module = ExtensionConfig::workspace_member(&renderer_location);
-            materialize_host_module_wrapper(&workspace_root, &renderer_module, true)?;
+            let options = settings.build_options(renderer_name);
+            materialize_host_module_wrapper(&workspace_root, &renderer_module, true, &options)?;
             kept_wrappers.push(workspace_root.join(&renderer_module.wrapper_directory));
+            wrappers.push(WrapperTarget {
+                extension: renderer_module,
+                is_renderer_module: true,
+            });
         }
         prune_stale_host_module_wrappers(&workspace_root, &kept_wrappers);
 
-        let logging = project_settings.logging.validate(&settings_path)?;
-        let startup_scene = Self::validate_startup_scene(
-            project_settings.startup_scene.as_deref(),
-            &settings_path,
-        )?;
+        let logging = settings.logging().validate(&settings_path)?;
+        let startup_scene = Self::validate_startup_scene(settings.startup_scene(), &settings_path)?;
+        let editor = settings.editor();
         Ok(Self {
             name: project_name,
             project_directory: Some(project_directory),
@@ -979,12 +917,17 @@ impl HostConfig {
             renderer_data: renderer
                 .as_ref()
                 .map(|selection| selection.data_crate.clone()),
-            assets: project_settings.assets,
+            assets: ProjectAssetSettings {
+                scan_on_start: settings.scan_assets_on_start(),
+            },
             logging,
-            shipping_debug_draw: project_settings.debug_draw.unwrap_or(false),
+            shipping_debug_draw: settings.shipping_debug_draw(),
             startup_scene,
             asset_directory: Some(project_root.join(PROJECT_ASSET_DIRECTORY)),
             project_editor,
+            editor,
+            settings,
+            wrappers,
         })
     }
 
@@ -1035,118 +978,105 @@ impl HostConfig {
         Ok(Some(path.to_string()))
     }
 
-    /// The `renderer:` value a posture resolves: the editor ignores the
-    /// project's key and always draws with [`DEFAULT_RENDERER`], while every
-    /// other posture uses the key as written (an absent key included).
+    /// The `host.renderer` value a posture resolves: the editor ignores the
+    /// override and follows the project's enabled modules, while every other
+    /// posture uses the value as written.
     fn renderer_setting_for_posture(
         load_editor_crates: bool,
         setting: Option<&str>,
     ) -> Option<&str> {
         if load_editor_crates {
-            return Some(DEFAULT_RENDERER);
+            return None;
         }
         setting
     }
 
-    /// Resolve the settings' `renderer:` value to the renderer and the data
-    /// crate it draws with.
+    /// Resolve the project's renderer from its enabled modules, or from the
+    /// `host.renderer` value when it names one.
     ///
-    /// Absent means [`DEFAULT_RENDERER`]; [`NO_RENDERER`] means none; a name in
-    /// [`RENDERER_ALIASES`] selects the crate it is an old name of. A named
-    /// renderer must be an extension crate under `extensions/`, its manifest
-    /// must name its data crate ([`RENDERER_DATA_TAG`]), and that crate must be
-    /// an extension crate too. Anything else is a configuration error here
-    /// rather than a failed build later.
+    /// A renderer is an enabled module whose manifest names the data crate it
+    /// draws with ([`RENDERER_DATA_TAG`]). One renderer is the answer; two is
+    /// an error naming both; none means headless. A named renderer must be
+    /// listed and enabled, and its data crate must be too.
     ///
     /// # Errors
     ///
-    /// Returns [`ConfigError::InvalidExtensionName`] when the name is not a
-    /// usable directory name, [`ConfigError::ExtensionDirectoryMissing`] when
-    /// either crate has no folder, and [`ConfigError::RendererDataTagMissing`]
-    /// when the renderer's manifest carries no tag.
+    /// Returns [`ConfigError::InvalidExtensionName`] for a name that is not a
+    /// crate directory, [`ConfigError::ExtensionDirectoryMissing`] when a crate
+    /// has no folder, [`ConfigError::RendererDataTagMissing`] when the renderer
+    /// names no data crate, [`ConfigError::MultipleRenderers`] when the project
+    /// enables two, and [`ConfigError::RendererDataCrateNotEnabled`] when the
+    /// renderer's data crate is missing from the enabled list.
     fn resolve_renderer(
         setting: Option<&str>,
+        enabled_modules: &[String],
         extensions_root: &Path,
     ) -> Result<Option<RendererSelection>, ConfigError> {
-        let named = setting.map(str::trim).unwrap_or(DEFAULT_RENDERER);
-        if named == NO_RENDERER {
+        let requested = setting.map(str::trim).unwrap_or_default();
+        if requested == NO_RENDERER {
             return Ok(None);
         }
-        if !is_valid_module_directory_name(named) {
-            return Err(ConfigError::InvalidExtensionName {
-                name: named.to_string(),
-            });
-        }
-        let renderer_name = RENDERER_ALIASES
-            .iter()
-            .find(|(old_name, _)| *old_name == named)
-            .map(|(_, current_name)| *current_name)
-            .unwrap_or(named);
+        let enabled = |name: &str| enabled_modules.iter().any(|module| module == name);
+        let renderer_name = if requested.is_empty() {
+            let mut renderers: Vec<&str> = Vec::new();
+            for module in enabled_modules {
+                let Some(location) = find_extension_crate(extensions_root, module) else {
+                    continue;
+                };
+                if declared_pill_tag(
+                    &location.directory_under(extensions_root),
+                    RENDERER_DATA_TAG,
+                )
+                .is_some()
+                {
+                    renderers.push(module.as_str());
+                }
+            }
+            match renderers.as_slice() {
+                [] => return Ok(None),
+                [only] => *only,
+                [first, second, ..] => {
+                    return Err(ConfigError::MultipleRenderers {
+                        first: (*first).to_string(),
+                        second: (*second).to_string(),
+                    });
+                }
+            }
+        } else {
+            if !is_valid_module_directory_name(requested) {
+                return Err(ConfigError::InvalidExtensionName {
+                    name: requested.to_string(),
+                });
+            }
+            if !enabled(requested) {
+                return Err(ConfigError::RendererNotEnabled {
+                    name: requested.to_string(),
+                });
+            }
+            requested
+        };
         let Some(location) = find_extension_crate(extensions_root, renderer_name) else {
             return Err(ConfigError::ExtensionDirectoryMissing {
                 name: renderer_name.to_string(),
             });
         };
-        let renderer_directory = location.directory_under(extensions_root);
-        let data_crate =
-            declared_pill_tag(&renderer_directory, RENDERER_DATA_TAG).ok_or_else(|| {
-                ConfigError::RendererDataTagMissing {
-                    name: renderer_name.to_string(),
-                }
-            })?;
-        if find_extension_crate(extensions_root, &data_crate).is_none() {
-            return Err(ConfigError::ExtensionDirectoryMissing { name: data_crate });
+        let data_crate = declared_pill_tag(
+            &location.directory_under(extensions_root),
+            RENDERER_DATA_TAG,
+        )
+        .ok_or_else(|| ConfigError::RendererDataTagMissing {
+            name: renderer_name.to_string(),
+        })?;
+        if !enabled(&data_crate) {
+            return Err(ConfigError::RendererDataCrateNotEnabled {
+                name: renderer_name.to_string(),
+                data_crate,
+            });
         }
         Ok(Some(RendererSelection {
             renderer: renderer_name.to_string(),
             data_crate,
         }))
-    }
-
-    /// Checks every `renderer_features:` name against its renderer's manifest.
-    ///
-    /// Nothing compiles differently here: the generated wrapper enables every
-    /// feature a crate declares. The check is what makes the key honest - a
-    /// project that asks for a feature the renderer does not have learns it at
-    /// startup, with the same rule a shipping build applies.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ConfigError::RendererFeatureWithoutRenderer`] when a feature is
-    /// named while no renderer is selected, and
-    /// [`ConfigError::UnknownRendererFeature`] when the renderer's manifest does
-    /// not declare one.
-    fn check_renderer_features(
-        workspace_root: &Path,
-        renderer: Option<&str>,
-        requested: &[String],
-    ) -> Result<(), ConfigError> {
-        let names: Vec<&str> = requested
-            .iter()
-            .map(|name| name.trim())
-            .filter(|name| !name.is_empty())
-            .collect();
-        if names.is_empty() {
-            return Ok(());
-        }
-        let Some(renderer) = renderer else {
-            let feature = names.first().copied().unwrap_or_default().to_owned();
-            return Err(ConfigError::RendererFeatureWithoutRenderer { feature });
-        };
-        let declared =
-            crate::build_runner::declared_features(workspace_root, renderer).unwrap_or_default();
-        for feature in names {
-            if !declared
-                .iter()
-                .any(|declared_name| declared_name == feature)
-            {
-                return Err(ConfigError::UnknownRendererFeature {
-                    name: renderer.to_owned(),
-                    feature: feature.to_owned(),
-                });
-            }
-        }
-        Ok(())
     }
 
     /// The module load order: the renderer's data crate first, when a renderer
@@ -1376,6 +1306,9 @@ impl From<ProjectModuleConfig> for HostConfig {
             startup_scene: None,
             asset_directory: None,
             project_editor: None,
+            editor: EditorSettings::default(),
+            settings: ProjectSettings::default(),
+            wrappers: Vec::new(),
         }
     }
 }
@@ -1592,85 +1525,6 @@ impl ProjectModuleConfig {
             )),
         })
     }
-}
-
-/// What `editor_settings.yaml` selected for the editor.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct EditorSettings {
-    /// The `editor_theme:` value, as the file spells it: a path below the
-    /// project's `res`.
-    pub editor_theme: Option<String>,
-    /// The `focus_game_on_play:` value: whether Play brings the Game tab
-    /// forward. Absent means `true`, which is what a person expects of Play.
-    pub focus_game_on_play: bool,
-}
-
-impl Default for EditorSettings {
-    fn default() -> Self {
-        Self {
-            editor_theme: None,
-            focus_game_on_play: true,
-        }
-    }
-}
-
-/// Values declared by the project's own `editor_settings.yaml`.
-#[derive(Debug, Default, serde::Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct EditorSettingsFile {
-    /// The editor theme the project's editor layer uses, below `res`.
-    editor_theme: Option<String>,
-    /// Whether Play brings the Game tab forward.
-    focus_game_on_play: Option<bool>,
-}
-
-/// Values declared by the project's own `project_settings.yaml`.
-///
-/// `name` and `build_binary_name` are required (the display/window title and
-/// the artifact file base respectively). The rest is optional package
-/// metadata.
-///
-/// Unknown keys are refused rather than dropped, so `module:` instead of
-/// `modules:` is an error rather than a silently empty extension list.
-#[derive(Debug, Default, serde::Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct ProjectSettingsFile {
-    /// Project display name; required, used as the window title.
-    name: Option<String>,
-    /// Artifact file base; required, letters/digits/underscores only.
-    build_binary_name: Option<String>,
-    /// Optional package version.
-    version: Option<String>,
-    /// Optional package author.
-    author: Option<String>,
-    /// Optional one-line package description.
-    description: Option<String>,
-    /// Extension crate names, in load order. This key is the only source for
-    /// the list: there is no environment-variable override, so the file is
-    /// always the complete answer to "which modules load". The one exception
-    /// is the selected renderer's data crate, which loads first by convention.
-    modules: Vec<String>,
-    /// The renderer the project draws with: the name of its GPU module under
-    /// `extensions/` (`pill_renderer` when absent), or `none`. The data
-    /// crate its manifest names through `renderer_data` loads in every build.
-    renderer: Option<String>,
-    /// Features the project turns on in its renderer, by name. Every name is
-    /// checked against the renderer's own manifest, so a typo stops the project
-    /// at startup instead of shipping a renderer nobody asked for. The host's
-    /// generated wrapper enables every declared feature anyway; the key is what
-    /// a shipping build forwards.
-    renderer_features: Vec<String>,
-    /// What the development host does with the project's source assets.
-    assets: ProjectAssetSettings,
-    /// Log levels over the engine's defaults.
-    logging: ProjectLoggingSettings,
-    /// Whether a shipping or web build starts with debug drawing on; the
-    /// development host always draws.
-    debug_draw: Option<bool>,
-    /// The `.scene` the project starts with, as a path below `res`; loaded
-    /// after every component is registered and before the project's `init`
-    /// seeds anything.
-    startup_scene: Option<String>,
 }
 
 // =============================================================================
@@ -2206,35 +2060,8 @@ fn path_dependency(key: &str, item: &Item) -> Option<(String, String)> {
     Some((package.unwrap_or_else(|| key.to_string()), path.to_string()))
 }
 
-/// Reads the editor's settings file from the project root.
-///
-/// A project usually has no such file; the settings are then empty. Unknown
-/// keys are refused instead of ignored, so a misspelled `editor_themes:` is
-/// reported and does not quietly fall back to the default theme.
-///
-/// # Errors
-///
-/// Returns a message naming the file when it exists but cannot be read, is
-/// not valid YAML, or names an unknown key.
-pub fn read_editor_settings(project_directory: &Path) -> Result<EditorSettings, String> {
-    let path = project_directory.join(EDITOR_SETTINGS_FILE);
-    if !path.is_file() {
-        return Ok(EditorSettings::default());
-    }
-    let text = std::fs::read_to_string(&path)
-        .map_err(|error| format!("`{}` could not be read: {error}", path.display()))?;
-    let file: EditorSettingsFile = serde_yaml::from_str(&text)
-        .map_err(|error| format!("`{}` is not valid YAML: {error}", path.display()))?;
-    Ok(EditorSettings {
-        editor_theme: file
-            .editor_theme
-            .filter(|editor_theme| !editor_theme.trim().is_empty()),
-        focus_game_on_play: file.focus_game_on_play.unwrap_or(true),
-    })
-}
-
-/// Returns the theme path the project layer adds: the `editor_theme:` value
-/// when the file names one, `editor/editor.theme` when the project ships that
+/// Returns the theme path the project layer adds: the `editor.theme` value
+/// when the entry names one, `editor/editor.theme` when the project ships that
 /// file, and nothing otherwise.
 ///
 /// The path is relative to the project's `res`. It is checked against the
@@ -2344,7 +2171,7 @@ impl ExtensionCrateLocation {
     }
 
     /// The crate's directory under `extensions_root`.
-    fn directory_under(&self, extensions_root: &Path) -> PathBuf {
+    pub(crate) fn directory_under(&self, extensions_root: &Path) -> PathBuf {
         extensions_root
             .join(&self.folder)
             .join(&self.directory_in_folder)
@@ -2573,27 +2400,6 @@ fn declared_package_name(directory: &Path) -> Option<String> {
 ///
 /// Returns a [`ConfigError`] when the file exists but cannot be read or is
 /// not valid YAML.
-fn read_project_settings_file(
-    project_root: &Path,
-) -> Result<Option<ProjectSettingsFile>, ConfigError> {
-    let config_path = project_root.join(PROJECT_SETTINGS_FILE);
-    if !config_path.is_file() {
-        return Ok(None);
-    }
-    let contents = std::fs::read_to_string(&config_path).map_err(|source| {
-        ConfigError::ProjectSettingsFileReadFailed {
-            path: config_path.display().to_string(),
-            source,
-        }
-    })?;
-    serde_yaml::from_str(&contents).map(Some).map_err(|source| {
-        ConfigError::ProjectSettingsFileParseFailed {
-            path: config_path.display().to_string(),
-            details: source.to_string(),
-        }
-    })
-}
-
 /// Writes the temporary workspace member that builds the native project.
 ///
 /// A type keeps one identity across DLLs only when the project compiles as a
@@ -2870,6 +2676,65 @@ fn prune_stale_host_project_members(workspace_root: &Path, kept_member_directory
     }
 }
 
+/// One generated module wrapper: the crate it builds and whether its source
+/// also carries the renderer ABI entry points.
+#[derive(Debug, Clone)]
+pub struct WrapperTarget {
+    /// The extension crate the wrapper builds.
+    pub extension: ExtensionConfig,
+    /// Whether the wrapper also expands the renderer entry-point macro.
+    pub is_renderer_module: bool,
+}
+
+impl WrapperTarget {
+    /// The module's package name.
+    pub fn name(&self) -> &str {
+        self.extension.name.as_str()
+    }
+}
+
+/// Rewrites the wrappers whose build options a settings edit moved, and names
+/// the modules whose wrapper came out different.
+///
+/// A module whose chosen features did not change keeps its wrapper byte for
+/// byte, so cargo has nothing to rebuild for it; the caller reloads only what
+/// this returns.
+///
+/// # Errors
+///
+/// Returns a [`ConfigError`] when a wrapper cannot be written, or when the
+/// project now names an option the module does not declare.
+pub(crate) fn rewrite_wrappers_for_settings(
+    workspace_root: &Path,
+    wrappers: &[WrapperTarget],
+    previous: &ProjectSettings,
+    fresh: &ProjectSettings,
+) -> Result<Vec<String>, ConfigError> {
+    let mut rebuilt: Vec<String> = Vec::new();
+    for wrapper in wrappers {
+        let name = wrapper.name();
+        let options = fresh.build_options(name);
+        if options == previous.build_options(name) {
+            continue;
+        }
+        let manifest_path = workspace_root
+            .join(&wrapper.extension.wrapper_directory)
+            .join("Cargo.toml");
+        let before = std::fs::read_to_string(&manifest_path).ok();
+        materialize_host_module_wrapper(
+            workspace_root,
+            &wrapper.extension,
+            wrapper.is_renderer_module,
+            &options,
+        )?;
+        let after = std::fs::read_to_string(&manifest_path).ok();
+        if before != after {
+            rebuilt.push(name.to_string());
+        }
+    }
+    Ok(rebuilt)
+}
+
 /// Writes the wrapper workspace member that builds one extension crate's
 /// loadable artifact.
 ///
@@ -2881,8 +2746,12 @@ fn prune_stale_host_project_members(workspace_root: &Path, kept_member_directory
 /// library inside it, so one rlib serves the module build and every project
 /// build.
 ///
-/// The generated manifest enables every feature the extension declares except
-/// `default`, so its copy matches the copy projects link. The generated
+/// The generated manifest turns on every feature the extension declares that no
+/// build option covers, plus the build options this project turns on, so the
+/// module build and a project build compile the same code. A build option is a
+/// row of the manifest's `[package.metadata.pill.settings.build]` table; a
+/// feature that table does not mention is internal to the module and always on.
+/// The generated
 /// `lib.rs` expands the extension's entry-point macro, and for the renderer
 /// module also its renderer ABI macro, because a crate linked into several
 /// artifacts cannot define the `#[no_mangle]` symbols itself.
@@ -2890,11 +2759,13 @@ fn prune_stale_host_project_members(workspace_root: &Path, kept_member_directory
 /// # Errors
 ///
 /// Returns a [`ConfigError`] when the member directory or either generated
-/// file cannot be written.
+/// file cannot be written, and [`ConfigError::UnknownModuleFeature`] when the
+/// project turns on an option the module does not declare.
 fn materialize_host_module_wrapper(
     workspace_root: &Path,
     extension: &ExtensionConfig,
     is_renderer_module: bool,
+    chosen_options: &BTreeMap<String, bool>,
 ) -> Result<(), ConfigError> {
     let name = extension.name.as_str();
     let member_name = extension.wrapper_library_name.as_str();
@@ -2902,13 +2773,42 @@ fn materialize_host_module_wrapper(
     let extension_directory = workspace_root.join(&extension.crate_directory);
     let engine_directory = workspace_root.join("engine").join("pill_engine");
 
-    // Every feature the extension declares, except the `default` key. If the
-    // wrapper enabled fewer features than a project's dependency edge, it
-    // would compile a second copy of the extension with different features -
-    // the collision the wrapper exists to prevent.
-    let mut features =
-        crate::build_runner::declared_features(workspace_root, name).unwrap_or_default();
-    features.retain(|feature| feature != "default");
+    // Every feature the extension declares, except the `default` key. A feature
+    // a build option covers follows the project; every other one is the
+    // module's own and stays on. If the wrapper enabled fewer features than a
+    // project's dependency edge, it would compile a second copy of the
+    // extension with different features - the collision the wrapper exists to
+    // prevent.
+    let declared = crate::build_runner::declared_features(workspace_root, name).unwrap_or_default();
+    let options =
+        crate::build_runner::declared_build_options(workspace_root, name).unwrap_or_default();
+    let mut features: Vec<String> = Vec::new();
+    for option in chosen_options.keys() {
+        let declared_feature = declared.iter().any(|feature| feature == option);
+        let declared_option = options.iter().any(|known| &known.name == option);
+        if !declared_feature || !declared_option {
+            return Err(ConfigError::UnknownModuleFeature {
+                module: name.to_string(),
+                option: option.clone(),
+            });
+        }
+    }
+    for feature in &declared {
+        if feature == "default" {
+            continue;
+        }
+        let option = options.iter().find(|known| &known.name == feature);
+        let enabled = match option {
+            Some(option) => chosen_options
+                .get(feature)
+                .copied()
+                .unwrap_or(option.default_on),
+            None => true,
+        };
+        if enabled {
+            features.push(feature.clone());
+        }
+    }
     features.sort();
     let feature_entry = if features.is_empty() {
         String::new()
@@ -3262,6 +3162,7 @@ fn prune_stale_host_module_wrappers(workspace_root: &Path, kept_wrappers: &[Path
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project_settings::read_editor_settings;
 
     /// A native project manifest that links the extension directly.
     const DEPENDENT_MANIFEST: &str = r#"
@@ -3339,7 +3240,8 @@ serde = { version = "1", features = ["derive"] }
     // project settings file
     // =========================================================================
 
-    /// A project settings file yields its module list in order.
+    /// A project settings file yields its module list in order, and the
+    /// switches its `host:` entry sets.
     #[test]
     fn project_settings_file_lists_modules() {
         let directory = temp_root().join("project_settings_parse");
@@ -3347,15 +3249,16 @@ serde = { version = "1", features = ["derive"] }
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(
             directory.join("project_settings.yaml"),
-            "name: \"Bouncing Balls\"\nbuild_binary_name: \"BouncingBalls\"\nmodules:\n  - \"pill_spline\"\n  - \"pill_test\"\n",
+            "name: \"Bouncing Balls\"\nbuild_binary_name: \"BouncingBalls\"\n\
+             modules:\n  pill_spline:\n    enabled: true\n  pill_test:\n    enabled: true\n\
+             host:\n  hot_reloading: false\n",
         )
         .unwrap();
-        let settings = read_project_settings_file(&directory)
-            .unwrap()
-            .expect("the settings file should parse");
+        let settings = ProjectSettings::read(&directory).expect("the settings file parses");
         assert_eq!(settings.name.as_deref(), Some("Bouncing Balls"));
         assert_eq!(settings.build_binary_name.as_deref(), Some("BouncingBalls"));
-        assert_eq!(settings.modules, vec!["pill_spline", "pill_test"]);
+        assert_eq!(settings.enabled_modules, ["pill_spline", "pill_test"]);
+        assert!(!settings.hot_reloading());
     }
 
     /// The `startup_scene:` key reads a relative `.scene` path and refuses
@@ -3387,8 +3290,8 @@ serde = { version = "1", features = ["derive"] }
         }
     }
 
-    /// The `logging:` section is optional, reads levels by name, and names a
-    /// level it cannot read.
+    /// The `host.logging` section is optional, reads levels by name, and names
+    /// a level it cannot read.
     #[test]
     fn the_logging_section_reads_levels_and_refuses_bad_ones() {
         use tracing::level_filters::LevelFilter;
@@ -3403,25 +3306,27 @@ serde = { version = "1", features = ["derive"] }
                 format!("{header}{extra}"),
             )
             .unwrap();
-            read_project_settings_file(&directory).unwrap().unwrap()
+            ProjectSettings::read(&directory).expect("the file parses")
         };
         let path = directory.join("project_settings.yaml");
 
-        let absent = read("").logging.validate(&path).unwrap();
+        let absent = read("").logging().validate(&path).unwrap();
         assert_eq!(absent, pill_player::LoggingSettings::default());
 
-        let set = read("logging:\n  level: warn\n  targets:\n    engine::rendering: Info\n")
-            .logging
-            .validate(&path)
-            .unwrap();
+        let set = read(
+            "host:\n  logging:\n    level: warn\n    targets:\n      engine::rendering: Info\n",
+        )
+        .logging()
+        .validate(&path)
+        .unwrap();
         assert_eq!(set.level, Some(LevelFilter::WARN));
         assert_eq!(
             set.targets,
             vec![("engine::rendering".to_owned(), LevelFilter::INFO)]
         );
 
-        let error = read("logging:\n  targets:\n    wgpu: loud\n")
-            .logging
+        let error = read("host:\n  logging:\n    targets:\n      wgpu: loud\n")
+            .logging()
             .validate(&path)
             .expect_err("an unknown level is refused");
         assert!(error.to_string().contains("loud"), "{error}");
@@ -3430,39 +3335,38 @@ serde = { version = "1", features = ["derive"] }
         // use one conversion.
         assert!(error.to_string().contains("wgpu: "), "{error}");
 
-        let time_only = read("logging:\n  timestamp: time\n")
-            .logging
+        let time_only = read("host:\n  logging:\n    timestamp: time\n")
+            .logging()
             .validate(&path)
             .unwrap();
         assert_eq!(
             time_only.timestamp,
             Some(pill_core::telemetry::TimestampFormat::Time)
         );
-        let located = read("logging:\n  source_location: true\n")
-            .logging
+        let located = read("host:\n  logging:\n    source_location: true\n")
+            .logging()
             .validate(&path)
             .unwrap();
         assert_eq!(located.source_location, Some(true));
-        let error = read("logging:\n  timestamp: unix\n")
-            .logging
+        let error = read("host:\n  logging:\n    timestamp: unix\n")
+            .logging()
             .validate(&path)
             .expect_err("an unknown timestamp format is refused");
         assert!(error.to_string().contains("unix"), "{error}");
 
-        std::fs::write(
-            directory.join("project_settings.yaml"),
-            format!("{header}logging:\n  levels: info\n"),
-        )
-        .unwrap();
+        let settings = read("host:\n  logging:\n    levels: info\n");
         assert!(
-            read_project_settings_file(&directory).is_err(),
-            "a misspelled key is refused"
+            settings
+                .resolved()
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.path == "host.logging.levels"),
+            "a misspelled key is reported"
         );
         let _ = std::fs::remove_dir_all(&directory);
     }
 
-    /// The `assets:` section is optional, defaults every key to off, and
-    /// refuses a key it does not know.
+    /// The `host.assets` section defaults every key to off.
     #[test]
     fn the_assets_section_defaults_off_and_reads_scan_on_start() {
         let directory = temp_root().join("project_settings_assets");
@@ -3478,26 +3382,25 @@ serde = { version = "1", features = ["derive"] }
         };
 
         write("");
-        let absent = read_project_settings_file(&directory).unwrap().unwrap();
-        assert!(!absent.assets.scan_on_start);
+        let absent = ProjectSettings::read(&directory).expect("the file parses");
+        assert!(!absent.scan_assets_on_start());
 
-        write("assets:\n  scan_on_start: true\n");
-        let enabled = read_project_settings_file(&directory).unwrap().unwrap();
-        assert!(enabled.assets.scan_on_start);
-
-        write("assets:\n  scan_on_startup: true\n");
-        let error =
-            read_project_settings_file(&directory).expect_err("a misspelled key is refused");
-        assert!(error.to_string().contains("scan_on_startup"), "{error}");
+        write("host:\n  assets:\n    scan_on_start: true\n");
+        let enabled = ProjectSettings::read(&directory).expect("the file parses");
+        assert!(enabled.scan_assets_on_start());
     }
 
-    /// A missing project settings file reads as absent, not as an error.
+    /// A missing project settings file is a configuration error, not an empty
+    /// project.
     #[test]
-    fn missing_project_settings_file_selects_no_modules() {
+    fn missing_project_settings_file_is_refused() {
         let directory = temp_root().join("project_settings_missing");
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();
-        assert!(read_project_settings_file(&directory).unwrap().is_none());
+        assert!(matches!(
+            ProjectSettings::read(&directory),
+            Err(ConfigError::ProjectSettingsFileMissing { .. })
+        ));
     }
 
     // =========================================================================
@@ -3545,8 +3448,7 @@ serde = { version = "1", features = ["derive"] }
     // editor settings file
     // =========================================================================
 
-    /// The editor's settings file is optional and names a theme. A misspelled
-    /// key is refused, because the theme key is the only one the editor reads.
+    /// The editor's project layer reads `editor.theme` from the settings file.
     #[test]
     fn the_editor_settings_file_reads_the_theme_key() {
         let directory = temp_root().join("editor_settings");
@@ -3558,8 +3460,8 @@ serde = { version = "1", features = ["derive"] }
         assert_eq!(absent.editor_theme, None);
 
         std::fs::write(
-            directory.join("editor_settings.yaml"),
-            "editor_theme: \"editor/alt.theme\"\n",
+            directory.join("project_settings.yaml"),
+            "name: \"Probe\"\nbuild_binary_name: \"Probe\"\neditor:\n  theme: \"editor/alt.theme\"\n",
         )
         .unwrap();
         let named_settings = read_editor_settings(&directory).expect("the key parses");
@@ -3568,20 +3470,16 @@ serde = { version = "1", features = ["derive"] }
             Some("editor/alt.theme")
         );
 
-        std::fs::write(directory.join("editor_settings.yaml"), "editor_theme:\n").unwrap();
+        std::fs::write(
+            directory.join("project_settings.yaml"),
+            "name: \"Probe\"\nbuild_binary_name: \"Probe\"\neditor:\n  theme:\n",
+        )
+        .unwrap();
         assert_eq!(
             read_editor_settings(&directory).unwrap().editor_theme,
             None,
             "an empty value is no selection"
         );
-
-        std::fs::write(
-            directory.join("editor_settings.yaml"),
-            "editor_themes: \"editor/alt.theme\"\n",
-        )
-        .unwrap();
-        let error = read_editor_settings(&directory).expect_err("a misspelled key is refused");
-        assert!(error.contains("editor_themes"), "{error}");
         let _ = std::fs::remove_dir_all(&directory);
     }
 
@@ -4085,8 +3983,9 @@ serde = { version = "1", features = ["derive"] }
         );
         seed_runtime_crate(&root, "pill_renderer", "pill_renderer");
         tag_renderer_data(&root, "pill_renderer", "pill_rendering");
+        let enabled = ["pill_renderer".to_string(), "pill_rendering".to_string()];
         assert_eq!(
-            HostConfig::resolve_renderer(None, &root).unwrap(),
+            HostConfig::resolve_renderer(None, &enabled, &root).unwrap(),
             Some(RendererSelection {
                 renderer: "pill_renderer".to_string(),
                 data_crate: "pill_rendering".to_string(),
@@ -4099,14 +3998,15 @@ serde = { version = "1", features = ["derive"] }
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// No `renderer:` key selects the default renderer, whose data crate comes
-    /// from its manifest's tag.
+    /// The renderer is the enabled module whose manifest names a data crate,
+    /// and that data crate must be enabled too.
     #[test]
-    fn an_absent_renderer_key_selects_the_default_renderer() {
+    fn the_enabled_renderer_is_the_one_the_modules_select() {
         let root =
             extensions_root_with_renderer("renderer_default", "pill_renderer", "pill_rendering");
+        let enabled = ["pill_rendering".to_string(), "pill_renderer".to_string()];
         assert_eq!(
-            HostConfig::resolve_renderer(None, &root).unwrap(),
+            HostConfig::resolve_renderer(None, &enabled, &root).unwrap(),
             Some(RendererSelection {
                 renderer: "pill_renderer".to_string(),
                 data_crate: "pill_rendering".to_string(),
@@ -4114,33 +4014,67 @@ serde = { version = "1", features = ["derive"] }
         );
     }
 
-    /// The name the renderer carried before the rename still selects it, so a
-    /// project keeps loading without an edit.
+    /// Two enabled renderers are refused, naming both.
     #[test]
-    fn the_old_renderer_name_selects_the_renderer() {
+    fn two_enabled_renderers_are_refused() {
+        let root = extensions_root_with(
+            "renderer_two",
+            &["pill_renderer", "pill_rendering", "other_renderer"],
+        );
+        tag_renderer_data(&root, "pill_renderer", "pill_rendering");
+        tag_renderer_data(&root, "other_renderer", "pill_rendering");
+        let enabled = [
+            "pill_rendering".to_string(),
+            "pill_renderer".to_string(),
+            "other_renderer".to_string(),
+        ];
+        let error = HostConfig::resolve_renderer(None, &enabled, &root).unwrap_err();
+        assert!(
+            matches!(&error, ConfigError::MultipleRenderers { first, second }
+                if first == "pill_renderer" && second == "other_renderer"),
+            "{error:?}"
+        );
+    }
+
+    /// A renderer that is enabled while its data crate is not is refused,
+    /// naming the crate to list.
+    #[test]
+    fn a_renderer_without_its_enabled_data_crate_is_refused() {
         let root =
-            extensions_root_with_renderer("renderer_alias", "pill_renderer", "pill_rendering");
-        assert_eq!(
-            HostConfig::resolve_renderer(Some("pill_master_renderer"), &root).unwrap(),
-            Some(RendererSelection {
-                renderer: "pill_renderer".to_string(),
-                data_crate: "pill_rendering".to_string(),
-            })
+            extensions_root_with_renderer("renderer_data_off", "pill_renderer", "pill_rendering");
+        let error =
+            HostConfig::resolve_renderer(None, &["pill_renderer".to_string()], &root).unwrap_err();
+        assert!(
+            matches!(&error, ConfigError::RendererDataCrateNotEnabled { name, data_crate }
+                if name == "pill_renderer" && data_crate == "pill_rendering"),
+            "{error:?}"
         );
     }
 
-    /// The editor posture draws with the default renderer whatever the project
-    /// names, `none` included; every other posture uses the key as written.
+    /// A renderer the project names but does not enable is refused.
     #[test]
-    fn the_editor_posture_ignores_the_renderer_key() {
+    fn a_named_renderer_that_is_not_enabled_is_refused() {
+        let root = extensions_root_with_renderer(
+            "renderer_not_enabled",
+            "pill_renderer",
+            "pill_rendering",
+        );
+        let error = HostConfig::resolve_renderer(Some("pill_renderer"), &[], &root).unwrap_err();
+        assert!(
+            matches!(&error, ConfigError::RendererNotEnabled { name } if name == "pill_renderer"),
+            "{error:?}"
+        );
+    }
+
+    /// The editor ignores the renderer override and follows the enabled
+    /// modules; every other posture uses the value as written.
+    #[test]
+    fn the_editor_posture_ignores_the_renderer_setting() {
         assert_eq!(
             HostConfig::renderer_setting_for_posture(true, Some("none")),
-            Some("pill_renderer")
+            None
         );
-        assert_eq!(
-            HostConfig::renderer_setting_for_posture(true, None),
-            Some("pill_renderer")
-        );
+        assert_eq!(HostConfig::renderer_setting_for_posture(true, None), None);
         assert_eq!(
             HostConfig::renderer_setting_for_posture(false, Some("none")),
             Some("none")
@@ -4148,12 +4082,12 @@ serde = { version = "1", features = ["derive"] }
         assert_eq!(HostConfig::renderer_setting_for_posture(false, None), None);
     }
 
-    /// `renderer: none` selects no renderer, and needs no renderer crates.
+    /// `host.renderer: none` selects no renderer, and needs no renderer crates.
     #[test]
     fn renderer_none_selects_no_renderer() {
         let root = extensions_root_with("renderer_none", &[]);
         assert_eq!(
-            HostConfig::resolve_renderer(Some("none"), &root).unwrap(),
+            HostConfig::resolve_renderer(Some("none"), &[], &root).unwrap(),
             None
         );
     }
@@ -4166,22 +4100,14 @@ serde = { version = "1", features = ["derive"] }
             "renderer_no_tag",
             &["other_renderer", "other_renderer_data"],
         );
-        let error = HostConfig::resolve_renderer(Some("other_renderer"), &root).unwrap_err();
+        let error = HostConfig::resolve_renderer(
+            Some("other_renderer"),
+            &["other_renderer".to_string()],
+            &root,
+        )
+        .unwrap_err();
         assert!(
             matches!(&error, ConfigError::RendererDataTagMissing { name } if name == "other_renderer"),
-            "{error:?}"
-        );
-    }
-
-    /// A renderer whose tag names a crate that no folder holds is refused,
-    /// naming that crate.
-    #[test]
-    fn a_renderer_tagging_a_missing_data_crate_is_refused() {
-        let root = extensions_root_with("renderer_tag_missing", &["other_renderer"]);
-        tag_renderer_data(&root, "other_renderer", "other_renderer_data");
-        let error = HostConfig::resolve_renderer(Some("other_renderer"), &root).unwrap_err();
-        assert!(
-            matches!(&error, ConfigError::ExtensionDirectoryMissing { name } if name == "other_renderer_data"),
             "{error:?}"
         );
     }
@@ -4205,26 +4131,28 @@ serde = { version = "1", features = ["derive"] }
         );
     }
 
-    /// A misspelled key is an error rather than a silently different module
-    /// set.
+    /// A key the settings model does not declare is reported by path rather
+    /// than silently changing the module set.
     #[test]
-    fn unknown_settings_key_is_rejected() {
+    fn unknown_settings_key_is_reported() {
         let directory = temp_root().join("project_settings_unknown_key");
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();
         std::fs::write(
             directory.join("project_settings.yaml"),
-            "name: \"Bouncing Balls\"\nbuild_binary_name: \"BouncingBalls\"\nmodule:\n  - \"pill_spline\"\n",
+            "name: \"Bouncing Balls\"\nbuild_binary_name: \"BouncingBalls\"\n\
+             host:\n  hot_reload: true\n",
         )
         .unwrap();
 
-        let error =
-            read_project_settings_file(&directory).expect_err("an unknown key must be refused");
-        let message = error.to_string();
-        assert!(
-            message.contains("module"),
-            "the refusal names the offending key: {message}"
-        );
+        let settings = ProjectSettings::read(&directory).expect("warn mode reads");
+        let diagnostic = settings
+            .resolved()
+            .diagnostics()
+            .first()
+            .expect("the misspelled key is reported");
+        assert_eq!(diagnostic.path, "host.hot_reload");
+        assert_eq!(diagnostic.suggestion.as_deref(), Some("host.hot_reloading"));
     }
 
     /// Extension names are checked before they become a watch path and a
@@ -4989,6 +4917,7 @@ mod editor_module_tests {
         materialize_host_module_wrapper, HostConfig, EDITOR_DIRECTORY, GENERATED_DIRECTORY,
     };
     use pill_core::error::ConfigError;
+    use std::collections::BTreeMap;
 
     use crate::scratch::ScratchDirectory;
 
@@ -5106,7 +5035,8 @@ mod editor_module_tests {
         let modules = HostConfig::resolve_editor_modules(&root.join(EDITOR_DIRECTORY), "egui")
             .expect("a seeded editor folder resolves");
 
-        materialize_host_module_wrapper(&root, &modules[0], false).expect("the wrapper is written");
+        materialize_host_module_wrapper(&root, &modules[0], false, &BTreeMap::new())
+            .expect("the wrapper is written");
 
         let wrapper = root
             .join(EDITOR_DIRECTORY)
@@ -5138,6 +5068,7 @@ mod project_editor_crate_tests {
         HOST_MODULE_MEMBER_PREFIX, PROJECT_MEMBER_DIRECTORY,
     };
     use pill_core::error::ConfigError;
+    use std::collections::BTreeMap;
 
     use crate::scratch::ScratchDirectory;
 
@@ -5304,101 +5235,143 @@ mod project_editor_crate_tests {
 
         let _ = std::fs::remove_dir_all(&root);
     }
-}
 
-/// Tests for `renderer_features:`: the host checks every name against the
-/// renderer's manifest, so a typo stops the project at startup.
-#[cfg(test)]
-mod renderer_features_tests {
-    use super::HostConfig;
-    use crate::scratch::ScratchDirectory;
-    use pill_core::error::ConfigError;
-
-    /// A workspace root holding one renderer crate, named `package`, whose
-    /// manifest declares `features`.
-    ///
-    /// Every test uses its own package name: the feature lookup caches by name
-    /// for the whole process.
-    fn workspace(scratch: &str, package: &str, features: &[&str]) -> ScratchDirectory {
-        let root = ScratchDirectory::new(scratch);
-        let crate_directory = root.join("extensions").join(package);
-        std::fs::create_dir_all(crate_directory.join("src")).unwrap();
-        let declared: String = features
-            .iter()
-            .map(|name| format!("{name} = []\n"))
-            .collect();
+    /// A settings edit that moves a build option rewrites that module's wrapper
+    /// and names it; the same settings again rewrite nothing.
+    #[test]
+    fn a_settings_edit_rewrites_only_the_wrapper_whose_options_moved() {
+        let root = ScratchDirectory::new("wrapper_settings_edit");
+        let root_path = root.path().to_path_buf();
+        let crate_directory = root_path
+            .join(super::EXTENSION_DIRECTORY)
+            .join("pill_probe")
+            .join("modules")
+            .join("runtime");
+        std::fs::create_dir_all(&crate_directory).expect("the crate directory is created");
         std::fs::write(
             crate_directory.join("Cargo.toml"),
-            format!(
-                "[package]\nname = \"{package}\"\nversion = \"0.1.0\"\n\n[features]\n{declared}"
-            ),
+            "[package]\n\
+             name = \"pill_probe\"\n\
+             version = \"0.1.0\"\n\
+             edition = \"2021\"\n\
+             \n\
+             [features]\n\
+             default = []\n\
+             ray_tracing = []\n\
+             \n\
+             [package.metadata.pill.settings.build]\n\
+             ray_tracing = { default = false }\n",
         )
-        .unwrap();
-        std::fs::write(crate_directory.join("src").join("lib.rs"), "").unwrap();
-        root
-    }
+        .expect("the manifest is written");
+        let location =
+            super::find_extension_crate(&root_path.join(super::EXTENSION_DIRECTORY), "pill_probe")
+                .expect("the probe crate is found");
+        let wrappers = [super::WrapperTarget {
+            extension: super::ExtensionConfig::workspace_member(&location),
+            is_renderer_module: false,
+        }];
+        let project = |build: &str| {
+            let directory = ScratchDirectory::new("wrapper_settings_project");
+            std::fs::write(
+                directory.path().join(super::PROJECT_SETTINGS_FILE),
+                format!(
+                    "name: \"Probe\"\nbuild_binary_name: \"Probe\"\nmodules:\n  pill_probe:\n    enabled: true\n{build}"
+                ),
+            )
+            .expect("the project file writes");
+            super::ProjectSettings::read(directory.path()).expect("the project reads")
+        };
+        let off = project("");
+        let on = project("    build:\n      ray_tracing: true\n");
 
-    /// The names the test asks for, as the settings file would carry them.
-    fn requested(names: &[&str]) -> Vec<String> {
-        names.iter().map(|name| (*name).to_string()).collect()
-    }
-
-    #[test]
-    fn a_declared_feature_is_accepted() {
-        let root = workspace(
-            "renderer_feature_declared",
-            "rt_test_declared",
-            &["ray_tracing"],
+        let rebuilt = super::rewrite_wrappers_for_settings(&root_path, &wrappers, &off, &on)
+            .expect("the wrapper is rewritten");
+        assert_eq!(
+            rebuilt,
+            ["pill_probe"],
+            "the module whose option moved is named"
         );
 
-        HostConfig::check_renderer_features(
-            &root,
-            Some("rt_test_declared"),
-            &requested(&["ray_tracing"]),
+        let again = super::rewrite_wrappers_for_settings(&root_path, &wrappers, &on, &on)
+            .expect("nothing is rewritten");
+        assert!(
+            again.is_empty(),
+            "the same settings rewrite no wrapper: {again:?}"
+        );
+    }
+
+    /// A build option follows the project: the wrapper turns on the features the
+    /// project chose, keeps the module's own features, and refuses a name the
+    /// manifest never declared.
+    #[test]
+    fn a_build_option_follows_the_project() {
+        let root = ScratchDirectory::new("wrapper_build_options");
+        let root_path = root.path().to_path_buf();
+        let crate_directory = root_path
+            .join(super::EXTENSION_DIRECTORY)
+            .join("pill_probe")
+            .join("modules")
+            .join("runtime");
+        std::fs::create_dir_all(&crate_directory).expect("the crate directory is created");
+        std::fs::write(
+            crate_directory.join("Cargo.toml"),
+            "[package]\n\
+             name = \"pill_probe\"\n\
+             version = \"0.1.0\"\n\
+             edition = \"2021\"\n\
+             \n\
+             [features]\n\
+             default = []\n\
+             internal = []\n\
+             ray_tracing = []\n\
+             \n\
+             [package.metadata.pill.settings.build]\n\
+             ray_tracing = { default = false }\n",
         )
-        .expect("a feature the manifest declares is accepted");
-    }
+        .expect("the manifest is written");
+        let location =
+            super::find_extension_crate(&root_path.join(super::EXTENSION_DIRECTORY), "pill_probe")
+                .expect("the probe crate is found");
+        let extension = super::ExtensionConfig::workspace_member(&location);
+        let manifest_path = root_path
+            .join(&extension.wrapper_directory)
+            .join("Cargo.toml");
+        let written_features = || {
+            let manifest =
+                std::fs::read_to_string(&manifest_path).expect("the wrapper manifest is written");
+            manifest
+                .lines()
+                .find(|line| line.starts_with("pill_probe = "))
+                .expect("the wrapper links the extension")
+                .to_string()
+        };
 
-    #[test]
-    fn an_undeclared_feature_names_the_renderer_and_the_feature() {
-        let root = workspace("renderer_feature_typo", "rt_test_typo", &["ray_tracing"]);
+        super::materialize_host_module_wrapper(&root_path, &extension, false, &BTreeMap::new())
+            .expect("a project that chooses nothing writes the wrapper");
+        assert!(
+            written_features().contains("features = [\"internal\"]"),
+            "the module's own feature stays on and the build option's default off: {}",
+            written_features()
+        );
 
-        let error = HostConfig::check_renderer_features(
-            &root,
-            Some("rt_test_typo"),
-            &requested(&["ray_tracin"]),
-        )
-        .expect_err("a misspelled feature must be reported");
+        let mut chosen = BTreeMap::new();
+        chosen.insert("ray_tracing".to_string(), true);
+        super::materialize_host_module_wrapper(&root_path, &extension, false, &chosen)
+            .expect("a project that turns the option on writes the wrapper");
+        assert!(
+            written_features().contains("features = [\"internal\", \"ray_tracing\"]"),
+            "the chosen option joins the module's own feature: {}",
+            written_features()
+        );
 
-        match error {
-            ConfigError::UnknownRendererFeature { name, feature } => {
-                assert_eq!(name, "rt_test_typo");
-                assert_eq!(feature, "ray_tracin");
-            }
-            other => panic!("expected the unknown-feature error, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn a_feature_without_a_renderer_is_refused() {
-        let root = ScratchDirectory::new("renderer_feature_no_renderer");
-
-        let error = HostConfig::check_renderer_features(&root, None, &requested(&["ray_tracing"]))
-            .expect_err("features need a renderer to carry them");
-
-        match error {
-            ConfigError::RendererFeatureWithoutRenderer { feature } => {
-                assert_eq!(feature, "ray_tracing");
-            }
-            other => panic!("expected the no-renderer error, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn no_features_is_accepted_without_a_renderer() {
-        let root = ScratchDirectory::new("renderer_feature_empty");
-
-        HostConfig::check_renderer_features(&root, None, &[])
-            .expect("an empty list asks for nothing");
+        let mut unknown = BTreeMap::new();
+        unknown.insert("gpu_timing".to_string(), true);
+        let refused =
+            super::materialize_host_module_wrapper(&root_path, &extension, false, &unknown);
+        assert!(
+            matches!(&refused, Err(ConfigError::UnknownModuleFeature { module, option })
+                if module == "pill_probe" && option == "gpu_timing"),
+            "{refused:?}"
+        );
     }
 }

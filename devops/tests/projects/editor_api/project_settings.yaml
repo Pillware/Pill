@@ -7,12 +7,19 @@ description: "One path entity and the test extension, for the editor API suite."
 # The test extension's runtime crate: its four `ModuleTest` entities are the
 # fixture the editor API's callbacks edit, select and delete. The extension's
 # `_editor` crate is loaded by the editor host on top of it, and no game build
-# ever builds that one.
+# ever builds that one. The rendering pair is what the editor's viewports draw
+# through.
 modules:
-  - "pill_test"
+  pill_rendering:
+    enabled: true
+  pill_renderer:
+    enabled: true
+  pill_test:
+    enabled: true
 
 # The editor API's callbacks run at the editor's frame boundary, so the suite
 # needs the editor's own target at debug to read them.
-logging:
-  targets:
-    engine::editor: debug
+host:
+  logging:
+    targets:
+      engine::editor: debug

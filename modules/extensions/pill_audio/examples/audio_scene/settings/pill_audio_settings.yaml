@@ -1,6 +1,0 @@
-# Audio settings.
-# ambient_sinks and spatial_sinks are fixed when the device opens;
-# restart the host to change them.
-ambient_sinks: 16
-spatial_sinks: 16
-ear_separation: 1.0

@@ -149,6 +149,11 @@ pub mod preferences;
 pub mod previews;
 /// Build diagnostics: the problems the Problems panel shows.
 pub mod problems;
+/// The Project Settings tab: every declared setting with where its value comes
+/// from, and the file writes behind an edit and a reset.
+pub mod project_settings;
+/// The comment-preserving line editor the settings tab writes with.
+pub mod project_settings_file;
 /// The requests one shell pass raises for the editor executable.
 pub mod requests;
 /// The world resources the Inspector can show and edit.

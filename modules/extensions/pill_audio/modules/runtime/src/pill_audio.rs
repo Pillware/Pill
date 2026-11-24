@@ -90,8 +90,8 @@ pub use audio_command::AudioCommand;
 pub use audio_listener_component::AudioListenerComponent;
 pub use audio_load_queue::AudioLoadQueue;
 pub use audio_manager::{
-    AudioManager, AudioSettings, AudioSettingsAsset, DEFAULT_AMBIENT_SINK_COUNT,
-    DEFAULT_SPATIAL_SINK_COUNT, EAR_SEPARATION,
+    AudioManager, AudioSettings, DEFAULT_AMBIENT_SINK_COUNT, DEFAULT_SPATIAL_SINK_COUNT,
+    EAR_SEPARATION,
 };
 pub use audio_source_component::{AudioSourceComponent, NO_SINK};
 pub use audio_system::audio_system;
@@ -138,46 +138,10 @@ pub fn register(engine: &mut Engine) -> u32 {
     // entry point declares it before this function runs, which is what
     // re-points the asset store's table at the generation still mapped.
 
-    // Step 3: Declare the settings asset the device is tuned through. The
+    // Step 3: Declare the settings surface the device is tuned through. The
     // declaration is repeated on every generation, so the surface never points
     // at code the reload unloaded.
-    engine
-        .world_mut()
-        .register_settings_asset_manager::<AudioManager>();
-    // The same for how its document draws: the sink counts explain themselves
-    // and cannot be changed while the device runs, and the ear separation is a
-    // slider rather than a free number.
-    if let Some(registry) = engine
-        .world_mut()
-        .get_resource_mut::<pill_engine::ImportRegistry>()
-    {
-        registry.declare_field_decorators(
-            "pill_audio::AudioSettingsAsset",
-            &[
-                (
-                    "ambient_sinks",
-                    pill_engine::FieldDecorator::Tooltip(
-                        "Voices for sounds that play without a position. Fixed when the device opens; restart the host to change it."
-                            .to_owned(),
-                    ),
-                ),
-                (
-                    "spatial_sinks",
-                    pill_engine::FieldDecorator::Tooltip(
-                        "Voices for sounds that play at a position. Fixed when the device opens; restart the host to change it."
-                            .to_owned(),
-                    ),
-                ),
-                (
-                    "ear_separation",
-                    pill_engine::FieldDecorator::Range {
-                        min: 0.1,
-                        max: 10.0,
-                    },
-                ),
-            ],
-        );
-    }
+    pill_engine::register_settings::<AudioManager>(engine);
 
     // Step 4: Install the manager once, if an output device exists.
     // Build the device only once. Registration runs again after every reload,
@@ -185,11 +149,7 @@ pub fn register(engine: &mut Engine) -> u32 {
     if engine.world().get_resource::<AudioManager>().is_none() {
         match AudioManager::with_defaults() {
             Some(audio_manager) => {
-                // The manager insert, not the plain one: it records the
-                // settings surface the project configures the device with.
-                engine
-                    .world_mut()
-                    .insert_settings_asset_manager(audio_manager);
+                engine.world_mut().insert_resource(audio_manager);
             }
             None => {
                 pill_core::warn!(

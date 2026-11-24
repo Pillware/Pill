@@ -169,6 +169,15 @@ pub enum ConfigError {
     )]
     ProjectSettingsFileParseFailed { path: String, details: String },
 
+    /// A strict run found settings it cannot use.
+    #[message(
+        "project settings file ",
+        name_style(path),
+        " has settings the strict switch refuses: ",
+        value(details)
+    )]
+    InvalidSettings { path: String, details: String },
+
     /// The project's settings file does not declare a `name`.
     #[message(
         "project settings file ",
@@ -284,21 +293,53 @@ pub enum ConfigError {
     )]
     RendererDataTagMissing { name: String },
 
-    /// A project asks for a feature its renderer's manifest does not declare.
+    /// The project enables two renderers at once.
     #[message(
-        "the renderer ",
-        value(name),
-        " does not declare the feature ",
-        value(feature)
+        "the project enables two renderers, ",
+        value(first),
+        " and ",
+        value(second),
+        ": enable one, because a run draws with one device"
     )]
-    UnknownRendererFeature { name: String, feature: String },
+    MultipleRenderers { first: String, second: String },
 
-    /// A project names renderer features while it selects no renderer.
+    /// `host.renderer` names a renderer the project does not list and enable.
     #[message(
-        "the project selects no renderer, so it cannot turn on ",
-        value(feature)
+        "host.renderer names ",
+        value(name),
+        ", which the project does not list with `enabled: true`"
     )]
-    RendererFeatureWithoutRenderer { feature: String },
+    RendererNotEnabled { name: String },
+
+    /// The renderer is enabled but the data crate it draws with is not.
+    #[message(
+        "renderer ",
+        value(name),
+        " draws with ",
+        value(data_crate),
+        ", which the project does not list with `enabled: true`: list it too"
+    )]
+    RendererDataCrateNotEnabled { name: String, data_crate: String },
+
+    /// An editor host needs a renderer, and the project enables none.
+    #[message(
+        "the editor draws every viewport through a renderer, so the project must list ",
+        value(name),
+        " and ",
+        value(data_crate),
+        " with `enabled: true`"
+    )]
+    EditorRendererRequired { name: String, data_crate: String },
+
+    /// A project turns on a build option its module's manifest does not declare.
+    #[message(
+        "module ",
+        value(module),
+        " has no build option ",
+        value(option),
+        ": its manifest declares no such feature under [features] or [package.metadata.pill.settings.build]"
+    )]
+    UnknownModuleFeature { module: String, option: String },
 
     /// The asset pack a shipped build mounts is not a valid pack.
     #[message(

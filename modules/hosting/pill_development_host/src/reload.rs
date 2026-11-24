@@ -768,35 +768,42 @@ impl ReloadTransaction<'_> {
         // image leaves the graveyard.
         engine.world_mut().rehome_assets();
 
-        // Step 9: Migrate persistable schemas that changed in the swap. Types
-        // are matched by stable name, not by runtime `ComponentId`, which
-        // differs between generations. A reshaped type keeps its rows and its
-        // data follows the new layout. Unchanged columns keep their allocations
-        // and change-detection ticks, which keeps the common reload cheap.
+        // Step 9: Migrate persistable types the swap moved. Types are matched
+        // by stable name, not by runtime `ComponentId`, which differs between
+        // generations. A type migrates when its layout changed - its rows
+        // follow the new shape - and also when only its id changed, which is
+        // what every rebuilt image does: rows live in the column of the id that
+        // wrote them, so a generation whose queries use a fresh id for the same
+        // name would find nothing, and the old column would be dropped for
+        // having no registration. A type whose id and layout both survived
+        // keeps its allocation and change-detection ticks, which keeps that
+        // case cheap.
         let migrate_started = Instant::now();
-        let current_schema_hashes_by_type_name: HashMap<String, u64> = engine
+        let current_types_by_name: HashMap<String, (pill_engine::ComponentId, u64)> = engine
             .world()
             .persist_type_manifest()
             .into_iter()
-            .map(|entry| (entry.type_name, entry.schema_hash))
+            .map(|entry| (entry.type_name, (entry.component_id, entry.schema_hash)))
             .collect();
         let changed_type_names: HashSet<String> = previous_persist_type_manifest
             .iter()
             .filter_map(|entry| {
-                current_schema_hashes_by_type_name
+                current_types_by_name
                     .get(&entry.type_name)
-                    .filter(|&&current_hash| current_hash != entry.schema_hash)
+                    .filter(|(current_id, current_hash)| {
+                        *current_hash != entry.schema_hash || *current_id != entry.component_id
+                    })
                     .map(|_| entry.type_name.clone())
             })
             .collect();
 
         if changed_type_names.is_empty() {
-            // Avoid touching archetype storage when every persisted layout is
-            // byte-for-byte identical to the previous generation.
+            // Avoid touching archetype storage when every persisted type kept
+            // both its id and its layout.
             info!(
                 target: telemetry_target::HOT_RELOAD,
                 module = self.subject,
-                "schema unchanged for all persistable component types - fast path"
+                "no persistable component type moved - fast path"
             );
         } else {
             debug!(

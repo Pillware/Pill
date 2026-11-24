@@ -1,4 +1,19 @@
 name: "Native Test Project"
 build_binary_name: "NativeTestProject"
+
+# One project carries every anchor the mutation-heavy native suites need: the
+# ball/spline scene, the module list, the render chain, the embedded sound and
+# the migration witnesses (`src/lib.rs`). The rendering pair is listed so the
+# editor suites can open it; a headless run loads only the data crate.
 modules:
-  - "pill_spline"
+  pill_rendering:
+    enabled: true
+  pill_renderer:
+    enabled: true
+  pill_spline:
+    enabled: true
+  pill_test:
+    enabled: true
+    fixture:
+      gain: 1.5
+      label: fixture

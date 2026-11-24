@@ -1,7 +1,0 @@
-asset:
-  ambient_sinks: 16
-  ear_separation: 1.0
-  spatial_sinks: 16
-asset_type: pill_audio::AudioSettingsAsset
-format_version: 1
-guid: 1315abd37c5534ef08bb7b26ccef7ecc

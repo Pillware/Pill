@@ -1258,6 +1258,7 @@ impl EditorWindow {
                 Dump::Tools => self.dump_tools(),
                 Dump::Elements => self.dump_elements(),
                 Dump::Preferences => self.dump_preferences(),
+                Dump::ProjectSettings => self.dump_project_settings(),
                 Dump::Theme => self.dump_theme(),
                 Dump::Console => self.dump_console(),
                 Dump::Problems => self.dump_problems(),
@@ -1361,6 +1362,13 @@ impl EditorWindow {
             }
             ScriptedCommand::EditPreference { key, value } => {
                 self.scripted_edit_preference(&key, &value)
+            }
+            ScriptedCommand::EditProjectSetting { path, value, local } => reject_on_failure(
+                line,
+                self.scripted_edit_project_setting(&path, &value, local),
+            ),
+            ScriptedCommand::ResetProjectSetting { path } => {
+                reject_on_failure(line, self.scripted_reset_project_setting(&path))
             }
             ScriptedCommand::EditComponent {
                 entity,
@@ -1709,6 +1717,69 @@ impl EditorWindow {
         Ok(())
     }
 
+    /// Runs `reset setting <path>`, which queues the same reset the tab's row
+    /// action queues: the key leaves both settings files.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message when the host was not configured from a project
+    /// directory, so there is no settings file to reset.
+    pub(super) fn scripted_reset_project_setting(&mut self, path: &str) -> Result<(), String> {
+        let Some(directory) = self
+            .host
+            .host()
+            .project_directory()
+            .map(|directory| directory.display().to_string())
+        else {
+            return Err("the editor runs no project, so it has no settings file".to_string());
+        };
+        let world = self.host.host_mut().engine_mut().world_mut();
+        if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
+            pending.push(vec![EditorCommand::ResetProjectSetting {
+                directory,
+                path: path.to_string(),
+            }]);
+        }
+        info!(
+            target: telemetry_target::EDITOR,
+            setting = path,
+            "[editor] project setting reset queued"
+        );
+        Ok(())
+    }
+
+    /// Logs every declared project setting the way the Project Settings tab
+    /// draws it: the entry, the path, the value in effect and where it comes
+    /// from, one line per setting.
+    ///
+    /// The rows are the tab's own data, so a suite can check a write or a reset
+    /// without reading the tab's pixels.
+    pub(super) fn dump_project_settings(&mut self) {
+        let view = capture_project_settings(self.host.host());
+        info!(
+            target: telemetry_target::EDITOR,
+            directory = view.directory.as_deref().unwrap_or("-"),
+            entries = view.entries().len(),
+            rows = view.rows.len(),
+            refusal = view.refusal.as_deref().unwrap_or("-"),
+            "[test] settings"
+        );
+        for row in &view.rows {
+            info!(
+                target: telemetry_target::EDITOR,
+                entry = row.entry.as_str(),
+                path = row.full_path.as_str(),
+                value = row.effective_text.as_str(),
+                default = row.default_text.as_str(),
+                project = row.project_text.as_deref().unwrap_or("-"),
+                local = row.local_text.as_deref().unwrap_or("-"),
+                source = row.provenance.icon(),
+                timing = row.timing.as_str(),
+                "[test] setting"
+            );
+        }
+    }
+
     /// Runs one scripted preferences row (`edit preference <key> <value...>`):
     /// the same `SetPreferences` batch the tab's Save button queues, holding
     /// just that row. The value is everything after the key, so a text value
@@ -1728,9 +1799,46 @@ impl EditorWindow {
         );
     }
 
-    /// Runs `edit resource <resource> <field> <value>`, which queues one
-    /// recorded `SetResourceField`.
+    /// Runs `edit setting <path> <value> [local]`, which queues the same
+    /// `SetProjectSetting` the tab's buttons queue.
     ///
+    /// # Errors
+    ///
+    /// Returns a message when the host was not configured from a project
+    /// directory, so there is no settings file to write.
+    pub(super) fn scripted_edit_project_setting(
+        &mut self,
+        path: &str,
+        value: &str,
+        local: bool,
+    ) -> Result<(), String> {
+        let Some(directory) = self
+            .host
+            .host()
+            .project_directory()
+            .map(|directory| directory.display().to_string())
+        else {
+            return Err("the editor runs no project, so it has no settings file".to_string());
+        };
+        let world = self.host.host_mut().engine_mut().world_mut();
+        if let Some(pending) = world.get_resource_mut::<PendingEditorCommands>() {
+            pending.push(vec![EditorCommand::SetProjectSetting {
+                directory,
+                path: path.to_string(),
+                value: value.to_string(),
+                local,
+            }]);
+        }
+        info!(
+            target: telemetry_target::EDITOR,
+            setting = path,
+            value,
+            local,
+            "[editor] project setting edit queued"
+        );
+        Ok(())
+    }
+
     /// # Errors
     ///
     /// Returns a message when the resource has no such editable field, or when

@@ -330,6 +330,23 @@ pub enum ScriptedCommand {
         /// The new value, written as text.
         value: String,
     },
+    /// `edit setting <path> <value> [local]` - one project setting, written to
+    /// `project_settings.yaml`, or to the local override when the line ends in
+    /// `local`.
+    EditProjectSetting {
+        /// The setting's full dotted path, entry first.
+        path: String,
+        /// The new value, written as text the file's editor reads as YAML.
+        value: String,
+        /// Whether the write goes to `project_settings.local.yaml`.
+        local: bool,
+    },
+    /// `reset setting <path>` - take one setting out of whichever settings
+    /// files hold it, as the tab's row action does.
+    ResetProjectSetting {
+        /// The setting's full dotted path, entry first.
+        path: String,
+    },
     /// `edit add|remove <entity> <component>` - attach or detach a component.
     EditComponent {
         /// The entity's display handle.
@@ -453,6 +470,9 @@ pub enum Dump {
     Elements,
     /// `dump preferences` - the preferences document and the live halves.
     Preferences,
+    /// `dump settings` - every declared project setting with the value it holds
+    /// and where that value comes from.
+    ProjectSettings,
     /// `dump theme` - the theme the editor paints with, the layers it was
     /// merged from, and the generation number that moves when they resolve
     /// again.
@@ -973,11 +993,32 @@ impl ScriptedCommand {
             }
             "dialog" => dialog(&mut cursor),
             "edit" => edit(&mut cursor),
+            "reset" => reset(&mut cursor),
             "pick" => pick(&mut cursor),
             "scene" => scene_action(&mut cursor),
             "command" => command(&mut cursor),
             other => Err(ParseError::new(format!("unknown verb '{other}'"))),
         }
+    }
+}
+
+/// `reset setting <path>`.
+///
+/// # Errors
+///
+/// Returns an error when the target is unknown or the path is missing.
+fn reset(cursor: &mut Cursor<'_>) -> Result<ScriptedCommand, ParseError> {
+    match cursor.word() {
+        Some("setting") => {
+            let path = cursor
+                .word()
+                .ok_or_else(|| ParseError::new("reset setting needs a dotted path"))?;
+            cursor.finish("reset setting")?;
+            Ok(ScriptedCommand::ResetProjectSetting {
+                path: path.to_string(),
+            })
+        }
+        _ => Err(ParseError::new("unknown reset target")),
     }
 }
 
@@ -1128,6 +1169,7 @@ fn dump(cursor: &mut Cursor<'_>) -> Result<Dump, ParseError> {
         "tools" => Dump::Tools,
         "elements" => Dump::Elements,
         "preferences" => Dump::Preferences,
+        "settings" => Dump::ProjectSettings,
         "theme" => Dump::Theme,
         "console" => Dump::Console,
         "problems" => Dump::Problems,
@@ -1306,6 +1348,22 @@ fn edit(cursor: &mut Cursor<'_>) -> Result<ScriptedCommand, ParseError> {
             Ok(ScriptedCommand::EditPreference {
                 key: key.to_string(),
                 value,
+            })
+        }
+        Some("setting") => {
+            // `edit setting <path> <value>`, with an optional trailing `local`
+            // that sends the write to `project_settings.local.yaml`.
+            let reason = "edit setting needs a dotted path and a value";
+            let path = cursor.word().ok_or_else(|| ParseError::new(reason))?;
+            let value = cursor.text(reason)?;
+            let (value, local) = match value.strip_suffix(" local") {
+                Some(value) => (value.trim_end().to_string(), true),
+                None => (value, false),
+            };
+            Ok(ScriptedCommand::EditProjectSetting {
+                path: path.to_string(),
+                value,
+                local,
             })
         }
         Some("resource") => {

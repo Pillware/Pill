@@ -609,6 +609,15 @@ pub fn estimate_bytes(commands: &[EditorCommand]) -> usize {
             // nothing; this arm exists only to cover the commands.
             EditorCommand::SceneNew | EditorCommand::SceneSave => 0,
             EditorCommand::SceneOpen { path } | EditorCommand::SceneSaveAs { path } => path.len(),
+            // A settings write is never recorded either: the file it names is
+            // the only thing it keeps alive.
+            EditorCommand::SetProjectSetting {
+                directory,
+                path,
+                value,
+                ..
+            } => directory.len() + path.len() + value.len(),
+            EditorCommand::ResetProjectSetting { directory, path } => directory.len() + path.len(),
         };
         bytes += payload_bytes;
     }

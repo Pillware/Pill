@@ -3,10 +3,10 @@
 An ECS-only simulation: 256 entities counting the frames they live through, and
 a report through the engine log about once a second.
 
-`project_settings.yaml` selects `renderer: none`, which keeps both the GPU
-module and its data crate out of the load order. No device is opened, no
-surface exists, and nothing is drawn - what runs is the engine's core: world,
-scheduler and hot reload. That is the posture a server-side or test build has.
+`project_settings.yaml` lists no module at all, which keeps both the GPU module
+and its data crate out of the load order. No device is opened, no surface
+exists, and nothing is drawn - what runs is the engine's core: world, scheduler
+and hot reload. That is the posture a server-side or test build has.
 
 | Project           | What it uses                                                                                 |
 | ----------------- | -------------------------------------------------------------------------------------------- |

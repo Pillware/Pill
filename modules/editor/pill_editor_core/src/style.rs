@@ -506,7 +506,8 @@ pub enum ThemeLayer {
     Code,
     /// The user's file, named by the `theme` preference.
     User,
-    /// The project's `res/editor/` theme, named by `editor_settings.yaml`.
+    /// The project's `res/editor/` theme, named by `editor.theme` in the
+    /// project's settings.
     Project,
 }
 

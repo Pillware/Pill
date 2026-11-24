@@ -2,7 +2,7 @@
 """
 The three hot-reload switches each stop exactly the watches they name.
 
-PROTECTS: `PILL_HOT_RELOADING`, `PILL_FUNCTION_HOT_PATCHING` and `PILL_ASSETS_HOT_RELOADING` each switch off one watch, in a real host, without stopping the project.
+PROTECTS: `PILL__HOST__HOT_RELOADING`, `PILL__HOST__FUNCTION_HOT_PATCHING` and `PILL__HOST__ASSETS_HOT_RELOADING` each switch off one watch, in a real host, without stopping the project.
 TIER: host
 
 REQUIREMENTS
@@ -17,14 +17,14 @@ DESCRIPTION
 
       1. defaults - the switch line reports all three on, the project's assets
          are watched, and the source watchers started for every module.
-      2. `PILL_HOT_RELOADING=0` - an edit to the project's
+      2. `PILL__HOST__HOT_RELOADING=0` - an edit to the project's
          `src/simulation_time.rs` is never noticed: no `hot reload triggered`
          appears while the project's own systems keep printing.
-      3. `PILL_FUNCTION_HOT_PATCHING=0` - a body edit in the `#[pill_hot]`
+      3. `PILL__HOST__FUNCTION_HOT_PATCHING=0` - a body edit in the `#[pill_hot]`
          system reloads the module (`building project module`, then
          `hot reload complete`) instead of installing a patch, and the host
          says once that patching is off.
-      4. `PILL_ASSETS_HOT_RELOADING=0` - the asset watcher never starts, the
+      4. `PILL__HOST__ASSETS_HOT_RELOADING=0` - the asset watcher never starts, the
          host says so, and an edit under the project's `res` produces no
          `[assets] reimported`.
 
@@ -70,12 +70,12 @@ from core.suite_common import (  # noqa: E402
 
 PROJECT_ROOT = NATIVE_PROJECT_ROOT
 
-# The three variables, named once: the suite clears all of them from its own
-# environment before every launch, so a leftover value in the shell cannot
-# decide a scenario.
-HOT_RELOADING_VARIABLE = "PILL_HOT_RELOADING"
-FUNCTION_HOT_PATCHING_VARIABLE = "PILL_FUNCTION_HOT_PATCHING"
-ASSETS_HOT_RELOADING_VARIABLE = "PILL_ASSETS_HOT_RELOADING"
+# The three variables, named once: the suite clears every `PILL__` variable
+# from its own environment before every launch, so a leftover value in the
+# shell cannot decide a scenario.
+HOT_RELOADING_VARIABLE = "PILL__HOST__HOT_RELOADING"
+FUNCTION_HOT_PATCHING_VARIABLE = "PILL__HOST__FUNCTION_HOT_PATCHING"
+ASSETS_HOT_RELOADING_VARIABLE = "PILL__HOST__ASSETS_HOT_RELOADING"
 SWITCH_VARIABLES = (
     HOT_RELOADING_VARIABLE,
     FUNCTION_HOT_PATCHING_VARIABLE,
@@ -152,7 +152,9 @@ def edited_bytes(path: Path, original: str, replacement: str) -> bytes:
 def launch(overrides: dict):
     """Starts the development host with the switch variables it is given."""
     environment = {
-        key: value for key, value in os.environ.items() if key not in SWITCH_VARIABLES
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("PILL__") and key not in SWITCH_VARIABLES
     }
     environment["PROJECT_PATH"] = NATIVE_PROJECT_PATH
     environment.update(overrides)
@@ -230,7 +232,7 @@ def scenario_defaults(arguments) -> list:
 
 
 def scenario_hot_reloading_off(arguments) -> list:
-    """One host with `PILL_HOT_RELOADING=0`: an edit is not noticed."""
+    """One host with `PILL__HOST__HOT_RELOADING=0`: an edit is not noticed."""
     original = SYSTEM_FILE.read_bytes()
     process, monitor = launch({HOT_RELOADING_VARIABLE: "0"})
     try:
@@ -260,7 +262,7 @@ def scenario_hot_reloading_off(arguments) -> list:
 
 
 def scenario_function_hot_patching_off(arguments) -> list:
-    """One host with `PILL_FUNCTION_HOT_PATCHING=0`: an edit reloads."""
+    """One host with `PILL__HOST__FUNCTION_HOT_PATCHING=0`: an edit reloads."""
     original = HOT_SYSTEM_FILE.read_bytes()
     edited = edited_bytes(HOT_SYSTEM_FILE, HOT_SYSTEM_ORIGINAL, HOT_SYSTEM_EDITED)
     process, monitor = launch({FUNCTION_HOT_PATCHING_VARIABLE: "0"})
@@ -306,7 +308,7 @@ def scenario_function_hot_patching_off(arguments) -> list:
 
 
 def scenario_assets_off(arguments) -> list:
-    """One host with `PILL_ASSETS_HOT_RELOADING=0`: no asset watch at all."""
+    """One host with `PILL__HOST__ASSETS_HOT_RELOADING=0`: no asset watch at all."""
     original = ASSET_FILE.read_bytes()
     process, monitor = launch({ASSETS_HOT_RELOADING_VARIABLE: "0"})
     try:

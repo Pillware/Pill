@@ -121,13 +121,18 @@ asset:
 
 The editor's own look is three layers - its code default, the user's file named
 by the `theme` row in `preferences.yaml`, and the project's `editor/` layer.
-A project configures the last one with `editor_settings.yaml` beside its
-`project_settings.yaml`:
+A project configures the last one in its `project_settings.yaml`:
 
 ```yaml
-editor_theme: "editor/my_theme.theme"   # below res; default: editor/editor.theme
-focus_game_on_play: true                # Play brings the Game tab forward; default: true
+editor:
+  theme: "editor/my_theme.theme"   # below res; default: editor/editor.theme
+  focus_game_on_play: true         # Play brings the Game tab forward; default: true
 ```
+
+The same file holds the project's modules and the `host:` and `engine:`
+entries, so one file answers what a run loads and how it behaves; the
+resolution order is the declared default, the file, `project_settings.local.yaml`
+and a `PILL__` environment variable.
 
 `res/editor/` is editor-only content: game packs never carry it. The pipeline
 is described in `AGENTS.md` ("The theme pipeline"), and

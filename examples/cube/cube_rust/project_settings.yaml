@@ -2,12 +2,28 @@
 #
 # Its sibling `cube_csharp` draws the same scene from the same files, and the
 # `cube_no_editor` pair ships the model without a `.meta` and builds the
-# material in code. The editor's Assets tab lists these files because they live under `res`; nothing about
-# them requires the editor, so a game build runs the same project unchanged.
+# material in code. The editor's Assets tab lists these files because they live
+# under `res`; nothing about them requires the editor, so a game build runs the
+# same project unchanged.
+#
+# The rendering data crate and the GPU renderer are two entries: the data crate
+# carries the components the scene names, and the renderer draws them. An
+# entry nobody lists is off, so both are listed.
 
 name: "Cube"
 build_binary_name: "CubeRust"
 version: "0.1.0"
 description: "A spinning cube whose mesh and material are files under res."
 
-modules: []
+modules:
+  pill_rendering:
+    enabled: true
+  pill_renderer:
+    enabled: true
+
+editor:
+  # The editor's project layer, merged over the editor's default theme (and
+  # over the user's own file) while this project is open. `res/editor/` is
+  # never packed into a game build, so the theme stays a development-time
+  # document.
+  theme: "editor/editor.theme"
