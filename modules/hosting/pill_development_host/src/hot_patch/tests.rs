@@ -103,6 +103,25 @@ fn draw(&self) -> f32 {
 // Free functions
 // =============================================================================
 
+/// Loads a system library unrelated to this crate, so a test holds a real
+/// image that exports no patch resolver.
+///
+/// # Panics
+///
+/// Panics when the platform's library cannot be loaded.
+fn unrelated_system_library() -> Library {
+    #[cfg(windows)]
+    const NAME: &str = "kernel32.dll";
+    #[cfg(target_os = "macos")]
+    const NAME: &str = "libSystem.B.dylib";
+    #[cfg(all(unix, not(target_os = "macos")))]
+    const NAME: &str = "libc.so.6";
+
+    // SAFETY: the library is a system one unrelated to this crate, so loading
+    // it runs no code of ours.
+    unsafe { Library::new(NAME) }.unwrap_or_else(|error| panic!("{NAME} loads: {error}"))
+}
+
 /// Builds the `#[pill_hot]` system declaration that classification reports.
 fn system_declaration(name: &str) -> source::HotFunction {
     source::HotFunction {
@@ -201,10 +220,8 @@ fn session_over(directory: &Path, source_text: &str) -> HotPatchSession {
 /// may already jump into.
 #[test]
 fn a_fan_out_that_reaches_nothing_keeps_the_patch_image_owned() {
-    // SAFETY: `kernel32.dll` is a system library unrelated to this crate, so
-    // loading it runs no code of ours; it is loaded only so the graveyard
-    // holds a real image.
-    let library = unsafe { Library::new("kernel32.dll") }.expect("kernel32.dll loads");
+    // Loaded only so the graveyard holds a real image.
+    let library = unrelated_system_library();
     let patches = vec![LoadedPatch {
         function: String::from("demo::function"),
         generation: 1,
@@ -236,9 +253,7 @@ fn a_fan_out_that_reaches_nothing_keeps_the_patch_image_owned() {
 /// caller reload.
 #[test]
 fn patch_without_its_resolver_export_is_an_error() {
-    // SAFETY: `kernel32.dll` is a system library unrelated to this crate, and
-    // loading it only gives the test a real image that exports no resolver.
-    let library = unsafe { Library::new("kernel32.dll") }.expect("kernel32.dll loads");
+    let library = unrelated_system_library();
     let patch = LoadedPatch {
         function: String::from("demo::function"),
         generation: 1,

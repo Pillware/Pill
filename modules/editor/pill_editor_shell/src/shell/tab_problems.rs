@@ -23,6 +23,8 @@
 // top-level `use` lines, so a name the body takes from a sibling module still
 // resolves in the patch crate.
 #[allow(unused_imports)]
+use pill_editor_shell::shell::prelude::*;
+#[allow(unused_imports)]
 use pill_editor_shell::shell::*;
 
 /// Draws the Problems tab: one section per module or function, each with its

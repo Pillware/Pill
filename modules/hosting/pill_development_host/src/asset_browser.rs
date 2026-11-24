@@ -999,6 +999,7 @@ mod tests {
         assert!(checked_relative("../secret.png").is_err());
         assert!(checked_relative("/abs/a.png").is_err());
         assert!(checked_relative("").is_err());
+        #[cfg(windows)]
         assert!(checked_relative("C:\\\\a.png").is_err());
         assert_eq!(
             checked_relative("textures\\\\a.png").unwrap(),

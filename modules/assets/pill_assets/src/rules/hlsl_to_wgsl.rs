@@ -69,6 +69,7 @@ pub struct HlslToWgsl {
     /// compiler searches them after the directory of the file that does the
     /// `#include`.
     include_directories: Vec<PathBuf>,
+    pinned_slangc: Option<PathBuf>,
 }
 
 impl HlslToWgsl {
@@ -79,6 +80,7 @@ impl HlslToWgsl {
         Self {
             source_glob: "shaders/*.hlsl",
             include_directories: Vec::new(),
+            pinned_slangc: std::env::var_os(SLANGC_ENV).map(PathBuf::from),
         }
     }
 
@@ -90,6 +92,7 @@ impl HlslToWgsl {
         Self {
             source_glob: "*.hlsl",
             include_directories: Vec::new(),
+            pinned_slangc: std::env::var_os(SLANGC_ENV).map(PathBuf::from),
         }
     }
 
@@ -151,11 +154,12 @@ impl Rule for HlslToWgsl {
         // Step 1: Read the entry point and stage from the file name, and find
         // the compiler.
         let (entry_point, stage) = entry_and_stage_for(input)?;
-        let compiler_path = slangc_path().map_err(|detail| CookError::Rule {
-            rule: self.name(),
-            input: input.to_owned(),
-            detail,
-        })?;
+        let compiler_path =
+            slangc_path(self.pinned_slangc.as_deref()).map_err(|detail| CookError::Rule {
+                rule: self.name(),
+                input: input.to_owned(),
+                detail,
+            })?;
 
         // Step 2: Build the command line and run the compiler with the cook's
         // time limit.
@@ -260,11 +264,11 @@ pub(crate) fn run_bounded_command(
 /// Returns a message when the working directory cannot be read, when
 /// `PILL_SLANGC` names a path the check refuses, or when no `slangc` is found.
 /// The last message says how to set `PILL_SLANGC` or where to install Slang.
-pub(crate) fn slangc_path() -> Result<PathBuf, String> {
+pub(crate) fn slangc_path(pinned_compiler: Option<&Path>) -> Result<PathBuf, String> {
     let working_directory = std::env::current_dir()
         .map_err(|error| format!("cannot read the working directory: {error}"))?;
     resolve_slangc(
-        std::env::var_os(SLANGC_ENV),
+        pinned_compiler.map(|path| path.as_os_str().to_owned()),
         std::env::var_os("PATH"),
         &working_directory,
     )
@@ -451,15 +455,14 @@ mod tests {
     /// `slangc` PATH happened to hold.
     #[test]
     fn a_pinned_compiler_that_is_not_there_is_reported() {
-        let missing = std::env::temp_dir().join("pill_assets_no_such_slangc");
-        std::env::set_var(SLANGC_ENV, &missing);
+        let mut hlsl_to_wgsl = HlslToWgsl::new();
+        hlsl_to_wgsl.pinned_slangc = Some(std::env::temp_dir().join("pill_assets_no_such_slangc"));
 
-        let built = HlslToWgsl::new().build(
+        let built = hlsl_to_wgsl.build(
             Path::new("shaders/default_vertex.hlsl"),
             Path::new("shaders/default_vertex.wgsl"),
         );
 
-        std::env::remove_var(SLANGC_ENV);
         let Err(CookError::Rule { detail, .. }) = built else {
             panic!("a missing pinned compiler must fail the cook: {built:?}");
         };

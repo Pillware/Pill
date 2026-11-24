@@ -47,6 +47,8 @@
 // file's opening, and any shell sibling its body names resolves through this
 // glob.
 #[allow(unused_imports)]
+use pill_editor_shell::shell::prelude::*;
+#[allow(unused_imports)]
 use pill_editor_shell::shell::*;
 
 /// The fixed label column of the tabs that name fields without scaling with

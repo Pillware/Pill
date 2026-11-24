@@ -1194,9 +1194,13 @@ mod tests {
             UserThemeSelection::from_preference(Some("mine.theme"), directory),
             UserThemeSelection::File(directory.join("mine.theme"))
         );
+        #[cfg(windows)]
+        const ABSOLUTE_THEME: &str = "C:/elsewhere/mine.theme";
+        #[cfg(not(windows))]
+        const ABSOLUTE_THEME: &str = "/elsewhere/mine.theme";
         assert_eq!(
-            UserThemeSelection::from_preference(Some("C:/elsewhere/mine.theme"), directory),
-            UserThemeSelection::File(std::path::PathBuf::from("C:/elsewhere/mine.theme"))
+            UserThemeSelection::from_preference(Some(ABSOLUTE_THEME), directory),
+            UserThemeSelection::File(std::path::PathBuf::from(ABSOLUTE_THEME))
         );
     }
 

@@ -23,6 +23,8 @@
 // copies this file's top-level `use` lines, and a sibling function the body
 // names resolves through them.
 #[allow(unused_imports)]
+use pill_editor_shell::shell::prelude::*;
+#[allow(unused_imports)]
 use pill_editor_shell::shell::*;
 
 /// The environment variable that switches the panel to its deliberately slow

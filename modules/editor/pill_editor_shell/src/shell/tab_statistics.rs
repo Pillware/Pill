@@ -16,6 +16,7 @@
 //! snapshot. This tab only formats these numbers; it records nothing.
 
 // Current crate
+use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 
 /// The Statistics tab: the frame's timings and the editor's counts, then one

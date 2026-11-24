@@ -19,6 +19,7 @@
 //! Nothing here can therefore outlive the module that registered it.
 
 // Current crate
+use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 
 // =============================================================================

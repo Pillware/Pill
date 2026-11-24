@@ -41,6 +41,8 @@
 // Deliberately unused in this compilation: a patch crate replays this file's
 // opening, and the first sibling this body names resolves through it.
 #[allow(unused_imports)]
+use pill_editor_shell::shell::prelude::*;
+#[allow(unused_imports)]
 use pill_editor_shell::shell::*;
 
 // =============================================================================

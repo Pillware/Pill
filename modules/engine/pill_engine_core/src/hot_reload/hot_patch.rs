@@ -1414,11 +1414,13 @@ mod integration_tests {
     /// `inline(never)` because the test needs a real symbol with a real entry in
     /// the exception directory; an inlined body has neither.
     #[inline(never)]
+    #[cfg(all(windows, target_arch = "x86_64"))]
     fn patch_target(value: u32) -> u32 {
         value + 1
     }
 
     /// Its stand-in, with the same call shape.
+    #[cfg(all(windows, target_arch = "x86_64"))]
     #[inline(never)]
     fn patch_replacement(value: u32) -> u32 {
         value + 1000
@@ -1458,6 +1460,7 @@ mod integration_tests {
 
     /// A second stand-in, so a function can be patched twice.
     #[inline(never)]
+    #[cfg(all(windows, target_arch = "x86_64"))]
     fn patch_second_replacement(value: u32) -> u32 {
         value + 2000
     }
@@ -1469,6 +1472,7 @@ mod integration_tests {
     /// two overwrote the jump generation one had written, so its "original" is a
     /// jump. Restoring from it would reinstate a patch instead of removing one.
     #[test]
+    #[cfg(all(windows, target_arch = "x86_64"))]
     fn the_first_generation_holds_the_artifacts_own_code() {
         let target = patch_target_twice as *const () as usize;
         let first_replacement = patch_replacement as *const () as usize;
@@ -1514,6 +1518,7 @@ mod integration_tests {
 
     /// Its own target, so the test above cannot disturb the round-trip test.
     #[inline(never)]
+    #[cfg(all(windows, target_arch = "x86_64"))]
     fn patch_target_twice(value: u32) -> u32 {
         value + 1
     }
@@ -1583,6 +1588,7 @@ mod integration_tests {
     /// Patching the middle of a function is refused: the saved bytes would not
     /// be a prologue, and a later restore would corrupt the body.
     #[test]
+    #[cfg(all(windows, target_arch = "x86_64"))]
     fn an_address_inside_a_function_is_refused() {
         let target = patch_target as *const () as usize + 1;
         let replacement = patch_replacement as *const () as usize;

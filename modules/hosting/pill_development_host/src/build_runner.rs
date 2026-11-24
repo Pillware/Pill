@@ -973,10 +973,23 @@ pub(crate) struct BuildProcessTree {
 
 /// A build's whole process tree, where the platform has no job object.
 ///
-/// Only the direct child is killed, which is all those platforms offer here.
-/// The type exists so the call sites need no platform `cfg` of their own.
+/// On Unix the tree is the process group [`prepare_process_tree`] gives the
+/// child, so the type carries nothing. It exists so the call sites need no
+/// platform `cfg` of their own.
 #[cfg(not(windows))]
 pub(crate) struct BuildProcessTree;
+
+// The one libc entry point that stops a whole process group. It is declared by
+// hand for the same reason as the `kernel32` calls below: a `libc` dependency
+// would join the modules' dependency graph.
+#[cfg(unix)]
+extern "C" {
+    fn kill(process_id: i32, signal: i32) -> i32;
+}
+
+/// `SIGKILL`, which has this number on Linux and macOS alike.
+#[cfg(unix)]
+const SIGKILL: i32 = 9;
 
 // The `kernel32` entry points that make a job object the unit of build
 // cancellation. They are declared here rather than taken from a crate such as
@@ -1209,12 +1222,30 @@ pub(crate) fn create_process_tree() -> Option<BuildProcessTree> {
     BuildProcessTree::create()
 }
 
-/// Platforms without job objects have nothing to create; `Child::kill` is all
-/// they offer.
+/// Platforms without job objects have nothing to create: on Unix the tree is
+/// set up on the command by [`prepare_process_tree`].
 #[cfg(not(windows))]
 pub(crate) fn create_process_tree() -> Option<BuildProcessTree> {
     None
 }
+
+/// Makes the child of `command` the leader of a new process group, so
+/// [`stop_process_tree`] reaches every process the build starts.
+///
+/// It must run before the spawn. A cancelled cargo otherwise leaves its rustc
+/// and linker children running, holding cargo's package lock and the write end
+/// of any stderr pipe the host is draining.
+///
+/// The group no longer receives the terminal's Ctrl+C; the host stops it
+/// through [`stop_process_tree`].
+#[cfg(unix)]
+pub(crate) fn prepare_process_tree(command: &mut Command) {
+    std::os::unix::process::CommandExt::process_group(command, 0);
+}
+
+/// A job object is joined after the spawn, so nothing is set on the command.
+#[cfg(not(unix))]
+pub(crate) fn prepare_process_tree(_command: &mut Command) {}
 
 /// Adds a freshly spawned child to its build's process tree.
 ///
@@ -1263,9 +1294,28 @@ pub(crate) fn stop_process_tree(tree: Option<&BuildProcessTree>, child: &mut Chi
     }
 }
 
-/// Kill the direct child: without a job object, a grandchild cannot be reached
-/// at all.
-#[cfg(not(windows))]
+/// Stops the process group [`prepare_process_tree`] gave the child, which holds
+/// the build's whole tree.
+///
+/// A child spawned without that preparation leads no group, so the group kill
+/// fails and only the direct child is killed.
+#[cfg(unix)]
+pub(crate) fn stop_process_tree(_tree: Option<&BuildProcessTree>, child: &mut Child) {
+    let Ok(group_id) = i32::try_from(child.id()) else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return;
+    };
+    // SAFETY: a plain syscall. A negative id addresses the process group whose
+    // id is `group_id`; a group that does not exist makes it return -1.
+    if unsafe { kill(-group_id, SIGKILL) } != 0 {
+        let _ = child.kill();
+    }
+    let _ = child.wait();
+}
+
+/// Kills the direct child: the platform offers no way to reach a grandchild.
+#[cfg(not(any(windows, unix)))]
 pub(crate) fn stop_process_tree(_tree: Option<&BuildProcessTree>, child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
@@ -1344,6 +1394,7 @@ pub(crate) fn run_build_command(
     // The tree is created before the spawn, so the child can never run outside
     // it, and joined immediately after. A process started between the two would
     // survive a cancellation of the rest.
+    prepare_process_tree(&mut command);
     let process_tree = create_process_tree();
     let mut child = command.spawn().map_err(|source| BuildError::SpawnFailed {
         name: name.to_string(),

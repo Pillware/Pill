@@ -11,6 +11,7 @@
 //! too.
 
 // Current crate
+use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 
 /// Draws the component menu. When `current` names the heading's component, a

@@ -17,6 +17,7 @@
 //! test can drive the palette without sending key presses.
 
 // Current crate
+use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 
 /// The largest number of matching rows the popup draws.

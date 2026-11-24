@@ -26,6 +26,8 @@
 // the glob must be present for a patched body that names a sibling in the
 // shell.
 #[allow(unused_imports)]
+use pill_editor_shell::shell::prelude::*;
+#[allow(unused_imports)]
 use pill_editor_shell::shell::*;
 
 // =============================================================================

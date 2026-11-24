@@ -20,6 +20,8 @@
 // top-level `use` lines, so a name the body takes from a sibling module still
 // resolves in the patch crate.
 #[allow(unused_imports)]
+use pill_editor_shell::shell::prelude::*;
+#[allow(unused_imports)]
 use pill_editor_shell::shell::*;
 
 /// The levels the filter row offers, lowest first, each as a `(level, label)`
