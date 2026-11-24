@@ -2780,6 +2780,8 @@ version = "0.1.0"
 dependencies = [
  "egui-wgpu",
  "miette",
+ "objc2 0.5.2",
+ "objc2-app-kit",
  "pill_core",
  "pill_core_macros",
  "pill_development_host",

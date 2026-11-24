@@ -103,3 +103,14 @@ profiling-fine = [
     "pill_player/profiling-fine",
     "pill_development_host/profiling-fine",
 ]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Shows/hides docked child views without taking focus; winit 0.30's own
+# versions, since its set_visible makes them key and detaches them.
+objc2 = "0.5"
+objc2-app-kit = { version = "0.2", features = [
+    "NSGraphics",
+    "NSResponder",
+    "NSView",
+    "NSWindow",
+] }

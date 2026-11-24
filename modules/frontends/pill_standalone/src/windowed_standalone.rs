@@ -201,6 +201,7 @@ struct WindowedApplication {
     window: Option<Arc<Window>>,
     /// Whether the hidden startup window has been revealed after its first frame.
     is_window_shown: bool,
+    occluded: bool,
     /// The first failure recorded inside the loop; returned after it exits.
     setup_error: Option<RunError>,
     /// The gamepads, polled before every frame.
@@ -379,7 +380,11 @@ impl WindowedApplication {
                     window.set_visible(true);
                     self.is_window_shown = true;
                 }
-                window.request_redraw();
+                // An occluded window presents nothing, so the loop waits for
+                // `Occluded(false)` instead of spinning.
+                if !self.occluded {
+                    window.request_redraw();
+                }
             }
             Err(source) => {
                 // The renderer failed on this frame. Report the failure where
@@ -506,6 +511,14 @@ impl ApplicationHandler for WindowedApplication {
                 }
             }
             WindowEvent::RedrawRequested => self.redraw(event_loop),
+            WindowEvent::Occluded(occluded) => {
+                self.occluded = occluded;
+                if !occluded {
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -582,6 +595,7 @@ pub fn run(project: posture::ProjectSource) -> Result<(), RunError> {
         window: None,
         windowed_driver: None,
         is_window_shown: false,
+        occluded: false,
         setup_error: None,
         gamepads: Gamepads::new(),
         #[cfg(feature = "development")]

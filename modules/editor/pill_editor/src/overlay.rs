@@ -78,7 +78,7 @@ pub enum OverlayMode {
     /// DirectComposition: a Unix child window is always drawn *above* its
     /// parent, so UI drawn on the editor's own surface can never cover a
     /// scene viewport, while a window of its own can.
-    #[cfg_attr(windows, allow(dead_code))]
+    #[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
     Floating,
     /// The window's own surface, with no composition: `PILL_EDITOR_NO_OVERLAY`
     /// asked for it, or a failed overlay fell back to it. The UI is opaque,
@@ -283,7 +283,7 @@ impl OverlaySurface {
     /// cannot be created, does not offer the editor's format, or does not offer
     /// premultiplied composition - without which the window would paint a
     /// black rectangle over the scene.
-    #[cfg(not(windows))]
+    #[cfg(all(unix, not(target_os = "macos")))]
     pub fn new_floating(
         instance: &wgpu::Instance,
         adapter: &wgpu::Adapter,
@@ -426,6 +426,7 @@ impl OverlaySurface {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Occluded => return Ok(false),
             other => return Err(format!("the overlay swapchain is unavailable: {other:?}")),
         };
         let view = frame
