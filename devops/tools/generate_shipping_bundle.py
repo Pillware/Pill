@@ -1042,6 +1042,16 @@ def build_web_app_manifest(
         "# Its own workspace: nothing of the engine workspace's native builds takes",
         "# part in this one.",
         "[workspace]",
+        "",
+        "# Sized for download: the engine workspace's profiles do not reach this workspace.",
+        "[profile.release]",
+        'opt-level = "z"',
+        'lto = "fat"',
+        "codegen-units = 1",
+        "",
+        "[package.metadata.wasm-pack.profile.release]",
+        'wasm-opt = ["-Oz", "--strip-debug", "--strip-producers", "--enable-bulk-memory", '
+        '"--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals"]',
     ]
     return "\n".join(lines) + "\n"
 
