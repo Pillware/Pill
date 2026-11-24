@@ -372,7 +372,7 @@ fn create_overlay(
                 "[editor] the floating overlay was refused; drawing the UI on the window surface"
             ),
         }
-        return create_window_overlay(instance, adapter, device, window, size);
+        create_window_overlay(instance, adapter, device, window, size)
     }
     #[cfg(windows)]
     match OverlaySurface::new(
@@ -1550,8 +1550,8 @@ impl EditorWindow {
                 let row = world.descriptor_component_bytes(entity, component)?;
                 let bytes = row.get(offset..offset + TRANSLATION_BYTES)?;
                 let mut translation = [0.0f32; 3];
-                for (axis, axis_bytes) in bytes.chunks_exact(4).enumerate() {
-                    translation[axis] = f32::from_ne_bytes(axis_bytes.try_into().ok()?);
+                for (axis, axis_bytes) in bytes.as_chunks::<4>().0.iter().enumerate() {
+                    translation[axis] = f32::from_ne_bytes(*axis_bytes);
                 }
                 Some((entity, translation))
             })
