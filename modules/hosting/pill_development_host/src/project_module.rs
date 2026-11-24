@@ -625,7 +625,6 @@ mod loaded {
                 &watch_directory,
                 &config.name,
             ),
-            graveyard_policy: crate::reload::GraveyardPolicy::Bounded,
         };
         let Some(commit) = crate::reload::build_load_and_commit(
             engine,

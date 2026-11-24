@@ -49,23 +49,6 @@ use crate::notices::{self, HostNotice};
 // Constants
 // =============================================================================
 
-/// Maximum number of retired images kept loaded for one subject.
-///
-/// The previous generation has to stay loaded because the engine may still hold
-/// pointers into its code. Older generations can be released once the
-/// forgotten-type drop and the column re-home have re-pointed everything that
-/// could still reach them.
-pub(crate) const MAX_GRAVEYARD_GENERATIONS: usize = 2;
-
-/// Number of deferred evictions in a row allowed before the warning becomes an
-/// error.
-///
-/// Waiting is correct while a column still points into a retired image. But if
-/// the wait never ends, every reload leaks one loaded image and only a warning
-/// says so. Raising the level shows a real stuck state while there is still
-/// time to fix it, and keeps a single ordinary deferral quiet.
-const MAX_DEFERRED_EVICTIONS: u32 = 3;
-
 /// Final line of a project reload.
 ///
 /// This constant and its three neighbours below are read by tests, not prose.
@@ -166,23 +149,6 @@ impl ReloadSubjectKind {
     }
 }
 
-/// Whether a subject's retired images are ever unloaded.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum GraveyardPolicy {
-    /// Keep at most [`MAX_GRAVEYARD_GENERATIONS`] retired images loaded, and
-    /// release the oldest beyond that once no column still needs its tables.
-    Bounded,
-    /// Never unload a retired image.
-    ///
-    /// For a subject whose images leave pointers behind that this code cannot
-    /// track or free. The renderer module is one: wgpu, the graphics driver and
-    /// the `tracing` callsite registry in the shared `pill_core.dll` all hold
-    /// state that points into the image that created it, and releasing a
-    /// renderer image hangs the host's frame loop. The cost is one loaded image
-    /// per reload, which a development session can afford.
-    KeepAll,
-}
-
 /// One subject's state, borrowed for one reload.
 ///
 /// Created for each reload instead of being stored. It borrows the caller's
@@ -228,8 +194,6 @@ pub(crate) struct ReloadTransaction<'a> {
     /// the new `init` can compare the declared resources with it and drop the
     /// ones whose layout changed.
     pub(crate) layout_record: crate::layout_record::LayoutRecordTarget<'a>,
-    /// Whether retired generations may be released.
-    pub(crate) graveyard_policy: GraveyardPolicy,
 }
 
 /// What a committed reload registered, for the caller to keep.
@@ -372,100 +336,30 @@ impl ReloadTransaction<'_> {
         );
     }
 
-    /// Moves a library into the graveyard. Releases the oldest generation when
-    /// the limit is passed, but only once no surviving column needs its
-    /// tables.
+    /// Moves a library into the graveyard, where it stays for the life of the
+    /// process.
     ///
-    /// A retired image is never unloaded the moment it stops being current.
-    /// Pointers into it can still be live: storage tables, patch stubs and
-    /// persist metadata. The eviction log line is what marks a later fault as
-    /// coming from an image released here rather than from somewhere else.
-    ///
-    /// The `world` argument turns "a limit of two generations is safe" into a
-    /// check. A column whose component id has no factory left still holds a
-    /// function table from whichever image created it. So if
-    /// [`World::columns_without_factory`] returns a non-zero count, the release
-    /// waits and logs a warning instead of calling into freed memory.
-    fn retire_library(&mut self, library: NativeLibrary, world: &World) {
+    /// A retired image is never unloaded, not even after later generations
+    /// replace it. Pointers into it stay live far longer than the transaction
+    /// that retired it: column tables, clone and drop functions, the systems,
+    /// scripts, resources and asset types it declared, the shared component
+    /// identities it claimed, and - for a renderer - wgpu's, the graphics
+    /// driver's and the `tracing` callsite registry's own state. Re-pointing
+    /// all of that at the new generation was the old bounded graveyard's
+    /// promise, and two crash shapes disproved it: a project image released on
+    /// the third reload faulted inside `VCRUNTIME140.dll` on the next reload,
+    /// and one run faulted inside the released image itself
+    /// (`native.dll_unloaded`), with the project's own `ball_physics` system
+    /// running at the time. Keeping the image costs about 5 MB per reload of a
+    /// development session and cannot fault.
+    fn retire_library(&mut self, library: NativeLibrary) {
         self.old_libraries.push(library);
-        if self.graveyard_policy == GraveyardPolicy::KeepAll {
-            debug!(
-                target: telemetry_target::HOT_RELOAD,
-                module = self.subject,
-                generations = self.old_libraries.len(),
-                "keeping every retired generation mapped"
-            );
-            return;
-        }
-        if self.old_libraries.len() > MAX_GRAVEYARD_GENERATIONS {
-            let orphaned_column_count = world.columns_without_factory();
-            if orphaned_column_count != 0 {
-                let deferral_count = Self::deferred_eviction_count(self.subject, true);
-                // One deferral is normal. A column is mid-migration and the next
-                // reload clears it. A run of deferrals is not. Nothing is
-                // releasing those columns, so every later reload adds a loaded
-                // image that can never be released.
-                if deferral_count >= MAX_DEFERRED_EVICTIONS {
-                    error!(
-                        target: telemetry_target::HOT_RELOAD,
-                        module = self.subject,
-                        generations = self.old_libraries.len(),
-                        columns = orphaned_column_count,
-                        consecutive_deferrals = deferral_count,
-                        "eviction has been deferred repeatedly: native columns still reference retired images and are not being released, so every reload now leaks a mapped image"
-                    );
-                } else {
-                    warn!(
-                        target: telemetry_target::HOT_RELOAD,
-                        module = self.subject,
-                        generations = self.old_libraries.len(),
-                        columns = orphaned_column_count,
-                        "deferring eviction: native columns still reference a retired image"
-                    );
-                }
-                return;
-            }
-            // The check passed, so whatever held those columns is gone.
-            Self::deferred_eviction_count(self.subject, false);
-            // Dropping the evicted generation unloads its image and deletes its
-            // temporary file on disk. The line is logged before the drop:
-            // anything still holding a pointer into that image crashes inside
-            // it, and this line is what tells that apart from a crash somewhere
-            // else.
-            info!(
-                target: telemetry_target::HOT_RELOAD,
-                module = self.subject,
-                generations = self.old_libraries.len(),
-                "evicting the oldest retired generation"
-            );
-            drop(self.old_libraries.remove(0));
-        }
-    }
-
-    /// Counts consecutive deferred evictions for one subject.
-    ///
-    /// When `should_defer` is true this adds one and returns the new count.
-    /// When it is false it clears the count and returns zero. The count is kept
-    /// per subject because the project and each extension retire on their own,
-    /// and one stuck subject must not hide another's state or be hidden by it.
-    fn deferred_eviction_count(subject: &str, should_defer: bool) -> u32 {
-        use std::collections::HashMap;
-        use std::sync::Mutex;
-        static DEFERRED_EVICTIONS_BY_SUBJECT: Mutex<Option<HashMap<String, u32>>> =
-            Mutex::new(None);
-        let mut counts_guard = DEFERRED_EVICTIONS_BY_SUBJECT
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let deferred_evictions_by_subject = counts_guard.get_or_insert_with(HashMap::new);
-        if !should_defer {
-            deferred_evictions_by_subject.remove(subject);
-            return 0;
-        }
-        let deferral_count = deferred_evictions_by_subject
-            .entry(subject.to_string())
-            .or_insert(0);
-        *deferral_count = deferral_count.saturating_add(1);
-        *deferral_count
+        debug!(
+            target: telemetry_target::HOT_RELOAD,
+            module = self.subject,
+            generations = self.old_libraries.len(),
+            "keeping every retired generation mapped"
+        );
     }
 
     /// Runs the whole sequence against a replacement that is already loaded.
@@ -739,10 +633,8 @@ impl ReloadTransaction<'_> {
             // Retire the failed image instead of unloading it. The purge above is
             // meant to leave nothing pointing into it, but that is not a proof.
             // A kept image costs one `FreeLibrary` later; an unloaded one
-            // crashes if any pointer survived. With the bounded policy the
-            // graveyard eventually releases it, and with
-            // [`GraveyardPolicy::KeepAll`] it stays loaded for good.
-            self.retire_library(new_library, engine.world());
+            // crashes if any pointer survived.
+            self.retire_library(new_library);
             return None;
         }
 
@@ -982,7 +874,7 @@ impl ReloadTransaction<'_> {
         // may still hold pointers to component operations and persist metadata
         // that generation registered.
         let previous_library = std::mem::replace(&mut *self.current, new_library);
-        self.retire_library(previous_library, engine.world());
+        self.retire_library(previous_library);
 
         analytics::record_reload(self.subject);
 

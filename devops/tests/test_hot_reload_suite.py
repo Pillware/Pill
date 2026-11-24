@@ -586,7 +586,12 @@ SESSION_A_SCENARIOS = [
                 # is where a column is actually removed.
             )
         ],
-        restore_after=[SPLINE_LIB_RS],
+        # Both files this scenario edits: the derive lives in `component.rs`,
+        # and a restore that named only `pill_spline.rs` left the module
+        # declaring no component for the rest of the run - invisible while the
+        # project's own copy still registered the shared type, and fatal at the
+        # clean restart, where the module loads alone.
+        restore_after=[SPLINE_LIB_RS, SPLINE_COMPONENT_RS],
     ),
     Scenario(
         name="module_forgotten_type_drop",
@@ -686,7 +691,7 @@ def session_b_scenarios(monitor: OutputMonitor) -> Optional[Sequence[Scenario]]:
             name="cascade_reload",
             phases=[
                 ScenarioPhase(
-                    edits=[(SPLINE_LIB_RS, CASCADE_OFFSET_EDIT.replacements)],
+                    edits=[(SPLINE_COMPONENT_RS, CASCADE_OFFSET_EDIT.replacements)],
                     wait_token=RELOAD_MODULE_TOKEN,
                     # `1 spline(s)` pins module<->project coexistence: `Spline` is
                     # `#[pill(shared)]`, so the module DLL's copy and the project's
@@ -726,7 +731,7 @@ def session_b_scenarios(monitor: OutputMonitor) -> Optional[Sequence[Scenario]]:
                     ],
                 )
             ],
-            restore_after=[SPLINE_LIB_RS],
+            restore_after=[SPLINE_COMPONENT_RS],
         ),
     ]
 

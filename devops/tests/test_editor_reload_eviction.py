@@ -1,24 +1,22 @@
-"""The editor outlives a project reload that unmaps a retired generation.
+"""The editor outlives four project reloads, none of which unmaps an image.
 
-PROTECTS: The editor survives the frame after a project reload that evicts the oldest retired image: every entity, component, gizmo declaration, system and resource a generation recorded is either re-pointed at the arriving image or dropped with it, so nothing calls into an unmapped copy of the project.
+PROTECTS: The editor keeps drawing across repeated project reloads: every entity, component, gizmo declaration, system and resource a generation records still resolves after the next generation arrives, and no image is unloaded while the process runs.
 TIER: editor
 SETS: editor
 
-The host keeps a bounded graveyard (`MAX_GRAVEYARD_GENERATIONS`): it holds at
-most two retired project images mapped and unmaps the oldest on the next
-reload. Everything a generation hands the engine - a column's drop table, a
-declared gizmo's draw function, a system's body - must therefore be replaced by
-the arriving generation, and the count of columns with no factory left is what
-the eviction checks before it unmaps. A pointer the check does not cover makes
-the editor die inside the new frame, with no Rust panic, which is what this
-suite watches for.
+The host used to keep a bounded graveyard and unmap the oldest retired project
+image on the fourth reload. Its guard covered column tables only, and a pointer
+it did not cover crashed the standalone host with an access violation, once
+inside `VCRUNTIME140.dll` and once inside the released image itself
+(`native.dll_unloaded`). Retired images are now never unmapped, so this suite
+asserts the other half of the same contract: four reloads in a row, a live
+frame after each, and a log with no unmapping line in it.
 
 One session drives it: the scene test project reloads once per appended
-comment, four times in a row, so the fourth load is the one that unmaps the
-first image. Each round then waits for a heartbeat printed *after* its reload,
-so a frame that ran in the new generation is what proves survival - and the
-suite finishes with a scripted request, which is the step that died in a run
-that reached the eviction.
+comment, four times in a row. Each round waits for a heartbeat printed *after*
+its reload, so a frame that ran in the new generation is what proves survival -
+and the suite finishes with a scripted request, which needs a live frame pass
+to answer.
 
 The suite is its own file rather than an area of `test_editor_egui.py`: it
 needs four reloads of one project and the shared session's areas already spend
@@ -50,16 +48,13 @@ from core.suite_common import (  # noqa: E402
 )
 from editor_step_support import occurrence_count, print_ok  # noqa: E402
 
-# The line the reload prints immediately before it drops the oldest retired
-# image; the comment above the log call in `reload.rs` says this line is what
-# tells a call into an unmapped image apart from a crash anywhere else. The
-# unmapping line that follows it names the DLL and its temporary directory.
-EVICTION_TOKEN = "evicting the oldest retired generation"
+# The line the loader prints when it releases an image. It must never appear:
+# retired generations stay mapped for the life of the process, because the
+# engine cannot prove that nothing it keeps still points into one.
 UNMAPPING_TOKEN = "unmapping module copy"
 
-# Two retired generations stay mapped, so the fourth load is the first one that
-# unmaps an image. One spare round is the proof that the editor also survives
-# the load after the eviction.
+# Four reloads: the count the bounded graveyard needed to unmap its first image,
+# so the same rounds now prove the editor survives what used to crash it.
 RELOAD_ROUNDS = 4
 RELOAD_TIMEOUT = 240.0
 HEARTBEAT_TIMEOUT = 60.0
@@ -75,7 +70,7 @@ def append_reload_marker(round_index: int) -> None:
     effect: it retires the generation that is loaded and maps a new one.
     """
     with SCENE_PROJECT_SCENE_RS.open("a", encoding="utf-8", newline="") as project_file:
-        project_file.write("\n// reload eviction probe {}\n".format(round_index))
+        project_file.write("\n// reload probe {}\n".format(round_index))
 
 
 def wait_for_next_occurrence(session: EditorSession, token: str, timeout: float, label: str) -> None:
@@ -84,7 +79,7 @@ def wait_for_next_occurrence(session: EditorSession, token: str, timeout: float,
     session.wait_occurrence(re.escape(token), seen + 1, timeout, label)
 
 
-def run_eviction_rounds(session: EditorSession) -> None:
+def run_reload_rounds(session: EditorSession) -> None:
     """Reloads the project `RELOAD_ROUNDS` times, each followed by a live frame."""
     for round_index in range(1, RELOAD_ROUNDS + 1):
         append_reload_marker(round_index)
@@ -107,27 +102,22 @@ def run_eviction_rounds(session: EditorSession) -> None:
         print_ok("reload round {} survived".format(round_index))
 
 
-def report_eviction(document: str) -> None:
-    """Prints what the run's reload passes did, and refuses a run that never evicted."""
-    evictions = document.count(EVICTION_TOKEN)
+def report_no_unmapping(document: str) -> None:
+    """Refuses a run that released an image, and reports what the rounds did."""
     unmappings = document.count(UNMAPPING_TOKEN)
-    if evictions == 0:
+    if unmappings != 0:
         raise AssertionError(
-            "no reload evicted a retired generation, so this run proved nothing: "
-            "the graveyard kept {} rounds of images".format(RELOAD_ROUNDS)
+            "the run unmapped {} retired image(s); no image may be released "
+            "while the process runs".format(unmappings)
         )
-    print_ok("{} reload(s) evicted a retired generation, {} image(s) unmapped".format(evictions, unmappings))
-    if unmappings == 0:
-        raise AssertionError(
-            "a generation was evicted but the log never reported unmapping it"
-        )
+    print_ok("{} reload(s), no image unmapped".format(RELOAD_ROUNDS))
 
 
-def run_eviction_steps(binary: Path) -> None:
-    """Starts one editor on the scene project and drives the eviction rounds."""
+def run_reload_steps(binary: Path) -> None:
+    """Starts one editor on the scene project and drives the reload rounds."""
     session = EditorSession(
         "egui",
-        "reload-eviction",
+        "reloads",
         project=SCENE_PROJECT_PATH,
         test_seconds=SESSION_SECONDS,
         binary=binary,
@@ -144,13 +134,12 @@ def run_eviction_steps(binary: Path) -> None:
         session.wait_for_match(
             re.escape(EGUI_SHELL_LOADED_TOKEN), 180, "the shell load"
         )
-        run_eviction_rounds(session)
-        report_eviction(session.read_log())
-        # The scripted request is the step a run that reached the eviction died
-        # on: it needs a live frame pass to answer, so it proves the editor is
-        # not merely still resident but still drawing.
-        session.request("dump tabs", DOCK_DUMP_PATTERN, 60, "the dock after the evictions")
-        print_ok("the editor answered after every eviction")
+        run_reload_rounds(session)
+        report_no_unmapping(session.read_log())
+        # The scripted request needs a live frame pass to answer, so it proves
+        # the editor is not merely still resident but still drawing.
+        session.request("dump tabs", DOCK_DUMP_PATTERN, 60, "the dock after the reloads")
+        print_ok("the editor answered after every reload")
     finally:
         SCENE_PROJECT_SCENE_RS.write_bytes(original_source)
         session.close()
@@ -172,11 +161,11 @@ def main() -> int:
         print("  FAIL  {}".format(refusal))
         return 1
     try:
-        run_eviction_steps(binary)
+        run_reload_steps(binary)
     except Exception as error:  # noqa: BLE001 - a suite reports its own failure
-        print("  FAIL  the reload eviction suite failed: {}".format(error))
+        print("  FAIL  the editor reload suite failed: {}".format(error))
         return 1
-    print("  PASS  the editor outlived every reload that unmapped a retired generation")
+    print("  PASS  the editor outlived every project reload, with no image unmapped")
     return 0
 
 

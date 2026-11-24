@@ -273,11 +273,6 @@ impl RendererModule {
             FirstLoadFailure::ClearSystemsOnly,
         ) {
             Ok(mut slot) => {
-                // A renderer image leaves state behind that nothing can
-                // release: wgpu's, the graphics driver's, and the `tracing`
-                // callsite registry's. Unloading one hangs the frame loop, so
-                // every generation stays mapped.
-                slot.keep_every_generation();
                 // Mark the source edit this generation was built from as
                 // handled. A save after this point is the next reload.
                 slot.consume_pending_reload(source_edit_generation);

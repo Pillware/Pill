@@ -102,8 +102,6 @@ mod slot {
         /// components from this list, and the renderer's capability check uses
         /// it to name the components the active renderer does not draw.
         exposed_component_names: Vec<String>,
-        /// Whether this module's retired generations may be unmapped.
-        graveyard_policy: crate::reload::GraveyardPolicy,
     }
 
     impl ExtensionSlot {
@@ -268,17 +266,7 @@ mod slot {
                 registered_schema_hashes: initialized_generation.registered_schemas,
                 registered_resource_ids: initialized_generation.registered_resource_ids,
                 exposed_component_names: initialized_generation.component_names,
-                graveyard_policy: crate::reload::GraveyardPolicy::Bounded,
             })
-        }
-
-        /// Never unmap this module's retired generations.
-        ///
-        /// Use it for a module whose images leave behind state that the reload
-        /// transaction cannot track; see [`crate::reload::GraveyardPolicy::KeepAll`].
-        #[cfg(feature = "rendering")]
-        pub(crate) fn keep_every_generation(&mut self) {
-            self.graveyard_policy = crate::reload::GraveyardPolicy::KeepAll;
         }
 
         /// Whether a watcher signal is waiting to become a reload.
@@ -572,7 +560,6 @@ mod slot {
                     &watch_directory,
                     &self.extension_config.name,
                 ),
-                graveyard_policy: self.graveyard_policy,
             };
             let Some(commit) = crate::reload::build_load_and_commit(
                 engine,
