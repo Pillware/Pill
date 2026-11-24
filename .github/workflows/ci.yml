@@ -13,8 +13,14 @@ name: CI
 on:
   # Automatic triggers are disabled for now; uncomment them to re-enable CI.
   # The workflow still runs manually from the Actions tab.
-  # push:
-  # pull_request:
+  push:
+    branches:
+      - main
+      - golden
+  pull_request:
+    branches:
+      - main
+      - golden
   workflow_dispatch:
 
 env:
