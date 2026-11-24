@@ -1550,6 +1550,7 @@ mod integration_tests {
 
     /// Its own target, so a refused restore cannot disturb the other tests.
     #[inline(never)]
+    #[cfg(all(windows, target_arch = "x86_64"))]
     fn patch_restore_guard(value: u32) -> u32 {
         value + 2
     }

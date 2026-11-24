@@ -928,8 +928,7 @@ impl EditorWindow {
             views = published.view_count,
             "[test] viewport state"
         );
-        for view in 0..self.views.len() {
-            let camera = self.cameras[view];
+        for (view, camera) in self.cameras.iter().enumerate().take(self.views.len()) {
             let eye = camera.eye();
             let pivot = camera.pivot;
             info!(

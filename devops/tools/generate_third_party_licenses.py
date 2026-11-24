@@ -149,6 +149,13 @@ def run_cargo_about(
             command.append("--no-default-features")
         if workspace:
             command.append("--workspace")
+        # cargo-about reads the metadata of every platform's crates, not only the
+        # targets'; a build downloads only its own platform's, so fetch them all.
+        subprocess.run(
+            ["cargo", "fetch", "--manifest-path", str(manifest_path)],
+            cwd=str(manifest_path.parent),
+            check=True,
+        )
         completed = subprocess.run(
             command,
             cwd=str(manifest_path.parent),

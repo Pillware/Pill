@@ -937,6 +937,7 @@ fn without_ansi(line: &str) -> String {
 /// Termination is asynchronous, and the next build starts against the same
 /// `CARGO_TARGET_DIR` right afterwards. This wait keeps a dying compiler from
 /// holding cargo's package lock through that handover.
+#[cfg(windows)]
 const TREE_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`: closing the job's last handle kills
