@@ -11,7 +11,6 @@
 //! The globs below are absolute paths, so a patch crate resolves them too.
 
 // Current crate
-use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 
 // =============================================================================

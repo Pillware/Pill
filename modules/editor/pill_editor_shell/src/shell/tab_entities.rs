@@ -19,7 +19,6 @@
 //! nothing to point at there.
 
 // Current crate
-use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 
 /// The payload an Entities row drags onto an Inspector entity-reference

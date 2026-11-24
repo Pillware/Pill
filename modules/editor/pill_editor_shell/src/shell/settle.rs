@@ -38,7 +38,6 @@
 //! makes the stage safe to run at the boundary.
 
 // Current crate
-use pill_editor_shell::shell::prelude::*;
 // Deliberately unused in this compilation: a patch crate replays this file's
 // opening, and the first sibling this body names resolves through it.
 #[allow(unused_imports)]

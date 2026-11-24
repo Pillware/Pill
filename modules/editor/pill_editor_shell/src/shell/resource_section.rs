@@ -16,7 +16,6 @@
 //! edit undoable like any other edit.
 
 // Current crate
-use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 
 // =============================================================================

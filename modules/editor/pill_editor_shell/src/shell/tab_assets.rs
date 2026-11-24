@@ -16,7 +16,6 @@
 //! are, so an import written any other way would not resolve there.
 
 // Current crate
-use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 
 // =============================================================================

@@ -19,7 +19,6 @@
 //! session.
 
 // Current crate
-use pill_editor_shell::shell::prelude::*;
 // Deliberately unused in this compilation. A patch crate repeats this file's
 // top-level `use` lines, so a name the body takes from a sibling module still
 // resolves in the patch crate.

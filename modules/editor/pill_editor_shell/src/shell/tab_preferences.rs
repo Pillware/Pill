@@ -15,7 +15,6 @@
 //! path would have nothing to point at.
 
 // Current crate
-use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 
 /// Draws the Preferences tab: the editor-wide rows, then the project's name,

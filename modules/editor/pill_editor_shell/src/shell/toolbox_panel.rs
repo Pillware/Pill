@@ -14,7 +14,6 @@
 //! resolve there.
 
 // Current crate
-use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 
 /// Draws the floating toolbox over one scene viewport: the gizmo's tools, one
