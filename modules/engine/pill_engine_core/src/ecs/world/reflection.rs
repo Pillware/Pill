@@ -360,7 +360,7 @@ impl World {
     pub fn to_dot_graph(&self) -> String {
         let mut dot = String::from("digraph World {\n    rankdir=LR;\n    node [shape=record];\n");
 
-        for (_, archetype) in self.storage.archetypes.iter() {
+        for archetype in self.storage.archetypes.values() {
             let component_names: Vec<String> = archetype
                 .component_types
                 .iter()

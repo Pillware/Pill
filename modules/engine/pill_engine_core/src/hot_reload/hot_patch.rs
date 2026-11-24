@@ -1430,6 +1430,7 @@ mod integration_tests {
     /// One test rather than three, because the bytes are process-wide state and
     /// the harness runs tests on several threads.
     #[test]
+    #[cfg(all(windows, target_arch = "x86_64"))]
     fn a_patched_prologue_redirects_and_restores() {
         let target = patch_target as *const () as usize;
         let replacement = patch_replacement as *const () as usize;
@@ -1524,6 +1525,7 @@ mod integration_tests {
     /// unloaded and another mapped over it. The bytes are the only proof that
     /// this is still the function the saved bytes came from.
     #[test]
+    #[cfg(all(windows, target_arch = "x86_64"))]
     fn restoring_over_code_that_is_not_our_jump_is_refused() {
         let target = patch_restore_guard as *const () as usize;
         assert_eq!(std::hint::black_box(patch_restore_guard)(1), 3);
@@ -1556,6 +1558,7 @@ mod integration_tests {
     /// length, so patching it is refused rather than writing twelve bytes over
     /// whatever happens to be there.
     #[test]
+    #[cfg(all(windows, target_arch = "x86_64"))]
     fn an_address_with_no_function_entry_is_refused() {
         static NOT_A_FUNCTION: [u8; 64] = [0x90; 64];
         let target = NOT_A_FUNCTION.as_ptr() as usize;
@@ -1595,6 +1598,7 @@ mod integration_tests {
     /// The extent lookup reports the linker's own record, so a real function is
     /// described and its reported start is the address the caller holds.
     #[test]
+    #[cfg(all(windows, target_arch = "x86_64"))]
     fn the_exception_directory_describes_a_real_function() {
         let target = patch_target as *const () as usize;
         let (begin, length) = function_extent(target).expect("a real function must be described");

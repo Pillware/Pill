@@ -217,7 +217,7 @@ impl Texture {
         let (width, height) = image.dimensions();
         let mut texels = image.into_raw();
         if !is_float_source {
-            for texel in texels.chunks_exact_mut(4) {
+            for texel in texels.as_chunks_mut::<4>().0 {
                 for channel in &mut texel[..3] {
                     *channel = srgb_to_linear(*channel);
                 }

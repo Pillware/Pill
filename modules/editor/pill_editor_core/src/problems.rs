@@ -130,10 +130,9 @@ fn parse_header(line: &str) -> Option<(Severity, String)> {
         (Severity::Error, rest)
     } else if let Some(rest) = text.strip_prefix("warning") {
         (Severity::Warning, rest)
-    } else if let Some(rest) = text.strip_prefix("note") {
-        (Severity::Note, rest)
     } else {
-        return None;
+        let rest = text.strip_prefix("note")?;
+        (Severity::Note, rest)
     };
     // `error[E0425]: msg` carries a bracketed code before the colon, and
     // `error: msg` carries none. A tail that fits neither form
