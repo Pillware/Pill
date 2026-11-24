@@ -420,9 +420,9 @@ impl OverlaySurface {
             renderer.free_texture(texture_id);
         }
         textures.clear();
-        // Step 2: a suboptimal frame is still drawable; any other status means
-        // there is no frame this time. The error goes back to the caller,
-        // which logs it and skips the UI for this frame.
+        // Step 2: a suboptimal frame is still drawable; an occluded window
+        // draws nothing, and any other status goes back to the caller as an
+        // error, which logs it and skips the UI for this frame.
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,

@@ -940,14 +940,7 @@ impl EditorWindow {
                 egui::Pos2::ZERO,
                 egui::vec2(logical_width, logical_height),
             )),
-            viewports: std::iter::once((
-                egui::ViewportId::ROOT,
-                egui::ViewportInfo {
-                    native_pixels_per_point: Some(self.scale_factor),
-                    ..Default::default()
-                },
-            ))
-            .collect(),
+            viewports: pill_editor_core::input::root_viewport(self.scale_factor),
             ..Default::default()
         };
         let fallback_context = self.fallback_context.clone();

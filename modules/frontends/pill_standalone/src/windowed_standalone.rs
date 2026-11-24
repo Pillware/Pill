@@ -513,7 +513,10 @@ impl ApplicationHandler for WindowedApplication {
             WindowEvent::RedrawRequested => self.redraw(event_loop),
             WindowEvent::Occluded(occluded) => {
                 self.occluded = occluded;
-                if !occluded {
+                if occluded {
+                    event_loop.set_control_flow(ControlFlow::Wait);
+                } else {
+                    event_loop.set_control_flow(ControlFlow::Poll);
                     if let Some(window) = &self.window {
                         window.request_redraw();
                     }

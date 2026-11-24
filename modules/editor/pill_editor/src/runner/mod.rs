@@ -331,7 +331,7 @@ fn choose_display_backend() {
 ///
 /// `event_loop` is what the floating overlay is created from, so Windows - whose
 /// overlay is a composition visual - has nothing to do with it.
-#[cfg_attr(windows, allow(unused_variables))]
+#[cfg_attr(not(all(unix, not(target_os = "macos"))), allow(unused_variables))]
 fn create_overlay(
     event_loop: &ActiveEventLoop,
     no_overlay: bool,
@@ -341,9 +341,6 @@ fn create_overlay(
     window: Arc<Window>,
     size: (u32, u32),
 ) -> Option<OverlaySurface> {
-    // The event loop is what a Unix session builds the floating overlay's
-    // window on; Windows draws the overlay without one.
-    let _ = event_loop;
     if no_overlay {
         warn!(
             target: telemetry_target::EDITOR,
@@ -647,10 +644,12 @@ impl ApplicationHandler for EditorApplication {
                     editor.resize(size.width, size.height);
                 }
             }
-            WindowEvent::Occluded(occluded) if is_main => {
-                editor.occluded = occluded;
-                if !occluded {
-                    editor.demand.resized = true;
+            WindowEvent::Occluded(occluded) => {
+                if is_main {
+                    editor.occluded = occluded;
+                    if !occluded {
+                        editor.window.request_redraw();
+                    }
                 }
             }
             WindowEvent::Focused(focused) => {
@@ -4197,7 +4196,7 @@ struct SurfaceWindow {
     visible: bool,
     /// The last placed rectangle in physical pixels, so redundant moves
     /// and resizes are skipped.
-    placed: Option<(i32, i32, u32, u32, (i32, i32))>,
+    placed: Option<(i32, i32, u32, u32)>,
     /// The client-area origin in the parent's coordinates the last
     /// placement applied, in physical pixels. Pointer events this window
     /// reports are relative to it; a resize clears `placed` but never moves
@@ -4316,19 +4315,20 @@ impl SurfaceWindow {
             self.set_shown(true);
             self.visible = true;
         }
-        if self.placed == Some((x, y, width, height, screen_offset)) {
+        let screen_rect = (x + screen_offset.0, y + screen_offset.1, width, height);
+        if self.placed == Some(screen_rect) {
             return;
         }
-        let _ = self
-            .window
-            .request_inner_size(PhysicalSize::new(width.max(1), height.max(1)));
+        if self.placed.map(|placed| (placed.2, placed.3)) != Some((width, height)) {
+            let _ = self
+                .window
+                .request_inner_size(PhysicalSize::new(width.max(1), height.max(1)));
+        }
         if screen_owned {
             self.window.set_outer_position(PhysicalPosition::new(x, y));
         } else if !self.detached {
-            self.window.set_outer_position(PhysicalPosition::new(
-                x + screen_offset.0,
-                y + screen_offset.1,
-            ));
+            self.window
+                .set_outer_position(PhysicalPosition::new(screen_rect.0, screen_rect.1));
         }
         // The client origin is what a pointer event from this window is
         // relative to: a docked child's is the rectangle's corner, and a
@@ -4342,7 +4342,7 @@ impl SurfaceWindow {
         } else if !self.detached {
             self.origin = (x, y);
         }
-        self.placed = Some((x, y, width, height, screen_offset));
+        self.placed = Some(screen_rect);
     }
 
     /// Show or hide the window. A macOS child is ordered without becoming

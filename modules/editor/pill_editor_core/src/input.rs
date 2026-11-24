@@ -209,19 +209,25 @@ pub fn raw_input(shell_input: &EguiShellInput) -> RawInput {
             Pos2::ZERO,
             Vec2::new(shell_input.screen_size.x, shell_input.screen_size.y),
         )),
-        viewports: std::iter::once((
-            ViewportId::ROOT,
-            ViewportInfo {
-                native_pixels_per_point: Some(scale_factor),
-                ..Default::default()
-            },
-        ))
-        .collect(),
+        viewports: root_viewport(scale_factor),
         time: Some(shell_input.time),
         focused: shell_input.focused,
         events: egui_events,
         ..Default::default()
     }
+}
+
+/// The root viewport at the display's scale, so egui draws a point as
+/// `scale_factor` physical pixels.
+pub fn root_viewport(scale_factor: f32) -> egui::ViewportIdMap<ViewportInfo> {
+    std::iter::once((
+        ViewportId::ROOT,
+        ViewportInfo {
+            native_pixels_per_point: Some(scale_factor),
+            ..Default::default()
+        },
+    ))
+    .collect()
 }
 
 /// Returns the egui pointer button for an engine mouse button.
