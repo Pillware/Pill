@@ -80,9 +80,11 @@ pub const STANDALONE_BODY_FIELD: &str = "asset";
 /// [`World::register_standalone_asset`](crate::World::register_standalone_asset)
 /// so it can be loaded by extension.
 pub trait StandaloneAsset: Asset + TraitAccessible<dyn Asset> + Sized {
-    /// The asset's shape as written to its file. A newly created file holds
-    /// `Default`, so the default must build a valid asset on its own. Mark the
-    /// type `#[serde(default)]` so a file written before a field existed still
+    /// The asset's shape as written to its file. A newly created file starts
+    /// from `Default`, so the default must build a valid asset on its own; the
+    /// editor then fills what only a renderer can name - a material's shader,
+    /// for instance - before it writes the file. Mark the type
+    /// `#[serde(default)]` so a file written before a field existed still
     /// reads, and use `BTreeMap`, never `HashMap`, for maps (see
     /// `ImportedAsset::ImportSettings`).
     type Document: Serialize + DeserializeOwned + Default;

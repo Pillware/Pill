@@ -3437,6 +3437,114 @@ mod tests {
     #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
     struct RefusedDocument {}
 
+    /// A standalone type whose document names a shader, as a material's does.
+    #[derive(Debug)]
+    struct ShaderCarrier;
+    impl pill_engine::asset::Asset for ShaderCarrier {}
+    trait_type_map::impl_trait_accessible!(dyn pill_engine::asset::Asset; ShaderCarrier);
+
+    impl pill_engine::asset_standalone::StandaloneAsset for ShaderCarrier {
+        type Document = ShaderCarrierDocument;
+        const FILE_EXTENSION: &'static str = "shadercarrier";
+
+        fn metadata_type_name() -> &'static str {
+            "pill_editor_core::tests::ShaderCarrier"
+        }
+
+        fn from_document(
+            _name: &str,
+            _document: ShaderCarrierDocument,
+            _assets: &pill_engine::AssetManager,
+        ) -> pill_engine::AssetLoadResult<Self> {
+            Ok(Self)
+        }
+    }
+
+    /// The carrier's document: one shader reference, left unset by default.
+    #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+    struct ShaderCarrierDocument {
+        shader: Option<String>,
+    }
+
+    /// A material created from the dialog carries the shader it draws through
+    /// instead of an empty field: the renderer names that shader, and the create
+    /// writes it into the file.
+    #[test]
+    fn a_created_file_names_the_default_shader() {
+        let _mount = crate::test_support::asset_mount_lock();
+        let root =
+            std::env::temp_dir().join(format!("pill-editor-default-shader-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        pill_engine::asset_store::mount_directory(&root);
+
+        let mut engine = Engine::new();
+        engine
+            .world_mut()
+            .register_standalone_asset::<ShaderCarrier>();
+        let shader = pill_engine::AssetGuid::from_name("a test shader");
+        engine
+            .world_mut()
+            .insert_resource(pill_renderer_api::editor::DefaultShader::with(shader));
+
+        let failures = EditorCommand::apply(
+            &mut engine,
+            &[EditorCommand::CreateStandaloneAsset {
+                type_name: "pill_editor_core::tests::ShaderCarrier".to_owned(),
+                folder: String::new(),
+                name: "named".to_owned(),
+                overwrite: None,
+            }],
+        );
+        assert!(failures.is_empty(), "{failures:?}");
+
+        let bytes = std::fs::read(root.join("named.shadercarrier")).unwrap();
+        let document = pill_engine::asset_document::parse(&bytes).unwrap();
+        assert_eq!(
+            document["asset"]["shader"],
+            serde_json::json!(shader.to_string()),
+            "the file names the renderer's shader"
+        );
+    }
+
+    /// A world whose renderer named no shader writes the document its type
+    /// defaulted, so the create works exactly as it did without this value.
+    #[test]
+    fn a_created_file_without_a_renderer_answer_names_no_shader() {
+        let _mount = crate::test_support::asset_mount_lock();
+        let root = std::env::temp_dir().join(format!(
+            "pill-editor-no-default-shader-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        pill_engine::asset_store::mount_directory(&root);
+
+        let mut engine = Engine::new();
+        engine
+            .world_mut()
+            .register_standalone_asset::<ShaderCarrier>();
+
+        let failures = EditorCommand::apply(
+            &mut engine,
+            &[EditorCommand::CreateStandaloneAsset {
+                type_name: "pill_editor_core::tests::ShaderCarrier".to_owned(),
+                folder: String::new(),
+                name: "bare".to_owned(),
+                overwrite: None,
+            }],
+        );
+        assert!(failures.is_empty(), "{failures:?}");
+
+        let bytes = std::fs::read(root.join("bare.shadercarrier")).unwrap();
+        let document = pill_engine::asset_document::parse(&bytes).unwrap();
+        assert_eq!(
+            document["asset"]["shader"],
+            serde_json::Value::Null,
+            "nothing names a shader, so the file leaves the field unset"
+        );
+    }
+
     /// A rollback that cannot take a file back names it, in the command's
     /// message and in the log. A failure that changed the disk has to say so.
     #[test]

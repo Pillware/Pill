@@ -1340,6 +1340,7 @@ impl EditorWindow {
                 None => self.scripted_scene(EditorCommand::SceneSave),
             },
             ScriptedCommand::DialogSetName(text) => self.scripted_dialog_set_name(&text),
+            ScriptedCommand::DialogSetType(type_name) => self.scripted_dialog_set_type(&type_name),
             ScriptedCommand::DialogSubmit => self.scripted_dialog_submit(),
             ScriptedCommand::EditAsset(edit) => self.scripted_asset_edit(edit),
             ScriptedCommand::PickEntity {
@@ -1663,6 +1664,35 @@ impl EditorWindow {
                 ),
             }
         }
+    }
+
+    /// Sets the open create dialog's asset type, as a click on its row does.
+    ///
+    /// The type is named by its stable name (`pill_rendering::Material`),
+    /// because that is what the dialog holds and what a file's `asset_type`
+    /// carries. A type the dialog does not offer is refused rather than
+    /// written, so a suite's typo cannot create the wrong kind of file.
+    pub(super) fn scripted_dialog_set_type(&mut self, type_name: &str) {
+        let world = self.host.host_mut().engine_mut().world_mut();
+        let Some(state) = world.get_resource_mut::<EguiShellState>() else {
+            return;
+        };
+        let Some(AssetDialog::Create {
+            type_name: field, ..
+        }) = state.asset_dialog.as_mut()
+        else {
+            warn!(
+                target: telemetry_target::EDITOR,
+                "[editor] dialog set without an open create dialog"
+            );
+            return;
+        };
+        *field = type_name.to_string();
+        info!(
+            target: telemetry_target::EDITOR,
+            type_name,
+            "[editor] dialog type chosen"
+        );
     }
 
     /// Runs the open dialog's submit button.

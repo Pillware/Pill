@@ -665,6 +665,11 @@ pub fn insert_debug_resources(world: &mut World, debug_draw_enabled: bool) {
     if !world.has_resource::<pill_renderer_api::editor::PreviewGeneration>() {
         world.insert_resource(pill_renderer_api::editor::PreviewGeneration::default());
     }
+    // What a newly created material or pass should name. The renderer that owns
+    // the chain fills it in; an editor writes it into the file it creates.
+    if !world.has_resource::<pill_renderer_api::editor::DefaultShader>() {
+        world.insert_resource(pill_renderer_api::editor::DefaultShader::default());
+    }
 }
 
 /// Parses an asset pack and indexes every asset in it.
@@ -1296,8 +1301,8 @@ mod tests {
     /// A renderer module may register no data: a failed load of it keeps the
     /// world and clears only its systems, which is sound only while the module
     /// owns nothing. So the values a renderer touches - the preview requests,
-    /// answers and the generation it counts up - are inserted here, before any
-    /// artifact registers.
+    /// answers and the generation it counts up, and the shader a created file
+    /// should name - are inserted here, before any artifact registers.
     #[test]
     fn the_preview_values_are_inserted_before_any_artifact_loads() {
         let mut runtime = Runtime::new();
@@ -1307,6 +1312,10 @@ mod tests {
         assert!(world.has_resource::<pill_renderer_api::editor::PreviewRequests>());
         assert!(world.has_resource::<pill_renderer_api::editor::PreviewResults>());
         assert!(world.has_resource::<pill_renderer_api::editor::PreviewGeneration>());
+        assert!(
+            world.has_resource::<pill_renderer_api::editor::DefaultShader>(),
+            "an editor writes a created material's shader into a host value too"
+        );
     }
 
     /// A host with no renderer records no debug drawing across many frames.

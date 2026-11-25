@@ -733,22 +733,28 @@ impl ApplicationHandler for EditorApplication {
                 // window belongs to that tab and goes no further.
                 for event in translate_window_event(&other) {
                     let event = offset_pointer(event, origin);
+                    // The shell's pointer follows every editor window, so the
+                    // next event knows where the pointer is even when the game's
+                    // window reported the last move.
+                    match &event {
+                        InputEvent::CursorMoved { position } => {
+                            editor.shell_cursor = Some(*position);
+                        }
+                        InputEvent::CursorLeft => editor.shell_cursor = None,
+                        _ => {}
+                    }
+                    // A pointer over the shell's own drawing belongs to the
+                    // shell whichever window reported it: a dialog or an
+                    // overlay chip can sit over the game's window, and the
+                    // window it covers would otherwise take the press.
+                    let over_ui = carries_pointer(&event) && editor.pointer_is_ui();
                     if let Some(tab) = &popout_tab {
                         editor.popout_event(tab, event);
                         continue;
                     }
-                    match route_event(is_game) {
+                    match route_event(is_game, over_ui) {
                         EventRoute::Game => editor.pending_events.push(event),
-                        EventRoute::Shell => {
-                            match &event {
-                                InputEvent::CursorMoved { position } => {
-                                    editor.shell_cursor = Some(*position);
-                                }
-                                InputEvent::CursorLeft => editor.shell_cursor = None,
-                                _ => {}
-                            }
-                            editor.shell_events.push(event);
-                        }
+                        EventRoute::Shell => editor.shell_events.push(event),
                     }
                 }
                 // Input is what wakes a waiting loop: the event asks for the
@@ -1152,6 +1158,31 @@ impl EditorWindow {
         }
     }
 
+    /// Whether the shell's own drawing covers `point`, in the shell's logical
+    /// points.
+    ///
+    /// The regions are what the shell claimed for the UI this frame: overlay
+    /// chips, open menus and the windows it draws over the dock. A press on one
+    /// of them belongs to the UI, never to the scene or the game behind it.
+    fn point_is_ui(&self, point: (f32, f32)) -> bool {
+        self.overlay_regions
+            .iter()
+            .any(|region| region.contains(point.0, point.1))
+    }
+
+    /// Whether the shell's pointer is over the shell's own drawing.
+    ///
+    /// The pointer is kept in the main window's physical pixels, and the
+    /// regions in logical points, so the scale factor converts one into the
+    /// other. A pointer the editor has never seen is over nothing.
+    pub(super) fn pointer_is_ui(&self) -> bool {
+        let Some(cursor) = self.shell_cursor else {
+            return false;
+        };
+        let scale = self.scale_factor;
+        self.point_is_ui((cursor.x / scale, cursor.y / scale))
+    }
+
     /// Whether a scene view's pointer is over the shell's own UI rather than
     /// the viewport: one of the overlay's chips, or the margin the composition
     /// overlay grows the view's window by, where the shell draws the tab bar
@@ -1180,9 +1211,7 @@ impl EditorWindow {
                 }
             }
         }
-        self.overlay_regions
-            .iter()
-            .any(|region| region.contains(logical_x, logical_y))
+        self.point_is_ui((logical_x, logical_y))
     }
 
     /// The scene view whose window holds a main-window physical point, if
@@ -4429,15 +4458,35 @@ enum EventRoute {
 /// The focus rule in one place: the game's window feeds the game, every
 /// editor window feeds the shell.
 ///
-/// The event is not a parameter because it cannot matter: routing is decided
-/// by the window a click or key came through, and a signature that took the
-/// event would promise otherwise.
-fn route_event(is_game_window: bool) -> EventRoute {
-    if is_game_window {
+/// A pointer over the shell's own drawing is the exception, and it outranks the
+/// window the event came through: the shell draws its dialogs and chips over
+/// the scene and game views, so a press on one of them has to reach egui even
+/// when the window underneath reported it. Keys are never routed this way - a
+/// chord meant for the game must not be taken by a dialog the pointer happens
+/// to rest on.
+fn route_event(is_game_window: bool, pointer_over_ui: bool) -> EventRoute {
+    if pointer_over_ui {
+        EventRoute::Shell
+    } else if is_game_window {
         EventRoute::Game
     } else {
         EventRoute::Shell
     }
+}
+
+/// Whether this event is the pointer's, and so can be claimed by the UI.
+///
+/// Keys, text and modifiers are never claimed: they belong to whichever window
+/// has the focus, which is the focus rule's whole point.
+fn carries_pointer(event: &InputEvent) -> bool {
+    matches!(
+        event,
+        InputEvent::CursorMoved { .. }
+            | InputEvent::CursorLeft
+            | InputEvent::MouseButton { .. }
+            | InputEvent::MouseWheel { .. }
+            | InputEvent::MouseMotion { .. }
+    )
 }
 
 /// Shift a pointer event the scene window reported into the main window's
@@ -5247,8 +5296,42 @@ mod tests {
     /// and one from any editor window is the shell's alone.
     #[test]
     fn only_the_game_window_feeds_the_game() {
-        assert_eq!(route_event(true), EventRoute::Game);
-        assert_eq!(route_event(false), EventRoute::Shell);
+        assert_eq!(route_event(true, false), EventRoute::Game);
+        assert_eq!(route_event(false, false), EventRoute::Shell);
+    }
+
+    /// A pointer over the shell's own drawing belongs to the shell even when
+    /// the game's window reported it: the shell draws its dialog over that
+    /// window, and the window underneath would otherwise take the press.
+    #[test]
+    fn a_pointer_over_the_ui_outranks_the_window_it_came_through() {
+        assert_eq!(route_event(true, true), EventRoute::Shell);
+        assert_eq!(route_event(false, true), EventRoute::Shell);
+    }
+
+    /// Only the pointer's own events can be claimed by the UI; a key keeps the
+    /// focus rule, so a chord meant for the game is never taken by a dialog the
+    /// pointer happens to rest on.
+    #[test]
+    fn only_pointer_events_can_be_claimed_by_the_ui() {
+        let moved = InputEvent::CursorMoved {
+            position: pill_core::math::Vector2f::new(10.0, 20.0),
+        };
+        let pressed = InputEvent::MouseButton {
+            button: MouseButton::Left,
+            state: ButtonState::Pressed,
+        };
+        let key = InputEvent::Key {
+            key: KeyCode::Escape,
+            state: ButtonState::Pressed,
+        };
+        assert!(carries_pointer(&moved));
+        assert!(carries_pointer(&pressed));
+        assert!(carries_pointer(&InputEvent::CursorLeft));
+        assert!(
+            !carries_pointer(&key),
+            "a key belongs to the focused window, not the pointer"
+        );
     }
 
     /// A rectangle inside the window scales with the display and ends up where

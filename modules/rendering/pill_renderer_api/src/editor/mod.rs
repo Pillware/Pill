@@ -9,6 +9,8 @@
 //!   ([`picking::PickRequests`], [`picking::PickResults`]).
 //! - Ask for an asset preview drawn off-screen and carry its pixels back
 //!   ([`preview::PreviewRequests`], [`preview::PreviewResults`]).
+//! - Say what a newly created file should name, for the content a renderer owns
+//!   ([`defaults::DefaultShader`]).
 //!
 //! # Design
 //!
@@ -25,6 +27,9 @@
 // =============================================================================
 // Modules
 // =============================================================================
+
+/// What a renderer tells an editor about the content it draws.
+pub mod defaults;
 
 /// The scene grid of the view-bound surfaces: whether it is on, its line
 /// spacing, and the spacing one frame uses.
@@ -46,6 +51,7 @@ pub mod views;
 // Re-exports
 // =============================================================================
 
+pub use defaults::{ensure_editor_resources, DefaultShader};
 pub use grid::{frame_grid, SceneGrid};
 pub use picking::{
     decode_pick_value, PickHit, PickRequest, PickRequests, PickResult, PickResults, PICK_HANDLE_BIT,

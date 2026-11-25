@@ -17,6 +17,7 @@
 
 // External crates
 use pill_engine::Engine;
+use pill_renderer_api::editor::DefaultShader;
 
 // Current crate
 use super::CommandOutcome;
@@ -137,6 +138,10 @@ pub(super) fn apply(
             // Take the asset store before the file is written: an engine
             // without one must refuse the create rather than leave a file
             // that no asset manager will ever hold.
+            let default_shader = engine
+                .world()
+                .get_resource::<DefaultShader>()
+                .and_then(|default_shader| default_shader.guid());
             let assets = engine
                 .world_mut()
                 .get_resource_mut::<pill_engine::AssetManager>()
@@ -211,6 +216,7 @@ pub(super) fn apply(
             let document = registry
                 .default_document(type_name)
                 .map_err(|error| format!("{command:?}: {error}"))?;
+            let document = with_default_shader(default_shader, document);
             let guid = match kept_guid {
                 Some(guid) => guid,
                 None => pill_engine::AssetGuid::random().map_err(|error| {
@@ -542,4 +548,40 @@ pub(super) fn apply(
 
         other => unreachable!("{:?} is not an asset command", other.family()),
     }
+}
+
+// =============================================================================
+// Free Functions
+// =============================================================================
+
+/// Writes the renderer's default shader into a created document that names none.
+///
+/// A new material - or a new pass - is written with the shader it draws through,
+/// so the file says which one that is instead of leaving it to a substitution
+/// the person cannot see. The renderer names that shader through
+/// [`DefaultShader`], because only it knows its chain.
+///
+/// A document with no `shader` key belongs to a type that has no shader slot, and
+/// one that already names a shader keeps it. A world whose renderer never
+/// answered - no renderer loaded, or one that could not name a shader - leaves
+/// the document exactly as its type defaulted it, which is what makes this
+/// additive.
+fn with_default_shader(
+    default_shader: Option<pill_engine::AssetGuid>,
+    mut document: serde_json::Value,
+) -> serde_json::Value {
+    let Some(guid) = default_shader else {
+        return document;
+    };
+    let Some(fields) = document.as_object_mut() else {
+        return document;
+    };
+    if !fields.get("shader").is_some_and(serde_json::Value::is_null) {
+        return document;
+    }
+    fields.insert(
+        "shader".to_owned(),
+        serde_json::Value::String(guid.to_string()),
+    );
+    document
 }

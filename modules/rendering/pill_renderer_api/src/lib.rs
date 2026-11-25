@@ -149,6 +149,10 @@ mod tests {
             Some("pill_renderer_api::PreviewGeneration")
         );
         assert_eq!(
+            editor::DefaultShader::shared_name(),
+            Some("pill_renderer_api::DefaultShader")
+        );
+        assert_eq!(
             DebugDraw::shared_name(),
             Some("pill_renderer_api::DebugDraw")
         );

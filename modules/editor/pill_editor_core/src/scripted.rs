@@ -256,6 +256,9 @@ pub enum ScriptedCommand {
     SceneSave(Option<String>),
     /// `dialog set name <text>` - type into the open asset dialog's name field.
     DialogSetName(String),
+    /// `dialog set type <type_name>` - choose the open create dialog's asset
+    /// type, as a click on its row does.
+    DialogSetType(String),
     /// `dialog submit` - press the open asset dialog's confirm button.
     DialogSubmit,
     /// `edit asset <action> ...` - queue one recorded asset-file edit.
@@ -1211,6 +1214,10 @@ fn dialog(cursor: &mut Cursor<'_>) -> Result<ScriptedCommand, ParseError> {
             Some("name") => {
                 let text = cursor.text("dialog set name needs the text")?;
                 Ok(ScriptedCommand::DialogSetName(text))
+            }
+            Some("type") => {
+                let text = cursor.text("dialog set type needs the type name")?;
+                Ok(ScriptedCommand::DialogSetType(text))
             }
             _ => Err(ParseError::new("dialog set needs name or type")),
         },
@@ -2405,6 +2412,10 @@ mod tests {
             Accept {
                 line: "dialog set name two words",
                 command: ScriptedCommand::DialogSetName("two words".to_string()),
+            },
+            Accept {
+                line: "dialog set type pill_rendering::Material",
+                command: ScriptedCommand::DialogSetType("pill_rendering::Material".to_string()),
             },
             Accept {
                 line: "dialog submit",

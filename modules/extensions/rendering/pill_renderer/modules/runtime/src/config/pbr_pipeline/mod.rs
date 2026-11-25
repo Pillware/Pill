@@ -111,8 +111,11 @@ const OPAQUE_PASS: &str = "pill.pbr.pass.opaque";
 /// Each factor multiplies the map bound to its slot, so these values leave a
 /// bound map unchanged. A slot with no map bound falls back to the renderer's
 /// default texture for the slot's type. The values are `pill_rendering`'s
-/// neutral set, which every newly created `.material` starts from, so the
-/// chain's default material and a new file start out the same.
+/// neutral set, which the chain's default material uses so that any renderer can
+/// draw the same file; a material a person creates starts from
+/// [`new_material_parameters`](pill_rendering::new_material_parameters) instead,
+/// because with nothing bound the neutral set draws as a mirror giving off white
+/// light.
 pub fn neutral_parameters() -> BTreeMap<String, MaterialParameter> {
     pill_rendering::neutral_material_parameters()
 }
@@ -139,6 +142,10 @@ fn default_sky_pass() -> RenderPass {
 /// [`register`](crate::register) declares. The `.hlsl.meta` beside it carries
 /// the guid every material file names and the slots the pass reads.
 ///
+/// [`register`](crate::register) imports it even when a project brought a chain
+/// of its own, so a material created in the editor names a shader the store can
+/// resolve.
+///
 /// # Errors
 ///
 /// Returns the store's import error when the source or its `.hlsl.meta` will not
@@ -148,7 +155,7 @@ fn default_sky_pass() -> RenderPass {
 ///
 /// Panics when the imported shader does not carry [`SHADER_GUID`], which happens
 /// when the meta is missing or names another guid.
-fn install_pbr_shader(
+pub(crate) fn install_pbr_shader(
     assets: &mut AssetManager,
 ) -> Result<Handle<Shader>, Box<dyn std::error::Error>> {
     crate::config::import_shader(assets, SHADER_PATH, SHADER_GUID)

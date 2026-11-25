@@ -64,12 +64,12 @@ pub use pill_renderer_api::RayTracedShadows;
 
 // Current crate
 pub use assets::{
-    load_shipped_texture, neutral_material_parameters, Material, MaterialBuilder, MaterialDocument,
-    MaterialTexture, Mesh, MeshImportSettings, MeshVertex, PipelinePass, PipelinePassDocument,
-    RenderPass, RenderPassDocument, RenderingPipeline, RenderingPipelineDocument, Shader,
-    ShaderBuilder, ShaderImportSettings, ShaderParameterSlot, ShaderParameterType,
-    ShaderTextureKind, ShaderTextureSlot, Texture, TextureImportSettings, TextureType,
-    DEFAULT_COLOR_TEXTURE, DEFAULT_MATERIAL_PATH, DEFAULT_NORMAL_TEXTURE,
+    load_shipped_texture, neutral_material_parameters, new_material_parameters, Material,
+    MaterialBuilder, MaterialDocument, MaterialTexture, Mesh, MeshImportSettings, MeshVertex,
+    PipelinePass, PipelinePassDocument, RenderPass, RenderPassDocument, RenderingPipeline,
+    RenderingPipelineDocument, Shader, ShaderBuilder, ShaderImportSettings, ShaderParameterSlot,
+    ShaderParameterType, ShaderTextureKind, ShaderTextureSlot, Texture, TextureImportSettings,
+    TextureType, DEFAULT_COLOR_TEXTURE, DEFAULT_MATERIAL_PATH, DEFAULT_NORMAL_TEXTURE,
 };
 pub use components::*;
 pub use rendering_manager::{AppendPipeline, RenderingManager};

@@ -215,6 +215,33 @@ pub const DEFAULT_MATERIAL_PATH: &str = "materials/pill.pbr.material";
 
 /// The parameters a newly created material starts with, by slot name.
 ///
+/// A plain, lit surface: a light grey base, roughness halfway, no metalness and
+/// no light of its own. Those are the values a person who just created a
+/// material expects to see shading from, and to be able to pull a colour away
+/// from; `neutral_material_parameters` is the other kind of default, the
+/// multipliers the shipped default material uses so that a bound map passes
+/// through unchanged, which with no maps bound draws as a mirror that gives off
+/// white light.
+///
+/// The names are the material slot vocabulary the shipped shaders use; a
+/// renderer whose shader declares other slots ignores them.
+pub fn new_material_parameters() -> BTreeMap<String, MaterialParameter> {
+    BTreeMap::from([
+        (
+            "pbr_base".to_owned(),
+            MaterialParameter::Color([0.8, 0.8, 0.8]),
+        ),
+        ("pbr_roughness".to_owned(), MaterialParameter::Scalar(0.5)),
+        ("pbr_metallic".to_owned(), MaterialParameter::Scalar(0.0)),
+        (
+            "pbr_emissive".to_owned(),
+            MaterialParameter::Color([0.0, 0.0, 0.0]),
+        ),
+    ])
+}
+
+/// The parameters a newly created material starts with, by slot name.
+///
 /// Each factor multiplies the map bound to its slot, so these values leave a
 /// bound map unchanged, and a slot left unset would pack as zero instead. The
 /// names are the material slot vocabulary the shipped shaders use; a renderer
@@ -243,12 +270,14 @@ pub fn neutral_material_parameters() -> BTreeMap<String, MaterialParameter> {
 /// resolves to [`Handle::INVALID`], which draws with the renderer's default
 /// shader or the slot's default texture.
 ///
-/// A newly created file holds the default document, and it draws as it is: no
-/// shader of its own, so the renderer substitutes the one it draws an
-/// unqualified material with, at the neutral parameters below, with no maps
-/// bound. Naming a shader is how a material joins a chain that draws only its
-/// own: a project with a custom chain points its materials at that chain's
-/// shader. Maps are `BTreeMap`s for the reason [`Material`] gives.
+/// A newly created file starts from the default document: no shader of its own,
+/// so the renderer substitutes the one it draws an unqualified material with, at
+/// the neutral parameters below, with no maps bound. The editor fills that
+/// shader in when the renderer names one, so the material a person just made
+/// says which shader it draws through instead of leaving it to a substitution
+/// they cannot see. Naming a shader is also how a material joins a chain that
+/// draws only its own: a project with a custom chain points its materials at
+/// that chain's shader. Maps are `BTreeMap`s for the reason [`Material`] gives.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MaterialDocument {
@@ -264,12 +293,13 @@ pub struct MaterialDocument {
 }
 
 impl Default for MaterialDocument {
-    /// No shader and the neutral parameters; see the type's docs.
+    /// No shader and the plain surface a new material starts from; see the
+    /// type's docs.
     fn default() -> Self {
         Self {
             shader: AssetReference::unset(),
             textures: BTreeMap::new(),
-            parameters: neutral_material_parameters(),
+            parameters: new_material_parameters(),
             rendering_order: u8::MAX,
         }
     }
@@ -310,12 +340,14 @@ impl StandaloneAsset for Material {
 mod tests {
     use super::*;
 
-    /// A newly created `.material` file draws as it is: it names no shader, so
-    /// a renderer substitutes its own default, and it starts at the neutral
-    /// parameters with nothing bound. The file this crate ships is the same
-    /// document, which is what makes the default material renderer-neutral.
+    /// A newly created `.material` file draws as it is and looks like a plain
+    /// surface: it names no shader, so a renderer substitutes its own default,
+    /// and it starts at [`new_material_parameters`] - grey, halfway rough,
+    /// non-metal, no light of its own - with nothing bound. The file this crate
+    /// ships as the default material is the other kind of default: the neutral
+    /// multipliers, which is what makes it renderer-neutral.
     #[test]
-    fn the_default_document_is_the_neutral_material() {
+    fn the_default_document_is_a_plain_surface() {
         let mut assets = AssetManager::new();
         crate::declare_crate_roots();
 
@@ -325,7 +357,12 @@ mod tests {
 
         assert_eq!(material.shader, Handle::INVALID);
         assert!(material.textures.is_empty());
-        assert_eq!(material.parameters, neutral_material_parameters());
+        assert_eq!(material.parameters, new_material_parameters());
+        assert_ne!(
+            material.parameters,
+            neutral_material_parameters(),
+            "a new material is a surface to look at, not the identity multipliers"
+        );
         assert_eq!(material.rendering_order, u8::MAX);
         assert_eq!(
             serde_json::to_value(MaterialDocument::default()).unwrap()["shader"],
@@ -340,7 +377,11 @@ mod tests {
             .get(shipped.handle)
             .expect("the material it just imported");
         assert_eq!(shipped_material.shader, material.shader);
-        assert_eq!(shipped_material.parameters, material.parameters);
+        assert_eq!(
+            shipped_material.parameters,
+            neutral_material_parameters(),
+            "the shipped file keeps the identity multipliers"
+        );
         assert!(shipped_material.textures.is_empty());
     }
 }

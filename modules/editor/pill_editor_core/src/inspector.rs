@@ -1851,11 +1851,16 @@ pub fn patch_settings_inserting(
 
 /// Parse an edited text back into the JSON kind `current` already holds.
 ///
+/// An array is a colour or a vector parameter: its text holds the channels,
+/// bracketed and comma separated, and it must have as many numbers as the value
+/// it replaces.
+///
 /// # Errors
 ///
 /// A message saying the text is not a boolean, an integer or a number of the
-/// current kind, that a number is not finite, or that the document's kind has
-/// no editor here.
+/// current kind, that a number is not finite, that an array's text is not a list
+/// of numbers of the same length, or that the document's kind has no editor
+/// here.
 pub fn parse_settings_value(text: &str, current: &JsonValue) -> Result<JsonValue, String> {
     let text = text.trim();
     let parsed = match current {
@@ -1870,6 +1875,22 @@ pub fn parse_settings_value(text: &str, current: &JsonValue) -> Result<JsonValue
             }
         }
         JsonValue::String(_) => JsonValue::String(text.to_string()),
+        JsonValue::Array(channels) => {
+            let parsed: Vec<f64> =
+                serde_json::from_str(text).map_err(|_| "not a list of numbers")?;
+            if parsed.len() != channels.len() {
+                return Err(format!(
+                    "a list of {} numbers, not {}",
+                    channels.len(),
+                    parsed.len()
+                ));
+            }
+            let numbers: Option<Vec<JsonValue>> = parsed
+                .into_iter()
+                .map(|channel| serde_json::Number::from_f64(channel).map(JsonValue::Number))
+                .collect();
+            JsonValue::Array(numbers.ok_or("a channel is not a finite number")?)
+        }
         other => return Err(format!("`{other}` settings are not editable here")),
     };
     Ok(parsed)
@@ -2253,6 +2274,22 @@ mod tests {
         assert!(parse_settings_value("2", &json!("Color")).is_ok());
         assert!(parse_settings_value("nope", &json!(1)).is_err());
         assert!(parse_settings_value("1", &json!({"a": 1})).is_err());
+    }
+
+    /// A colour parameter holds its channels as a list, so its text is a list
+    /// too: the same length, and every channel a finite number.
+    #[test]
+    fn a_colour_parameter_parses_as_its_list_of_channels() {
+        assert_eq!(
+            parse_settings_value("[0.25, 0.5, 1.0]", &json!([1.0, 1.0, 1.0])),
+            Ok(json!([0.25, 0.5, 1.0]))
+        );
+        assert!(
+            parse_settings_value("[1, 0, 0, 1]", &json!([1.0, 1.0, 1.0])).is_err(),
+            "a channel count that differs is refused"
+        );
+        assert!(parse_settings_value("[1, 0]", &json!([1.0, 1.0, 1.0])).is_err());
+        assert!(parse_settings_value("red", &json!([1.0, 1.0, 1.0])).is_err());
     }
 
     #[test]

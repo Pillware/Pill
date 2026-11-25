@@ -1320,14 +1320,32 @@ dependencies = [
 ]
 
 [[package]]
-name = "host_project_cube_rust"
+name = "host_module_pill_test"
 version = "0.1.0"
 dependencies = [
- "glam 0.33.7",
+ "pill_engine",
+ "pill_test",
+]
+
+[[package]]
+name = "host_module_pill_test_editor"
+version = "0.1.0"
+dependencies = [
+ "pill_engine",
+ "pill_test_editor",
+]
+
+[[package]]
+name = "host_project_native"
+version = "0.1.0"
+dependencies = [
  "pill_core",
  "pill_engine",
+ "pill_renderer_api",
  "pill_rendering",
  "pill_spline",
+ "serde",
+ "tracing",
 ]
 
 [[package]]

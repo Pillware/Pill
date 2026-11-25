@@ -40,8 +40,8 @@ pub use pill_renderer_api::frame::{CullMode, MaterialParameter, PassKind, PassTa
 
 // Current crate
 pub use material::{
-    neutral_material_parameters, Material, MaterialBuilder, MaterialDocument, MaterialTexture,
-    DEFAULT_MATERIAL_PATH,
+    neutral_material_parameters, new_material_parameters, Material, MaterialBuilder,
+    MaterialDocument, MaterialTexture, DEFAULT_MATERIAL_PATH,
 };
 pub use mesh::{Mesh, MeshImportSettings, MeshVertex};
 pub use render_pass::RenderPass;

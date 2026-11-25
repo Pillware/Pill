@@ -105,8 +105,8 @@ pub mod shader_hot_reload;
 use std::path::Path;
 // External crates
 use pill_core::telemetry::telemetry_target;
-use pill_engine::{pill_module, AssetManager, Engine, World};
-use pill_renderer_api::editor::PreviewGeneration;
+use pill_engine::{pill_module, AssetGuid, AssetManager, Engine, Handle, World};
+use pill_renderer_api::editor::{DefaultShader, PreviewGeneration};
 
 // The contract and the data crates are re-exported here - their items and
 // their module names - so this crate's own paths (`crate::api`,
@@ -173,6 +173,14 @@ pub fn register(engine: &mut Engine) -> u32 {
         install_default_pbr_pipeline(engine.world_mut());
     }
 
+    // Step 2b: Import the shader this renderer ships, whether or not the chain
+    // above is the one running. A project that brought its own chain still gets
+    // the asset, because a material created in an editor names this shader and
+    // a name nothing resolves is worse than no name at all.
+    if let Some(assets) = engine.world_mut().get_resource_mut::<AssetManager>() {
+        let _ = config::pbr_pipeline::install_pbr_shader(assets);
+    }
+
     // Step 3: Install the sphere a material preview draws on and the material a
     // mesh preview draws with. Both are assets like any other, so the chain
     // draws them exactly as it draws a game's meshes: one instance, through its
@@ -180,11 +188,87 @@ pub fn register(engine: &mut Engine) -> u32 {
     install_preview_sphere(engine.world_mut());
     install_preview_material(engine.world_mut());
 
-    // Step 4: Say a new generation draws this artifact's previews. An editor
+    // Step 4: Say which shader a newly created material or pass should name.
+    // The editor writes files but owns no chain, so it cannot work this out;
+    // the shader below is the one this chain draws a shaderless material with,
+    // and a store that does not hold it leaves the answer empty so no file
+    // names a shader nothing can resolve.
+    note_default_shader(engine.world_mut());
+
+    // Step 5: Say a new generation draws this artifact's previews. An editor
     // drops the pictures it keeps when the number moves, because they were
     // drawn by the previous generation's code.
     note_preview_generation(engine.world_mut());
     0
+}
+
+/// Names the shader a created file should start with.
+///
+/// The value is the host's, inserted before any artifact loads, for the reason
+/// [`note_preview_generation`] gives: a renderer may register no data of its
+/// own. A world that arrived without the value (a test, a frontend that creates
+/// no files) is left alone rather than given one.
+fn note_default_shader(world: &mut World) {
+    let Some(guid) = default_shader_guid(world) else {
+        pill_core::info!(
+            target: telemetry_target::RENDERING,
+            "[render] a created file names no default shader: the chain names none this store holds"
+        );
+        return;
+    };
+    pill_core::info!(
+        target: telemetry_target::RENDERING,
+        guid = %guid,
+        "[render] a created material or pass names the chain's shader"
+    );
+    if let Some(default_shader) = world.get_resource_mut::<DefaultShader>() {
+        default_shader.guid = Some(guid);
+    }
+}
+
+/// The shader a created material or pass should name: the first one the chain
+/// draws through.
+///
+/// The chain is the project's rather than this renderer's - a project sets its
+/// pipeline from its own `init`, which runs before this module loads - so the
+/// answer comes from the passes: the first enabled one that names a shader, its
+/// own or the one its material carries. A chain that names none falls back to
+/// the shader this renderer ships for its own lit pass, and a store that holds
+/// neither leaves no answer, so no file names a shader nothing can resolve.
+fn default_shader_guid(world: &World) -> Option<AssetGuid> {
+    let assets = world.get_resource::<AssetManager>()?;
+    let chain_shader = world
+        .get_resource::<RenderingManager>()
+        .and_then(|manager| manager.pipeline())
+        .and_then(|pipeline| assets.get(pipeline))
+        .and_then(|pipeline| {
+            pipeline
+                .passes
+                .iter()
+                .filter(|entry| entry.enabled)
+                .find_map(|entry| {
+                    let pass = assets.get(entry.pass)?;
+                    if !pass.enabled {
+                        return None;
+                    }
+                    // A pass that names no shader of its own draws through the
+                    // shader of the material it names, and the chain's own
+                    // default when it names none of either.
+                    let shader = if pass.shader != Handle::INVALID {
+                        pass.shader
+                    } else if pass.material != Handle::INVALID {
+                        assets.get(pass.material).map(|material| material.shader)?
+                    } else {
+                        Handle::INVALID
+                    };
+                    assets.guid_of(shader)
+                })
+        });
+    chain_shader.or_else(|| {
+        assets
+            .handle_by_guid::<crate::assets::Shader>(config::pbr_pipeline::SHADER_GUID)
+            .map(|_| config::pbr_pipeline::SHADER_GUID)
+    })
 }
 
 /// Adds one to the generation an editor keeps its preview pictures by.
@@ -467,6 +551,55 @@ mod tests {
         register(&mut engine);
 
         assert_eq!(preview_assets(&engine), (sphere, material));
+    }
+
+    /// Registering says which shader a newly created file should name, so an
+    /// editor writes a material that carries the shader it draws through
+    /// instead of leaving it to a substitution the person cannot see.
+    #[test]
+    fn registering_names_the_shader_a_created_file_should_use() {
+        let mut engine = engine_with_the_data_registered();
+        pill_renderer_api::editor::ensure_editor_resources(engine.world_mut());
+
+        register(&mut engine);
+
+        let named = engine
+            .world()
+            .get_resource::<pill_renderer_api::editor::DefaultShader>()
+            .expect("the host inserted the value before the artifact loaded")
+            .guid();
+        assert_eq!(
+            named,
+            Some(config::pbr_pipeline::SHADER_GUID),
+            "the renderer's own shader is the one a created material names"
+        );
+        let assets = engine
+            .world()
+            .get_resource::<AssetManager>()
+            .expect("the engine inserts the store");
+        assert!(
+            assets
+                .handle_by_guid::<crate::assets::Shader>(config::pbr_pipeline::SHADER_GUID)
+                .is_some(),
+            "and that guid names a shader the store holds"
+        );
+    }
+
+    /// A world without the host's value is left alone: a renderer registers no
+    /// data of its own, so a test world is not given a resource it never had.
+    #[test]
+    fn registering_a_world_without_the_value_inserts_nothing() {
+        let mut engine = engine_with_the_data_registered();
+
+        register(&mut engine);
+
+        assert!(
+            engine
+                .world()
+                .get_resource::<pill_renderer_api::editor::DefaultShader>()
+                .is_none(),
+            "the value belongs to the host, not to the renderer"
+        );
     }
 
     /// The two preview assets as the store holds them.
