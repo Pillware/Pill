@@ -26,6 +26,7 @@ thiserror = "2"
 miette = { version = "7", features = ["derive"] }
 glam = { version = "0.33", features = ["serde", "bytemuck"] }
 bytemuck = { version = "1.4", features = ["derive"] }
+wgpu = "30.0.0"
 # A texture preview decodes the file the tile names: a project brings a
 # texture in under its own asset name, and a file nothing loaded still
 # previews (W-0049 Stage 11).
@@ -42,10 +43,3 @@ pill_ui_frame = { path = "../../../../../rendering/pill_ui_frame" }
 # This renderer's data crate: its components, assets, pipelines and shaders.
 # Everything wgpu-free that is specific to the master renderer lives there.
 pill_master_renderer_data = { path = "../data" }
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-wgpu = "30.0.0"
-
-# WebGPU only on the web: the WebGL backend would link wgpu-core, naga and glow.
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-wgpu = { version = "30.0.0", default-features = false, features = ["webgpu", "wgsl", "std"] }
