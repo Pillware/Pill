@@ -9,11 +9,10 @@ software), or the organization that takes their place under section 5 (the
 **Licensor**).
 
 **Summary:** you keep your copyright. You give the Licensor a broad, free,
-non-exclusive license, so your contribution can be offered under each of
-Pill Engine's licenses: the Community License, the Partner License and an
-Open Source License, currently the EUPL-1.2 (see section 3.4). Contributing is
-voluntary and unpaid. Any licensing income, including from Partner Licenses,
-supports the further development of Pill Engine.
+non-exclusive license, so your contribution can be offered under any of
+Pill Engine's licenses including an Open Source License, currently the EUPL-1.2
+(see section 3.4). Contributing is voluntary and unpaid. Any licensing
+income, supports the further development of Pill Engine.
 
 ## 1. Definition of Contributions
 
@@ -72,9 +71,8 @@ writing.
 based on your Contributions, and to authorize others to do so.
 
 3.4. The Licensor may sublicense your Contributions to anyone, for a fee or
-free of charge, on any terms, including proprietary ones, such as the Pill
-Engine Community License, the Pill Engine Partner License and an **Open
-Source License**: the European Union Public Licence, version 1.2 only
+free of charge, on any terms, including proprietary ones and an **Open
+Source License**: the European Union Public Licence, version 1.2
 (EUPL-1.2), or another license approved by the Open Source Initiative.
 
 Any sublicense may let its holder allow others, such as affiliates,
@@ -133,8 +131,7 @@ such as the foundation the Licensor plans to found for Pill Engine (see
 - exists to develop Pill Engine and keeps it available under an Open Source
   License;
 - uses its income only for that purpose;
-- is not controlled by any sponsor or Partner License holder; and
-- reports its income and spending publicly each year.
+- is not controlled by any sponsor.
 
 The transfer takes effect through a legally effective transfer instrument
 and is announced in the Pill Engine Project's repository.
