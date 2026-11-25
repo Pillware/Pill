@@ -178,7 +178,7 @@ pub use assets::{
 // `crate::settings::SettingsOutcome`) and only the sibling modules need an
 // alias here.
 pub use scene::{saved_references, startup_scene};
-pub use services::{debug_draw, diagnostics, gizmos, input, profiling, time};
+pub use services::{diagnostics, input, profiling, time};
 
 // The hot_reload group's modules, under the names callers have always used.
 pub use hot_reload::{hot_patch, persistence};
@@ -213,14 +213,6 @@ pub use scene::scene::{
     load_scene, save_scene, Scene, SceneDocument, SceneEntity, SceneLoad, SceneSave,
 };
 pub use scene::startup_scene::{apply_startup_scene, queue_startup_scene, StartupScene};
-pub use services::debug_draw::{
-    DebugColor, DebugDraw, DebugFrame, DebugLabel, DebugLifetime, DebugLine, DebugStyle, GizmoLine,
-    GizmoPoint, GizmoPointShape, GizmoTriangle, LabelAnchor,
-};
-pub use services::gizmos::{
-    GizmoChrome, GizmoContext, GizmoDeclaration, GizmoDraw, GizmoDrawEntry, GizmoEntry, GizmoFrame,
-    GizmoRegistry, GizmoSelection, GizmoWhen,
-};
 pub use services::input::{
     ButtonState, GamepadAxis, GamepadButton, Input, InputEvent, KeyCode, Modifiers, MouseButton,
     PlayerId, RumbleRequest, ScrollDelta,
@@ -262,10 +254,10 @@ pub use tracing;
 // `resource` and `asset` are the declaration form an author writes; each
 // expands to the derive beside it.
 pub use pill_engine_macros::{
-    asset, component, pill_hot, pill_hot_fn, pill_hot_resolver, pill_mirror_fn, pill_mirror_impl,
-    pill_mirror_method, pill_mirror_object, pill_mirror_resource, pill_module, pill_project,
-    pill_value_type, resource, script, system, PillAsset, PillComponent, PillLayout, PillMirror,
-    PillResource, PillSettings,
+    asset, component, gizmo_override, pill_hot, pill_hot_fn, pill_hot_resolver, pill_mirror_fn,
+    pill_mirror_impl, pill_mirror_method, pill_mirror_object, pill_mirror_resource, pill_module,
+    pill_project, pill_value_type, resource, script, system, PillAsset, PillComponent, PillLayout,
+    PillMirror, PillResource, PillSettings,
 };
 
 // World container and its entity-builder and error types.

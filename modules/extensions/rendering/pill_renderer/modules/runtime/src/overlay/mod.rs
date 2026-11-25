@@ -38,8 +38,9 @@ use std::collections::HashSet;
 
 // External crates
 use pill_core::math::Vector2f;
-use pill_engine::{DebugFrame, Entity, GizmoPointShape};
-use pill_renderer_api::{PickHit, PickRequest, PickResult, PICK_HANDLE_BIT};
+use pill_engine::Entity;
+use pill_renderer_api::editor::{PickHit, PickRequest, PickResult, PICK_HANDLE_BIT};
+use pill_renderer_api::{DebugDepth, DebugFrame, GizmoPointShape, LabelAlign};
 use pill_rendering::color_space::linear_to_srgb;
 use pill_rendering_core::projection::{
     clip_polygon_to_near, expand_polygon, label_origin, line_quad, point_quad,
@@ -111,6 +112,9 @@ struct LineVertex {
     clip_position: [f32; 4],
     color: [f32; 4],
     across_pixels: f32,
+    /// Whether the fragment shader drops every other pixel of this line, which
+    /// is how a dimmed drawing reads as being behind the geometry.
+    hidden: f32,
 }
 
 /// A gizmo-triangle vertex after projection: the corner pushed out by the
@@ -240,6 +244,7 @@ pub(crate) struct OverlayFrame<'a> {
 /// surface they belong to.
 pub(crate) struct Overlay {
     depth_tested_lines_pipeline: wgpu::RenderPipeline,
+    dimmed_lines_pipeline: wgpu::RenderPipeline,
     on_top_lines_pipeline: wgpu::RenderPipeline,
     on_top_triangles_pipeline: wgpu::RenderPipeline,
     on_top_points_pipeline: wgpu::RenderPipeline,
@@ -254,6 +259,7 @@ pub(crate) struct Overlay {
     outline_bind_group_layout: wgpu::BindGroupLayout,
     outline_parameters_buffer: wgpu::Buffer,
     tested_lines_buffer: StreamBuffer,
+    dimmed_lines_buffer: StreamBuffer,
     on_top_lines_buffer: StreamBuffer,
     triangles_buffer: StreamBuffer,
     points_buffer: StreamBuffer,
@@ -398,7 +404,7 @@ impl Overlay {
         let line_vertex = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<LineVertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: attributes![0 => Float32x4, 1 => Float32x4, 2 => Float32],
+            attributes: attributes![0 => Float32x4, 1 => Float32x4, 2 => Float32, 3 => Float32],
         };
         let triangle_vertex = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<TriangleVertex>() as u64,
@@ -454,6 +460,10 @@ impl Overlay {
             false,
         );
         let pick_mesh = depth_state(PICK_BUFFER_DEPTH_FORMAT, wgpu::CompareFunction::Less, true);
+        // A drawing that shows through geometry is drawn where the scene is
+        // nearer, so it is the pixels the scene covers that it lands on; the
+        // fragment shader mutes them and drops every other one.
+        let dimmed = depth_state(depth_format, wgpu::CompareFunction::Greater, false);
         // The grid is pinned to the far plane, so its own compare keeps it
         // behind the chain's geometry and lets it show everywhere else.
         let grid_depth = depth_state(depth_format, wgpu::CompareFunction::LessEqual, false);
@@ -531,6 +541,15 @@ impl Overlay {
                 wgpu::PrimitiveTopology::TriangleList,
                 blended.clone(),
                 Some(on_top.clone()),
+            )),
+            dimmed_lines_pipeline: pipeline(world(
+                "overlay_lines_dimmed",
+                "line_vertex",
+                "dimmed_line_fragment",
+                line_buffers,
+                wgpu::PrimitiveTopology::TriangleList,
+                blended.clone(),
+                Some(dimmed),
             )),
             on_top_triangles_pipeline: pipeline(world(
                 "overlay_triangles_on_top",
@@ -614,6 +633,10 @@ impl Overlay {
             outline_parameters_buffer,
             tested_lines_buffer: StreamBuffer::new(
                 "overlay_lines_tested",
+                wgpu::BufferUsages::VERTEX,
+            ),
+            dimmed_lines_buffer: StreamBuffer::new(
+                "overlay_lines_dimmed",
                 wgpu::BufferUsages::VERTEX,
             ),
             on_top_lines_buffer: StreamBuffer::new(
@@ -747,18 +770,23 @@ impl Overlay {
             overlay_frame.viewport.width.max(1) as f32,
             overlay_frame.viewport.height.max(1) as f32,
         );
-        let (tested, on_top) =
+        let (tested, dimmed, on_top) =
             line_vertices(&frame.debug, view_projection, viewport_size, editor_view);
         let triangles =
             triangle_vertices(&frame.debug, view_projection, viewport_size, editor_view);
         let points = point_vertices(&frame.debug, view_projection, viewport_size, editor_view);
         let tested_count = tested.len() as u32;
+        let dimmed_count = dimmed.len() as u32;
         let on_top_count = on_top.len() as u32;
         let triangle_count = triangles.len() as u32;
         let point_count = points.len() as u32;
         let tested_buffer = self
             .tested_lines_buffer
             .write(device, queue, bytemuck::cast_slice(&tested))
+            .cloned();
+        let dimmed_buffer = self
+            .dimmed_lines_buffer
+            .write(device, queue, bytemuck::cast_slice(&dimmed))
             .cloned();
         let on_top_buffer = self
             .on_top_lines_buffer
@@ -775,6 +803,7 @@ impl Overlay {
 
         let draws_into_surface = !outlined_positions.is_empty()
             || tested_buffer.is_some()
+            || dimmed_buffer.is_some()
             || on_top_buffer.is_some()
             || triangles_buffer.is_some()
             || points_buffer.is_some()
@@ -843,6 +872,7 @@ impl Overlay {
                     &tested_buffer,
                     tested_count,
                 ),
+                (&self.dimmed_lines_pipeline, &dimmed_buffer, dimmed_count),
                 (&self.on_top_lines_pipeline, &on_top_buffer, on_top_count),
                 (
                     &self.on_top_triangles_pipeline,
@@ -1203,52 +1233,79 @@ fn draw_queue_positions(
 }
 
 /// The frame's debug lines and gizmo lines as screen-space quads, split into
-/// the lines tested against the scene's depth and the lines drawn on top.
+/// the lines the scene's depth hides, the lines that show through it in the
+/// muted look, and the lines drawn on top.
 ///
 /// Each quad is the segment widened by the line's half width plus its feather
 /// on each side. Every corner carries its distance from the line's centre, so
 /// the fragment shader can fade the edge. The widening happens in screen space
 /// after projection, so a line keeps the same width at any depth. When
 /// `editor_view` is false, the project's own debug lines still draw but the
-/// editor's chrome (its drag guides and its gizmo handles) does not.
+/// editor's own line drawings - its drag guides and its gizmo handles - do not.
 fn line_vertices(
     debug_frame: &DebugFrame,
     view_projection: &pill_core::math::Matrix4f,
     viewport_size: (f32, f32),
     editor_view: bool,
-) -> (Vec<LineVertex>, Vec<LineVertex>) {
+) -> (Vec<LineVertex>, Vec<LineVertex>, Vec<LineVertex>) {
     let offset = LINE_HALF_WIDTH + LINE_FEATHER;
-    let push_line =
-        |output: &mut Vec<LineVertex>, start: [f32; 3], end: [f32; 3], color: [f32; 4]| {
-            let Some(quad) = line_quad(start, end, view_projection, viewport_size, offset) else {
-                return;
-            };
-            for (clip_position, side) in quad.into_iter().zip(LINE_QUAD_SIDES) {
-                output.push(LineVertex {
-                    clip_position,
-                    color,
-                    across_pixels: side * offset,
-                });
-            }
+    let push_line = |output: &mut Vec<LineVertex>,
+                     start: [f32; 3],
+                     end: [f32; 3],
+                     color: [f32; 4],
+                     hidden: f32| {
+        let Some(quad) = line_quad(start, end, view_projection, viewport_size, offset) else {
+            return;
         };
-    let mut tested = Vec::new();
-    let mut on_top = Vec::new();
-    for line in &debug_frame.lines {
-        if line.chrome && !editor_view {
-            continue;
+        for (clip_position, side) in quad.into_iter().zip(LINE_QUAD_SIDES) {
+            output.push(LineVertex {
+                clip_position,
+                color,
+                across_pixels: side * offset,
+                hidden,
+            });
         }
-        if line.depth_test {
-            push_line(&mut tested, line.start, line.end, line.color);
-        } else {
-            push_line(&mut on_top, line.start, line.end, line.color);
+    };
+    let dim = |color: [f32; 4], brightness: f32| {
+        [
+            color[0] * brightness,
+            color[1] * brightness,
+            color[2] * brightness,
+            color[3],
+        ]
+    };
+    let mut tested = Vec::new();
+    let mut dimmed = Vec::new();
+    let mut on_top = Vec::new();
+    for line in debug_frame.visible_lines(editor_view) {
+        match line.depth {
+            DebugDepth::OnTop => push_line(&mut on_top, line.start, line.end, line.color, 0.0),
+            DebugDepth::Hidden => {
+                push_line(&mut tested, line.start, line.end, line.color, 0.0);
+            }
+            DebugDepth::Dimmed { hidden } => {
+                // The part in front of the geometry keeps the line's colour, and
+                // the part the geometry covers is drawn too, muted - the same
+                // vertices, under the pipeline that keeps what the scene is in
+                // front of.
+                push_line(&mut tested, line.start, line.end, line.color, 0.0);
+                let checker = if hidden.checker { 1.0 } else { 0.0 };
+                push_line(
+                    &mut dimmed,
+                    line.start,
+                    line.end,
+                    dim(line.color, hidden.brightness.clamp(0.0, 1.0)),
+                    checker,
+                );
+            }
         }
     }
     for line in &debug_frame.gizmo_lines {
         if editor_view {
-            push_line(&mut on_top, line.start, line.end, line.color);
+            push_line(&mut on_top, line.start, line.end, line.color, 0.0);
         }
     }
-    (tested, on_top)
+    (tested, dimmed, on_top)
 }
 
 /// The frame's gizmo triangles as screen-space triangles whose corners are
@@ -1376,6 +1433,11 @@ fn handle_line_vertices(
         }));
     }
     for point in &debug_frame.gizmo_points {
+        // A mark that only shows a position is not a handle: it must not
+        // shadow whatever the pointer is really over.
+        if !point.pickable {
+            continue;
+        }
         let value = PICK_HANDLE_BIT | point.handle;
         let Some(quad) = point_quad(
             point.position,
@@ -1415,28 +1477,56 @@ fn handle_triangle_vertices(debug_frame: &DebugFrame) -> Vec<HandleVertex> {
 /// and right. The UI painter draws it after the overlay, so text stays readable
 /// over everything the overlay drew.
 ///
+/// A label draws at the size, alignment and background it asks for. When
+/// `editor_view` is false the editor's own labels are left out, exactly as its
+/// line drawings are.
+///
 /// Debug colours are linear and the painter decodes sRGB vertex colours, so
 /// each colour is converted on the way in and reaches the screen unchanged.
 pub(crate) fn label_list(
     debug_frame: &DebugFrame,
     view_projection: &pill_core::math::Matrix4f,
     viewport: RenderViewport,
+    editor_view: bool,
 ) -> DrawList {
     let mut draw_list = DrawList::new();
     let (atlas_width, atlas_height) = font::atlas_size();
     let (atlas_width, atlas_height) = (atlas_width as f32, atlas_height as f32);
-    for label in &debug_frame.labels {
+    let to_painter_color = |color: [f32; 4]| {
+        Color::rgba(
+            linear_to_srgb(color[0]),
+            linear_to_srgb(color[1]),
+            linear_to_srgb(color[2]),
+            color[3],
+        )
+    };
+    for label in debug_frame.visible_labels(editor_view) {
         let Some((x, y)) = label_origin(label.anchor, view_projection, viewport) else {
             continue;
         };
-        for (offset, color) in [(font::GLYPH_SCALE, LABEL_SHADOW_COLOR), (0.0, label.color)] {
-            let color = Color::rgba(
-                linear_to_srgb(color[0]),
-                linear_to_srgb(color[1]),
-                linear_to_srgb(color[2]),
-                color[3],
+        let scale = label.scale.max(0.1);
+        let width = font::text_width(&label.text, scale);
+        let height = font::line_height(scale);
+        let x = match label.align {
+            LabelAlign::Left => x,
+            LabelAlign::Center => x - width * 0.5,
+            LabelAlign::Right => x - width,
+        };
+        if let Some(background) = label.background {
+            draw_list.push_quad(
+                font::FONT_TEXTURE,
+                Rect::from_min_size(Vector2f::new(x, y), Vector2f::new(width, height)),
+                Vector2f::new(0.0, 0.0),
+                Vector2f::new(0.0, 0.0),
+                to_painter_color(background),
             );
-            for quad in font::layout_text(&label.text, x + offset, y + offset) {
+        }
+        for (offset, color) in [
+            (font::GLYPH_SCALE * scale, LABEL_SHADOW_COLOR),
+            (0.0, label.color),
+        ] {
+            let color = to_painter_color(color);
+            for quad in font::layout_text(&label.text, x + offset, y + offset, scale) {
                 let rect = Rect::from_min_size(
                     Vector2f::new(quad.origin[0], quad.origin[1]),
                     Vector2f::new(quad.size[0], quad.size[1]),
@@ -1466,30 +1556,60 @@ mod tests {
     use crate::ui::UiRenderer;
     use pill_rendering_core::projection::to_pixels;
 
-    /// Gizmo lines draw on top whatever their depth test says. Every line
+    /// Gizmo lines draw on top whatever their depth asks for. Every line
     /// becomes a six-vertex quad, and the pick quad carries the handle.
     #[test]
-    fn lines_split_by_depth_test() {
-        let mut draw = pill_engine::DebugDraw::new(true);
-        let style = pill_engine::DebugStyle::default();
+    fn lines_split_by_their_depth() {
+        let mut draw = pill_renderer_api::DebugDraw::new(true);
+        let style = pill_renderer_api::DebugStyle::default();
         draw.line([-1.0, 0.0, -5.0], [1.0, 0.0, -5.0], style);
         draw.line(
             [-1.0, 0.0, -5.0],
             [1.0, 0.0, -5.0],
-            pill_engine::DebugStyle {
-                depth_test: false,
+            pill_renderer_api::DebugStyle {
+                depth: pill_renderer_api::DebugDepth::OnTop,
                 ..style
             },
         );
         draw.gizmo_line([-1.0, 0.0, -5.0], [1.0, 0.0, -5.0], [1.0, 4.0, 1.0, 1.0], 5);
         let frame = draw.collect_frame(0.016);
         let projection = glam::camera::rh::proj::directx::perspective(1.0, 1.0, 0.1, 100.0);
-        let (tested, on_top) = line_vertices(&frame, &projection, (100.0, 100.0), true);
-        assert_eq!(tested.len(), 6 * usize::from(style.depth_test));
-        assert_eq!(on_top.len(), 18 - tested.len());
+        let (tested, dimmed, on_top) = line_vertices(&frame, &projection, (100.0, 100.0), true);
+        assert_eq!(tested.len(), 6, "the hidden line is depth-tested");
+        assert!(dimmed.is_empty(), "nothing asked to show through geometry");
+        assert_eq!(on_top.len(), 12, "the on-top line and the gizmo line");
         let handle_lines = handle_line_vertices(&frame, &projection, (100.0, 100.0));
         assert_eq!(handle_lines.len(), 6);
         assert_eq!(handle_lines[0].handle_value, PICK_HANDLE_BIT | 5);
+    }
+
+    /// A line that shows through geometry becomes three vertex sets: the part in
+    /// front, the muted part behind it, and the check flag that marks the
+    /// latter.
+    #[test]
+    fn a_dimmed_line_draws_its_hidden_part_in_the_muted_look() {
+        let mut draw = pill_renderer_api::DebugDraw::new(true);
+        draw.line(
+            [-1.0, 0.0, -5.0],
+            [1.0, 0.0, -5.0],
+            pill_renderer_api::DebugStyle {
+                depth: pill_renderer_api::DebugDepth::Dimmed {
+                    hidden: Default::default(),
+                },
+                ..pill_renderer_api::DebugStyle::default()
+            },
+        );
+        let frame = draw.collect_frame(0.016);
+        let projection = glam::camera::rh::proj::directx::perspective(1.0, 1.0, 0.1, 100.0);
+        let (tested, dimmed, on_top) = line_vertices(&frame, &projection, (100.0, 100.0), true);
+        assert_eq!(tested.len(), 6, "the visible part keeps the line's colour");
+        assert_eq!(dimmed.len(), 6, "the covered part is drawn too");
+        assert!(on_top.is_empty());
+        assert_eq!(dimmed[0].hidden, 1.0, "the covered part is checkered");
+        assert!(
+            dimmed[0].color[0] < tested[0].color[0],
+            "the covered part is muted"
+        );
     }
 
     /// A surface that is not an editor view draws the project's own debug
@@ -1498,19 +1618,19 @@ mod tests {
     /// its gizmo triangles are all left out.
     #[test]
     fn a_game_surface_draws_its_debug_lines_without_the_editor_chrome() {
-        let mut draw = pill_engine::DebugDraw::new(true);
+        let mut draw = pill_renderer_api::DebugDraw::new(true);
         draw.line(
             [-1.0, 0.0, -5.0],
             [1.0, 0.0, -5.0],
-            pill_engine::DebugStyle::default(),
+            pill_renderer_api::DebugStyle::default(),
         );
         draw.line(
             [-1.0, 1.0, -5.0],
             [1.0, 1.0, -5.0],
-            pill_engine::DebugStyle {
-                chrome: true,
-                depth_test: false,
-                ..pill_engine::DebugStyle::default()
+            pill_renderer_api::DebugStyle {
+                editor_only: true,
+                depth: pill_renderer_api::DebugDepth::OnTop,
+                ..pill_renderer_api::DebugStyle::default()
             },
         );
         draw.gizmo_line([-1.0, 0.0, -5.0], [1.0, 0.0, -5.0], [1.0, 4.0, 1.0, 1.0], 5);
@@ -1521,18 +1641,18 @@ mod tests {
         );
         let frame = draw.collect_frame(0.016);
         let projection = glam::camera::rh::proj::directx::perspective(1.0, 1.0, 0.1, 100.0);
-        let (tested, on_top) = line_vertices(&frame, &projection, (100.0, 100.0), false);
+        let (tested, dimmed, on_top) = line_vertices(&frame, &projection, (100.0, 100.0), false);
         assert_eq!(
-            tested.len() + on_top.len(),
+            tested.len() + dimmed.len() + on_top.len(),
             6,
             "the project's own line stays, and the editor's guide does not"
         );
         assert!(triangle_vertices(&frame, &projection, (100.0, 100.0), false).is_empty());
         // The same frame on an editor view draws the chrome as well.
-        let (editor_tested, editor_on_top) =
+        let (editor_tested, editor_dimmed, editor_on_top) =
             line_vertices(&frame, &projection, (100.0, 100.0), true);
         assert_eq!(
-            editor_tested.len() + editor_on_top.len(),
+            editor_tested.len() + editor_dimmed.len() + editor_on_top.len(),
             18,
             "the guide joins the gizmo line on an editor view"
         );
@@ -1548,17 +1668,17 @@ mod tests {
     #[test]
     fn lines_behind_the_camera_are_clipped_away() {
         let projection = glam::camera::rh::proj::directx::perspective(1.0, 1.0, 0.1, 100.0);
-        let mut draw = pill_engine::DebugDraw::new(true);
-        let style = pill_engine::DebugStyle::default();
+        let mut draw = pill_renderer_api::DebugDraw::new(true);
+        let style = pill_renderer_api::DebugStyle::default();
         draw.line([-1.0, 0.0, 1.0], [1.0, 0.0, 2.0], style);
         let behind = draw.collect_frame(0.016);
-        let (tested, on_top) = line_vertices(&behind, &projection, (100.0, 100.0), true);
-        assert!(tested.is_empty() && on_top.is_empty());
+        let (tested, dimmed, on_top) = line_vertices(&behind, &projection, (100.0, 100.0), true);
+        assert!(tested.is_empty() && dimmed.is_empty() && on_top.is_empty());
 
         draw.line([-0.2, 2.0, 5.0], [1.0, -1.0, -5.0], style);
         let in_view = draw.collect_frame(0.016);
-        let (tested, on_top) = line_vertices(&in_view, &projection, (100.0, 100.0), true);
-        assert_eq!(tested.len() + on_top.len(), 6);
+        let (tested, dimmed, on_top) = line_vertices(&in_view, &projection, (100.0, 100.0), true);
+        assert_eq!(tested.len() + dimmed.len() + on_top.len(), 6);
     }
 
     /// A gizmo triangle's corners move out past their projection, so the
@@ -1567,7 +1687,7 @@ mod tests {
     #[test]
     fn gizmo_triangles_expand_for_antialiasing() {
         let projection = glam::camera::rh::proj::directx::perspective(1.0, 1.0, 0.1, 100.0);
-        let mut draw = pill_engine::DebugDraw::new(true);
+        let mut draw = pill_renderer_api::DebugDraw::new(true);
         let corners = [[-1.0, -1.0, -5.0], [1.0, -1.0, -5.0], [0.0, 1.0, -5.0]];
         draw.gizmo_triangle(corners, [1.0, 1.0, 1.0, 1.0], 7);
         let frame = draw.collect_frame(0.016);
@@ -1589,7 +1709,7 @@ mod tests {
             "{moved_x} {moved_y} vs {raw_x} {raw_y}"
         );
 
-        let mut behind = pill_engine::DebugDraw::new(true);
+        let mut behind = pill_renderer_api::DebugDraw::new(true);
         behind.gizmo_triangle(
             [[-1.0, -1.0, 5.0], [1.0, -1.0, 5.0], [0.0, 1.0, 5.0]],
             [1.0, 1.0, 1.0, 1.0],
@@ -1605,7 +1725,7 @@ mod tests {
     #[test]
     fn points_keep_their_pixel_size_in_every_view() {
         let projection = glam::camera::rh::proj::directx::perspective(1.0, 1.0, 0.1, 100.0);
-        let mut draw = pill_engine::DebugDraw::new(true);
+        let mut draw = pill_renderer_api::DebugDraw::new(true);
         draw.gizmo_point([0.0, 0.0, -5.0], 12.0, GizmoPointShape::Square, [1.0; 4], 3);
         let frame = draw.collect_frame(0.016);
         for viewport_size in [(200.0, 100.0), (800.0, 600.0)] {
@@ -1634,7 +1754,7 @@ mod tests {
     #[test]
     fn a_pick_on_a_point_carries_its_handle() {
         let projection = glam::camera::rh::proj::directx::perspective(1.0, 1.0, 0.1, 100.0);
-        let mut draw = pill_engine::DebugDraw::new(true);
+        let mut draw = pill_renderer_api::DebugDraw::new(true);
         draw.gizmo_point(
             [0.0, 0.0, -5.0],
             10.0,
@@ -1649,10 +1769,29 @@ mod tests {
             .iter()
             .all(|vertex| vertex.handle_value == PICK_HANDLE_BIT | 21));
 
-        let mut behind = pill_engine::DebugDraw::new(true);
+        let mut behind = pill_renderer_api::DebugDraw::new(true);
         behind.gizmo_point([0.0, 0.0, 5.0], 10.0, GizmoPointShape::Circle, [1.0; 4], 21);
         let behind = behind.collect_frame(0.016);
         assert!(handle_line_vertices(&behind, &projection, (100.0, 100.0)).is_empty());
+    }
+
+    /// A mark is drawn but never picked, so a click on it reaches the scene
+    /// behind it.
+    #[test]
+    fn a_mark_is_drawn_but_not_picked() {
+        let projection = glam::camera::rh::proj::directx::perspective(1.0, 1.0, 0.1, 100.0);
+        let mut draw = pill_renderer_api::DebugDraw::new(true);
+        draw.gizmo_mark([0.0, 0.0, -5.0], 9.0, GizmoPointShape::Square, [1.0; 4]);
+        let frame = draw.collect_frame(0.016);
+        assert_eq!(
+            point_vertices(&frame, &projection, (200.0, 100.0), true).len(),
+            6,
+            "the mark is still drawn in an editor view"
+        );
+        assert!(
+            handle_line_vertices(&frame, &projection, (200.0, 100.0)).is_empty(),
+            "a mark must not enter the pick buffer"
+        );
     }
 
     /// A device and queue without a surface, forcing the platform's fallback
@@ -1795,14 +1934,15 @@ mod tests {
 
         // `|` lights its glyph's middle column, so the text covers x 4..6 and
         // y 0..14, and the shadow x 6..8 and y 2..16.
-        let mut draw = pill_engine::DebugDraw::new(true);
-        let style = pill_engine::DebugStyle::colored([0.5, 0.25, 1.0, 1.0]);
+        let mut draw = pill_renderer_api::DebugDraw::new(true);
+        let style = pill_renderer_api::DebugStyle::colored([0.5, 0.25, 1.0, 1.0]);
         draw.label_screen(0.0, 0.0, "|", style);
         let frame = draw.collect_frame(0.016);
         let label_draw_list = label_list(
             &frame,
             &pill_core::math::Matrix4f::IDENTITY,
             RenderViewport::new(0, 0, 32, 32),
+            true,
         );
         let size = (32u32, 32u32);
         let pixels = render_pixels(&device, &queue, &mut painter, size, &label_draw_list);

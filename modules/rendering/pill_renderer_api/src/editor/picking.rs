@@ -1,9 +1,7 @@
-//! Selection outlines and picking: which entities a renderer outlines, and
-//! which entity or gizmo handle is under a pixel.
+//! Picking: which entity or gizmo handle is under a pixel.
 //!
 //! # Responsibilities
 //!
-//! - Name the entities to outline ([`SelectionOutlines`], a world resource).
 //! - Ask what is under a pixel of a surface ([`PickRequests`]) and receive the
 //!   answer frames later ([`PickResults`]), as plain data.
 //!
@@ -14,8 +12,8 @@
 //! finished with it, a frame or more later. Each request carries an id, so its
 //! answer can be matched however late it arrives. The pick buffer also draws
 //! the gizmo handles over the scene, with the same lines and triangles that
-//! [`pill_engine::DebugDraw::gizmo_line`] and
-//! [`pill_engine::DebugDraw::gizmo_triangle`] draw, so a pick finds a handle
+//! [`crate::debug_draw::DebugDraw::gizmo_line`] and
+//! [`crate::debug_draw::DebugDraw::gizmo_triangle`] draw, so a pick finds a handle
 //! that lies in front of an entity.
 
 // External crates
@@ -32,40 +30,6 @@ use crate::SurfaceId;
 /// the instance at `index` of the frame's instance list, and a gizmo handle
 /// with the top bit set.
 pub const PICK_HANDLE_BIT: u32 = 0x8000_0000;
-
-// =============================================================================
-// SelectionOutlines
-// =============================================================================
-
-/// The entities a renderer outlines, in one colour.
-#[derive(Debug, Clone)]
-pub struct SelectionOutlines {
-    /// The entities to outline. An entity that draws nothing shows no outline.
-    pub entities: Vec<Entity>,
-    /// The outline colour, linear RGBA.
-    pub color: [f32; 4],
-}
-
-impl Default for SelectionOutlines {
-    fn default() -> Self {
-        Self {
-            entities: Vec::new(),
-            color: [1.0, 0.55, 0.1, 1.0],
-        }
-    }
-}
-
-impl Resource for SelectionOutlines {
-    /// Infrastructure, not game state: Play leaves this value alone and
-    /// Stop does not restore it.
-    fn play_state() -> pill_engine::resource::PlayState {
-        pill_engine::resource::PlayState::Keep
-    }
-
-    fn shared_name() -> Option<&'static str> {
-        Some("pill_renderer_api::SelectionOutlines")
-    }
-}
 
 // =============================================================================
 // PickRequest

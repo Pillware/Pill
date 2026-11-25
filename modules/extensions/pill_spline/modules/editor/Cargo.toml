@@ -27,3 +27,6 @@ pill_engine = { path = "../../../../engine/pill_engine" }
 # The tool trait, the registry and the element vocabulary this tool declares.
 pill_editor_core = { path = "../../../../editor/pill_editor_core" }
 pill_spline = { path = "../runtime", default-features = false }
+# The gizmo override this editor part declares draws through the renderer
+# contract.
+pill_renderer_api = { path = "../../../../rendering/pill_renderer_api" }

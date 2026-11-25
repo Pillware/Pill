@@ -28,10 +28,7 @@ use pill_ui_frame::{TextureId, UiTextureFilter, UiTextureSet};
 // Constants
 // =============================================================================
 
-/// Glyph width in pixels.
-pub(super) const GLYPH_WIDTH: u32 = 5;
-/// Glyph height in pixels.
-pub(super) const GLYPH_HEIGHT: u32 = 7;
+pub(super) use pill_rendering_core::debug_font::{GLYPHS, GLYPH_HEIGHT, GLYPH_WIDTH};
 /// An atlas cell: the glyph plus one pixel of space to its right and below,
 /// so sampling one glyph never bleeds into the next.
 const CELL_WIDTH: u32 = GLYPH_WIDTH + 1;
@@ -40,74 +37,6 @@ const CELL_HEIGHT: u32 = GLYPH_HEIGHT + 1;
 const ATLAS_COLUMNS: u32 = 16;
 /// How many screen pixels one glyph pixel covers.
 pub(super) const GLYPH_SCALE: f32 = 2.0;
-
-/// Every glyph the font has, as its character and its pixel art.
-///
-/// The art is seven rows separated by `/`, each row five characters wide,
-/// with `#` for a lit pixel and `.` for a blank one.
-pub(super) const GLYPHS: &[(char, &str)] = &[
-    (' ', "...../...../...../...../...../...../....."),
-    ('!', "..#../..#../..#../..#../..#../...../..#.."),
-    ('"', ".#.#./.#.#./...../...../...../...../....."),
-    ('#', ".#.#./.#.#./#####/.#.#./#####/.#.#./.#.#."),
-    ('%', "##..#/##..#/...#./..#../.#.../#..##/#..##"),
-    ('\'', "..#../..#../...../...../...../...../....."),
-    ('(', "...#./..#../.#.../.#.../.#.../..#../...#."),
-    (')', ".#.../..#../...#./...#./...#./..#../.#..."),
-    ('*', "...../..#../#.#.#/.###./#.#.#/..#../....."),
-    ('+', "...../..#../..#../#####/..#../..#../....."),
-    (',', "...../...../...../...../.##../..#../.#..."),
-    ('-', "...../...../...../#####/...../...../....."),
-    ('.', "...../...../...../...../...../.##../.##.."),
-    ('/', "...../....#/...#./..#../.#.../#..../....."),
-    ('0', ".###./#...#/#..##/#.#.#/##..#/#...#/.###."),
-    ('1', "..#../.##../..#../..#../..#../..#../.###."),
-    ('2', ".###./#...#/....#/...#./..#../.#.../#####"),
-    ('3', "#####/...#./..#../...#./....#/#...#/.###."),
-    ('4', "...#./..##./.#.#./#..#./#####/...#./...#."),
-    ('5', "#####/#..../####./....#/....#/#...#/.###."),
-    ('6', "..##./.#.../#..../####./#...#/#...#/.###."),
-    ('7', "#####/....#/...#./..#../.#.../.#.../.#..."),
-    ('8', ".###./#...#/#...#/.###./#...#/#...#/.###."),
-    ('9', ".###./#...#/#...#/.####/....#/...#./.##.."),
-    (':', "...../.##../.##../...../.##../.##../....."),
-    (';', "...../.##../.##../...../.##../..#../.#..."),
-    ('<', "...#./..#../.#.../#..../.#.../..#../...#."),
-    ('=', "...../...../#####/...../#####/...../....."),
-    ('>', ".#.../..#../...#./....#/...#./..#../.#..."),
-    ('?', ".###./#...#/....#/...#./..#../...../..#.."),
-    ('A', ".###./#...#/#...#/#####/#...#/#...#/#...#"),
-    ('B', "####./#...#/#...#/####./#...#/#...#/####."),
-    ('C', ".###./#...#/#..../#..../#..../#...#/.###."),
-    ('D', "####./#...#/#...#/#...#/#...#/#...#/####."),
-    ('E', "#####/#..../#..../####./#..../#..../#####"),
-    ('F', "#####/#..../#..../####./#..../#..../#...."),
-    ('G', ".###./#...#/#..../#.###/#...#/#...#/.####"),
-    ('H', "#...#/#...#/#...#/#####/#...#/#...#/#...#"),
-    ('I', ".###./..#../..#../..#../..#../..#../.###."),
-    ('J', "..###/...#./...#./...#./...#./#..#./.##.."),
-    ('K', "#...#/#..#./#.#../##.../#.#../#..#./#...#"),
-    ('L', "#..../#..../#..../#..../#..../#..../#####"),
-    ('M', "#...#/##.##/#.#.#/#.#.#/#...#/#...#/#...#"),
-    ('N', "#...#/#...#/##..#/#.#.#/#..##/#...#/#...#"),
-    ('O', ".###./#...#/#...#/#...#/#...#/#...#/.###."),
-    ('P', "####./#...#/#...#/####./#..../#..../#...."),
-    ('Q', ".###./#...#/#...#/#...#/#.#.#/#..#./.##.#"),
-    ('R', "####./#...#/#...#/####./#.#../#..#./#...#"),
-    ('S', ".####/#..../#..../.###./....#/....#/####."),
-    ('T', "#####/..#../..#../..#../..#../..#../..#.."),
-    ('U', "#...#/#...#/#...#/#...#/#...#/#...#/.###."),
-    ('V', "#...#/#...#/#...#/#...#/#...#/.#.#./..#.."),
-    ('W', "#...#/#...#/#...#/#.#.#/#.#.#/#.#.#/.#.#."),
-    ('X', "#...#/#...#/.#.#./..#../.#.#./#...#/#...#"),
-    ('Y', "#...#/#...#/.#.#./..#../..#../..#../..#.."),
-    ('Z', "#####/....#/...#./..#../.#.../#..../#####"),
-    ('[', ".###./.#.../.#.../.#.../.#.../.#.../.###."),
-    ('\\', "...../#..../.#.../..#../...#./....#/....."),
-    (']', ".###./...#./...#./...#./...#./...#./.###."),
-    ('_', "...../...../...../...../...../...../#####"),
-    ('|', "..#../..#../..#../..#../..#../..#../..#.."),
-];
 
 /// The texture the label list samples the font from.
 ///
@@ -149,6 +78,16 @@ pub(super) struct GlyphQuad {
 // =============================================================================
 // Free Functions
 // =============================================================================
+
+/// A line of text's width in surface pixels at `scale`.
+pub(super) fn text_width(text: &str, scale: f32) -> f32 {
+    text.chars().count() as f32 * CELL_WIDTH as f32 * GLYPH_SCALE * scale
+}
+
+/// A line of text's height in surface pixels at `scale`.
+pub(super) fn line_height(scale: f32) -> f32 {
+    (CELL_HEIGHT + 2) as f32 * GLYPH_SCALE * scale
+}
 
 /// The atlas's width and height in texels.
 ///
@@ -233,12 +172,12 @@ fn glyph_index(character: char) -> usize {
 ///
 /// A newline starts the next line under the first character of the line
 /// above.
-pub(super) fn layout_text(text: &str, x: f32, y: f32) -> Vec<GlyphQuad> {
-    let advance = CELL_WIDTH as f32 * GLYPH_SCALE;
-    let line_height = (CELL_HEIGHT + 2) as f32 * GLYPH_SCALE;
+pub(super) fn layout_text(text: &str, x: f32, y: f32, scale: f32) -> Vec<GlyphQuad> {
+    let advance = CELL_WIDTH as f32 * GLYPH_SCALE * scale;
+    let line_height = (CELL_HEIGHT + 2) as f32 * GLYPH_SCALE * scale;
     let size = [
-        GLYPH_WIDTH as f32 * GLYPH_SCALE,
-        GLYPH_HEIGHT as f32 * GLYPH_SCALE,
+        GLYPH_WIDTH as f32 * GLYPH_SCALE * scale,
+        GLYPH_HEIGHT as f32 * GLYPH_SCALE * scale,
     ];
     let mut quads = Vec::with_capacity(text.len());
     let (mut pen_x, mut pen_y) = (x, y);
@@ -322,7 +261,7 @@ mod tests {
     /// space draws nothing but still advances.
     #[test]
     fn text_lays_out_left_to_right() {
-        let quads = layout_text("a b", 10.0, 20.0);
+        let quads = layout_text("a b", 10.0, 20.0, 1.0);
         assert_eq!(quads.len(), 2);
         assert_eq!(quads[0].origin, [10.0, 20.0]);
         assert_eq!(
@@ -336,7 +275,7 @@ mod tests {
     /// A newline returns to the first column on the next line.
     #[test]
     fn a_newline_starts_the_next_line() {
-        let quads = layout_text("A\nB", 0.0, 0.0);
+        let quads = layout_text("A\nB", 0.0, 0.0, 1.0);
         assert_eq!(quads[1].origin[0], 0.0);
         assert!(quads[1].origin[1] > quads[0].origin[1]);
     }

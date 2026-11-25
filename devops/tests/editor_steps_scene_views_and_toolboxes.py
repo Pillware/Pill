@@ -9,6 +9,7 @@ import re
 from core import log_layout
 from core.editor_log_tokens import (
     ACTIVE_VIEWPORT_TOKEN,
+    APPEND_PASSES_PATTERN,
     CAMERA_GESTURE_TOKEN,
     CAMERA_ZOOM_TOKEN,
     EDITOR_FONTS_INSTALLED_TOKEN,
@@ -47,6 +48,13 @@ from editor_step_support import (
     write_editor_theme,
     write_theme_file,
 )
+
+
+# The pass the project's append-pass fixture names, as the renderer labels it:
+# the path the pass was imported under. The manager is handed its pipeline with
+# `EditorViews` surfaces, so the scene views draw it and the game's surface does
+# not.
+APPEND_FIXTURE_PASS = "append_depth_probe.render_pass"
 
 
 def run_scene_views_and_toolboxes_steps(state: StepState) -> None:
@@ -177,6 +185,36 @@ def run_scene_views_and_toolboxes_steps(state: StepState) -> None:
         begin,
     )
     wait_game_rect(False, "the game view hidden with its tab")
+
+    # The project appends a pass of its own after a surface's chain: a
+    # fullscreen pass that samples the depth the chain left behind. The
+    # contract scopes it to editor views, so the scene views draw it and the
+    # game's own surface never does. The line names the surface and every pass
+    # that ran on it, which is what makes this readable without pixels.
+    def appended_on_scene_view(_text: str) -> "re.Match | None":
+        for match in re.finditer(APPEND_PASSES_PATTERN, session.text()):
+            if match.group(1) != "0" and APPEND_FIXTURE_PASS in match.group(2):
+                return match
+        return None
+
+    appended = session.wait_until(
+        appended_on_scene_view,
+        30,
+        "the appended pass never ran on a scene view\n",
+        label="the appended pass on a scene view",
+        poll=0.2,
+    )
+    print_ok("the appended pass draws on scene view surface {}".format(appended.group(1)))
+    game_passes = [
+        match.group(2)
+        for match in re.finditer(APPEND_PASSES_PATTERN, session.text())
+        if match.group(1) == "0"
+    ]
+    assert game_passes, "the game's surface logged no append passes line"
+    assert not any(APPEND_FIXTURE_PASS in passes for passes in game_passes), (
+        "the appended pass drew on the game's own surface: {}".format(game_passes)
+    )
+    print_ok("the appended pass never draws on the game's surface")
 
     # Step 4f: the floating toolbox - the gizmo's tools, its
     # space and its snapping as a panel over the scene viewport. A row

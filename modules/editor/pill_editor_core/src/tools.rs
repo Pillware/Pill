@@ -38,7 +38,8 @@ use std::fmt;
 
 // External crates
 use pill_core::telemetry::telemetry_target;
-use pill_engine::{Engine, Entity, GizmoPointShape, World};
+use pill_engine::{Engine, Entity, World};
+use pill_renderer_api::GizmoPointShape;
 
 // Current crate
 use crate::editor_state::{
@@ -249,7 +250,7 @@ pub struct ElementKind {
     /// names.
     pub name: String,
     /// The silhouette the editor draws its handles as.
-    pub shape: pill_engine::GizmoPointShape,
+    pub shape: pill_renderer_api::GizmoPointShape,
     /// How wide its handles draw, in pixels, in every view.
     pub size_pixels: f32,
     /// The colour its idle handles draw in.
@@ -266,7 +267,7 @@ impl ElementKind {
     pub fn new(name: impl Into<String>) -> ElementKind {
         ElementKind {
             name: name.into(),
-            shape: pill_engine::GizmoPointShape::Circle,
+            shape: pill_renderer_api::GizmoPointShape::Circle,
             size_pixels: 9.0,
             color: [0.92, 0.92, 0.92, 1.0],
             multi_select: true,

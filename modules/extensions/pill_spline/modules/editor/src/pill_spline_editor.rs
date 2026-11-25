@@ -44,7 +44,7 @@ use pill_editor_core::tools::{
     self, CoordinateFrame, EditorTool, ElementKind, ElementMenuEntry, ElementMove,
     ElementTransform, KeyResponse, PressResponse, ToolElement, ToolElementHooks, ToolRegistry,
 };
-use pill_engine::{pill_module, Engine, Entity, TransformComponent, World};
+use pill_engine::{gizmo_override, pill_module, Engine, Entity, TransformComponent, World};
 use pill_spline::{Spline, TangentMode};
 
 // The build script scans this crate and emits one address entry per function
@@ -164,7 +164,55 @@ pub fn register_into(registry: &mut ToolRegistry) {
 /// Returns 0 always: the tool registers no world state that can fail.
 pub fn register(engine: &mut Engine) -> u32 {
     register_into(tools::tool_registry_mut(engine.world_mut()));
+    pill_renderer_api::gizmos::override_gizmos(
+        engine.world_mut(),
+        env!("CARGO_PKG_NAME"),
+        &[spline_curve_override()],
+    );
     0
+}
+
+// =============================================================================
+// The gizmo override
+// =============================================================================
+
+/// How many segments the curve is sampled into while the tool is active.
+const CURVE_SAMPLES: u32 = 32;
+
+/// The colour of the sampled curve, brighter than the declared cage so the
+/// shape reads over it.
+const CURVE_COLOR: [f32; 4] = [0.55, 0.95, 1.0, 1.0];
+
+/// Draws a spline's curve while the spline tool is active, in place of the
+/// gizmo the component declares.
+///
+/// The curve is a polyline sampled through the component, so an editing session
+/// shows the shape the points define rather than the declared cage. While
+/// another tool is active the declared gizmo draws instead, because a `Replace`
+/// override exists for as long as its owner is registered, not only while the
+/// tool is.
+#[gizmo_override(type = Spline, mode = Replace, order = 500)]
+fn spline_curve(
+    spline: &Spline,
+    context: &pill_renderer_api::GizmoContext<'_>,
+    draw: &mut pill_renderer_api::GizmoDraw,
+) {
+    let editing = context
+        .get_resource::<ToolRegistry>()
+        .and_then(|registry| registry.active_record())
+        .is_some_and(|record| record.name == TOOL_NAME);
+    if !editing {
+        pill_spline::draw_spline_gizmo(spline, context, draw);
+        return;
+    }
+    let to_world = context.to_world();
+    let curve: Vec<[f32; 3]> = (0..=CURVE_SAMPLES)
+        .map(|index| {
+            let position = spline.get_location_at(index as f32 / CURVE_SAMPLES as f32);
+            pill_renderer_api::gizmos::transform_point(&to_world, position.to_array())
+        })
+        .collect();
+    draw.polyline(&curve, CURVE_COLOR);
 }
 
 /// The artifact's one-time entry point.

@@ -8,7 +8,8 @@
 //! - Let F3 turn debug drawing on and off at runtime, in any build.
 
 // External crates
-use pill_engine::{pill_hot_fn, DebugDraw, DebugStyle, Input, KeyCode, Res, ResMut, SystemError};
+use pill_engine::{pill_hot_fn, Input, KeyCode, Res, ResMut, SystemError};
+use pill_rendering::{DebugDepth, DebugDraw, DebugStyle};
 
 // Current crate
 use crate::game::DemoState;
@@ -56,7 +57,7 @@ pub(crate) fn debug_overlay_system(
     );
     // The axes and labels draw over everything, so the pills never hide them.
     let on_top = |color| DebugStyle {
-        depth_test: false,
+        depth: DebugDepth::OnTop,
         ..DebugStyle::colored(color)
     };
     debug_draw

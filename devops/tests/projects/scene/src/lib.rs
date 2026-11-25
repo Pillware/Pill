@@ -95,6 +95,11 @@ pub struct ShowcaseReferenceComponent {
 /// The colour the reference line is drawn in.
 const REFERENCE_GIZMO_COLOR: [f32; 4] = [0.35, 0.8, 1.0, 1.0];
 
+/// The order the append-pass fixture runs at. Orders from 1000 up belong to the
+/// test fixtures, so this pass always runs after anything an engine, host or
+/// project pass appends.
+const APPEND_PASS_ORDER: i32 = 1000;
+
 /// Draws the reference as a line from this entity to the one it names, with
 /// the weight on a label.
 ///
@@ -104,8 +109,8 @@ const REFERENCE_GIZMO_COLOR: [f32; 4] = [0.35, 0.8, 1.0, 1.0];
 /// shows as empty is visible in the scene too.
 pub fn draw_showcase_reference_gizmo(
     reference: &ShowcaseReferenceComponent,
-    context: &pill_engine::GizmoContext<'_>,
-    draw: &mut pill_engine::GizmoDraw,
+    context: &pill_rendering::GizmoContext<'_>,
+    draw: &mut pill_rendering::GizmoDraw,
 ) {
     let origin = context.translation();
     let followed = context
@@ -236,6 +241,29 @@ pub fn init(engine: &mut Engine) -> u32 {
     if let Err(error) = scene::create(engine.world_mut(), assets) {
         pill_engine::tracing::error!(target: "project", error = %error, "[project] scene creation failed");
         return 1;
+    }
+
+    // The append-pass fixture: a fullscreen pass that samples the depth the
+    // chain left on the surface, appended with `EditorViews` surfaces and a
+    // fixture order. The editor's scene views draw it and the game's own
+    // surface never does, which is what the scene view suite reads.
+    match asset_loading::load_append_pipeline(engine.world_mut()) {
+        Ok(pipeline) => {
+            if let Some(manager) = engine
+                .world_mut()
+                .get_resource_mut::<pill_rendering::RenderingManager>()
+            {
+                manager.set_append_pipeline(
+                    env!("CARGO_PKG_NAME"),
+                    pipeline,
+                    pill_rendering::PassSurfaces::EditorViews,
+                    APPEND_PASS_ORDER,
+                );
+            }
+        }
+        Err(error) => {
+            pill_engine::tracing::warn!(target: "project", error = %error, "[project] append pass fixture skipped");
+        }
     }
 
     // The game's UI layer: the egui context, the theme resource and the frame

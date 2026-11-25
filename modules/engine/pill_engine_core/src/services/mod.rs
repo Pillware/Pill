@@ -6,9 +6,7 @@
 //! - Hold the frame's inputs: the clock a frame measures itself with
 //!   ([`time`]), and the keys, buttons and gamepads the frame was given
 //!   ([`input`]).
-//! - Hold the outputs a system draws with: immediate debug drawing
-//!   ([`debug_draw`]), the gizmo pass that draws on a component's behalf
-//!   ([`gizmos`]) and the periodic ECS report ([`diagnostics`]).
+//! - Hold the periodic ECS report a frame prints ([`diagnostics`]).
 //! - Re-export the profiling API ([`profiling`]).
 //!
 //! # Design
@@ -19,20 +17,14 @@
 //! `crate::input::Input` path inside the crate.
 //!
 //! A service is a resource or a free function, never state the engine owns
-//! privately: a system reads the frame's time and input from the world, and
-//! hands debug drawing to the world so whichever renderer runs can draw it.
-
-/// Immediate debug drawing: lines, shapes, labels and gizmo handles. Any
-/// system can draw them, and every renderer draws them.
-pub mod debug_draw;
+//! privately: a system reads the frame's time and input from the world. Drawing
+//! is not a service: debug drawing and component gizmos live in the renderer
+//! contract (`pill_renderer_api`), which is what a renderer draws and what the
+//! engine has no vocabulary for.
 
 /// A periodic report of ECS state, switched on with
 /// `Engine::set_ecs_diagnostics_interval` and printed at that interval.
 pub mod diagnostics;
-
-/// The pass that draws every component's own gizmo, together with the registry
-/// it walks and the selection it draws for.
-pub mod gizmos;
 
 /// Keyboard, mouse and gamepad state maintained by the engine and read through
 /// `Res<Input>`.

@@ -83,6 +83,9 @@ API_ALLOWED_DEPENDENCIES = {
     # so the contract shares them with the UI libraries without depending on
     # one.
     "pill_ui_frame",
+    # The gizmo declarations an artifact publishes: collected per artifact, so
+    # a reload replaces every pointer of the image that loaded.
+    "inventory",
     "serde",
     "thiserror",
     "miette",

@@ -613,7 +613,7 @@ impl AttachedRenderer {
     }
 
     /// Move the picks the renderer has answered since the last call into the
-    /// world's [`pill_renderer_api::PickResults`].
+    /// world's [`pill_renderer_api::editor::PickResults`].
     ///
     /// An answer arrives a few frames after its request, when the GPU
     /// finishes. A world without the resource drops the answers. Callers reach
@@ -623,13 +623,14 @@ impl AttachedRenderer {
         if pick_results.is_empty() {
             return;
         }
-        if let Some(delivered) = world.get_resource_mut::<pill_renderer_api::PickResults>() {
+        if let Some(delivered) = world.get_resource_mut::<pill_renderer_api::editor::PickResults>()
+        {
             delivered.results.extend(pick_results);
         }
     }
 
     /// Move the previews the renderer has read back since the last call into
-    /// the world's [`pill_renderer_api::PreviewResults`].
+    /// the world's [`pill_renderer_api::editor::PreviewResults`].
     ///
     /// Like a pick, a preview is answered a few frames after it was asked. A
     /// world without the resource drops the result.
@@ -638,7 +639,9 @@ impl AttachedRenderer {
         if preview_results.is_empty() {
             return;
         }
-        if let Some(delivered) = world.get_resource_mut::<pill_renderer_api::PreviewResults>() {
+        if let Some(delivered) =
+            world.get_resource_mut::<pill_renderer_api::editor::PreviewResults>()
+        {
             delivered.results.extend(preview_results);
         }
     }
@@ -787,6 +790,17 @@ pub async fn attach_renderer<W: RendererWindow>(
         attach_linked_renderer(renderer, window_data, width, height)
     })
     .await?;
+    // Step 4: the renderer drains the world's debug drawing once a frame, so
+    // the drawings a system made before it attached reach the frame. A build
+    // that never gets here - a headless one - keeps them switched off, which is
+    // what stops them piling up.
+    if let Some(debug_draw) = runtime
+        .engine_mut()
+        .world_mut()
+        .get_resource_mut::<pill_renderer_api::DebugDraw>()
+    {
+        debug_draw.set_enabled(true);
+    }
     Ok(RenderingRuntime {
         runtime,
         attached_renderer,

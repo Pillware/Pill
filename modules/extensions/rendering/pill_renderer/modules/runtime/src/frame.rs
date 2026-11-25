@@ -63,12 +63,12 @@ static UI_TEXTURES_REQUESTED: AtomicBool = AtomicBool::new(false);
 type RenderingExtras<'w> = (
     Res<'w, pill_engine::Time>,
     Res<'w, pill_renderer_api::SurfaceCameras>,
-    ResMut<'w, pill_engine::DebugDraw>,
-    Res<'w, pill_renderer_api::SelectionOutlines>,
-    ResMut<'w, pill_renderer_api::PickRequests>,
+    ResMut<'w, pill_renderer_api::DebugDraw>,
+    Res<'w, pill_renderer_api::editor::SelectionOutlines>,
+    ResMut<'w, pill_renderer_api::editor::PickRequests>,
     ResMut<'w, pill_ui_frame::UiFrameSlot>,
     (
-        ResMut<'w, pill_renderer_api::PreviewRequests>,
+        ResMut<'w, pill_renderer_api::editor::PreviewRequests>,
         Res<'w, pill_renderer_api::RayTracedShadows>,
     ),
 );
@@ -134,7 +134,7 @@ pub fn rendering_system(
     let outlines = outlines
         .get()
         .cloned()
-        .unwrap_or_else(pill_renderer_api::SelectionOutlines::default);
+        .unwrap_or_else(pill_renderer_api::editor::SelectionOutlines::default);
     // Pick requests queued since the last frame. The renderer answers them
     // after it draws.
     let pick_requests = pick_requests
@@ -161,11 +161,19 @@ pub fn rendering_system(
         None => None,
     };
 
+    // The pipelines owners appended after every surface's chain. A world with
+    // no manager appends nothing, so the frame carries the chain alone.
+    let append_pipelines: Vec<pill_rendering::AppendPipeline> = manager
+        .get()
+        .map(|manager| manager.append_pipelines().cloned().collect())
+        .unwrap_or_default();
+
     pill_rendering_core::frame::update_frame(
         &mut frame,
         pill_rendering_core::frame::FrameInput {
             assets,
             pipeline: manager.get().and_then(|manager| manager.pipeline()),
+            append_pipelines: &append_pipelines,
             delta_seconds,
             debug,
             outlines,
@@ -181,13 +189,13 @@ pub fn rendering_system(
             .iter_mut()
             .map(|(entity, transform, renderer)| (entity, *transform, *renderer)),
     );
-    // Whether the game asked for ray-traced shadows. A world that never
-    // inserts the switch gets the run's answer, which is what makes
-    // `PILL_RAY_TRACING=1` enough to see them.
-    frame.ray_traced_shadows = ray_traced_shadows
-        .get()
-        .map(|switch| switch.enabled)
-        .unwrap_or_else(|| pill_renderer_api::RayTracedShadows::from_environment().enabled);
+    // Whether the game wants ray-traced shadows. A world that never inserts the
+    // switch takes its default, which is shadows traced; a renderer whose
+    // device cannot trace draws today's shading whatever the flag says.
+    frame.ray_traced_shadows = ray_traced_shadows.get().map_or_else(
+        || pill_renderer_api::RayTracedShadows::default().enabled,
+        |switch| switch.enabled,
+    );
     Ok(())
 }
 

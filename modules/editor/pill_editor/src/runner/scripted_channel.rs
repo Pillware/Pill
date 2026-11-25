@@ -27,7 +27,7 @@
 // Current crate
 use super::*;
 use pill_editor_core::tools;
-use pill_engine_core::gizmos::GizmoRegistry;
+use pill_renderer_api::gizmos::GizmoRegistry;
 
 // =============================================================================
 // Scripted Refusals
@@ -376,7 +376,7 @@ impl EditorWindow {
     /// an editor hid it, and how many entities it drew in the last frame.
     ///
     /// The line also names the surfaces that show the drawing: the frame's
-    /// editor views, which are the surfaces the renderer draws chrome on. A
+    /// editor views, which are the surfaces that draw the editor's own items. A
     /// game's own surface never is one, so the game view never shows a gizmo.
     pub(super) fn dump_gizmos(&mut self) {
         let world = self.host.host_mut().engine_mut().world_mut();
@@ -410,6 +410,24 @@ impl EditorWindow {
             "[test] gizmos"
         );
         for entry in registry.entries() {
+            // Which of the type's drawings is the one on screen: its own
+            // declaration, an override that replaced it, or both when an
+            // override adds to it.
+            let drawing = registry.drawing(&entry.type_name);
+            let (source, source_owner) = match drawing {
+                Some(plan) => match plan.overridden() {
+                    Some(over) => {
+                        let source = if plan.declared().is_some() {
+                            "declared+override"
+                        } else {
+                            "override"
+                        };
+                        (source, over.owner.as_str())
+                    }
+                    None => ("declared", ""),
+                },
+                None => ("hidden", ""),
+            };
             info!(
                 target: telemetry_target::EDITOR,
                 gizmo_type = %entry.type_name,
@@ -417,6 +435,8 @@ impl EditorWindow {
                 when = %entry.when.label(),
                 visible = registry.is_type_visible(&entry.type_name),
                 drew = entry.drew_last_frame(),
+                source,
+                source_owner,
                 "[test] gizmo"
             );
         }

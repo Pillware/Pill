@@ -77,6 +77,13 @@ DEFAULT_CHAIN_LABEL = "pill.pbr.pass."
 CHAIN_TOKEN = "pass chain:"
 ENTRY_PATTERN = re.compile(r"(?P<label>[^\s()]+)\((?P<draws>\d+)\)")
 
+# The passes an owner appended after the surface's chain. The project's fixture
+# pass is scoped to editor views, so this windowed run's only surface - the
+# game's own - must log the line with nothing appended to it.
+APPEND_TOKEN = "append passes"
+APPEND_PATTERN = re.compile(r'append passes\s*\|\s+surface=(?P<surface>\d+)\s+passes="(?P<passes>[^"]*)"')
+APPEND_FIXTURE_PASS = "append_depth_probe.render_pass"
+
 # The host builds the project DLL on its first run; a cold one is slow.
 CHAIN_TIMEOUT_SECONDS = 240
 
@@ -89,6 +96,14 @@ CHAIN_TIMEOUT_SECONDS = 240
 def chain_lines(text: str) -> list:
     """Every `pass chain:` line in `text`, newest last."""
     return [line for line in text.splitlines() if CHAIN_TOKEN in line]
+
+
+def append_lines(text: str) -> list:
+    """Every `append passes` line in `text`, newest last."""
+    return [
+        match
+        for match in APPEND_PATTERN.finditer(text)
+    ]
 
 
 def entries(line: str) -> list:
@@ -144,6 +159,27 @@ def check(text: str) -> list:
         (
             len(pairs) == 1,
             "the committed chain holds exactly its one pass",
+        )
+    )
+    # The project appends a pass of its own after the chain, scoped to editor
+    # views. This run draws the game's surface alone, so the append machinery
+    # reports it there and the fixture stays off it: a pass appended for every
+    # surface would draw over the game's picture.
+    appended = append_lines(text)
+    checks.append(
+        (
+            any(match.group("surface") == "0" for match in appended),
+            "the renderer reported the passes appended after the chain",
+        )
+    )
+    checks.append(
+        (
+            not any(
+                APPEND_FIXTURE_PASS in match.group("passes")
+                for match in appended
+                if match.group("surface") == "0"
+            ),
+            "the fixture's append pass stays off the game's surface",
         )
     )
     return checks

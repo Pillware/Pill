@@ -37,6 +37,7 @@ use std::collections::{HashMap, HashSet};
 // External crates
 use pill_core::telemetry::telemetry_target;
 use pill_core::warn;
+use pill_renderer_api::DEPTH_INPUT;
 
 // Current crate
 use crate::{
@@ -49,14 +50,6 @@ use crate::{
     },
     Instance,
 };
-
-// =============================================================================
-// Constants
-// =============================================================================
-
-/// The name a pass uses in its inputs to read the renderer's own depth buffer
-/// instead of an offscreen colour target.
-pub const DEPTH_INPUT: &str = "depth";
 
 // =============================================================================
 // RendererPass

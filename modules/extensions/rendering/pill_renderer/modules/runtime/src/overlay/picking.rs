@@ -24,7 +24,7 @@
 // External crates
 use pill_core::telemetry::telemetry_target;
 use pill_engine::Entity;
-use pill_renderer_api::{decode_pick_value, PickHit, PickRequest, PickResult};
+use pill_renderer_api::editor::{decode_pick_value, PickHit, PickRequest, PickResult};
 
 // Current crate
 use crate::readback::{MappedReadback, Readback};
@@ -261,7 +261,7 @@ mod tests {
         mapped_bytes[0..4].copy_from_slice(&2u32.to_le_bytes());
         mapped_bytes[BYTES_PER_SLOT as usize..BYTES_PER_SLOT as usize + 4]
             .copy_from_slice(&0u32.to_le_bytes());
-        let handle = pill_renderer_api::PICK_HANDLE_BIT | 7;
+        let handle = pill_renderer_api::editor::PICK_HANDLE_BIT | 7;
         mapped_bytes[2 * BYTES_PER_SLOT as usize..2 * BYTES_PER_SLOT as usize + 4]
             .copy_from_slice(&handle.to_le_bytes());
         let queue_entities = [first_entity, second_entity];

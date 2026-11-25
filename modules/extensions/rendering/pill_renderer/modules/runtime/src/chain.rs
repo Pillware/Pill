@@ -161,6 +161,16 @@ impl PassPlan<'_> {
         }
     }
 
+    /// Keeps what the targets already hold instead of opening them.
+    ///
+    /// An appended pass draws over a surface the chain already drew, so it never
+    /// clears what is there: the chain owns opening the frame.
+    pub(crate) fn keep_existing(&mut self) {
+        match self {
+            PassPlan::Geometry { clear, .. } | PassPlan::Fullscreen { clear, .. } => *clear = false,
+        }
+    }
+
     /// How many instances this pass draws. A fullscreen pass reports one, for
     /// its triangle.
     pub(crate) fn draws(&self) -> usize {

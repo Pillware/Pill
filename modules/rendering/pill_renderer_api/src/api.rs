@@ -285,9 +285,9 @@ pub trait PillRenderer {
     /// read the result back, and the frame that asked never waits for it. A
     /// pick on a surface the frame did not draw is answered in the same frame,
     /// with no hit. The frontend writes what this returns into the world's
-    /// [`crate::PickResults`]. The default answers nothing, for a renderer
+    /// [`crate::editor::PickResults`]. The default answers nothing, for a renderer
     /// without a pick buffer.
-    fn take_pick_results(&mut self) -> Vec<crate::PickResult> {
+    fn take_pick_results(&mut self) -> Vec<crate::editor::PickResult> {
         Vec::new()
     }
 
@@ -296,9 +296,9 @@ pub trait PillRenderer {
     /// A preview is read back a few frames after it was asked, like a pick. A
     /// request the renderer cannot draw is refused at once, so the caller does
     /// not wait for an answer that will never come. The frontend writes what
-    /// this returns into the world's [`crate::PreviewResults`]. The default
+    /// this returns into the world's [`crate::editor::PreviewResults`]. The default
     /// answers nothing, for a renderer without an off-screen preview target.
-    fn take_preview_results(&mut self) -> Vec<crate::PreviewImage> {
+    fn take_preview_results(&mut self) -> Vec<crate::editor::PreviewImage> {
         Vec::new()
     }
 

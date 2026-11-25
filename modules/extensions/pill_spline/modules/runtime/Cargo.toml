@@ -26,6 +26,8 @@ pill_hot_scan = { path = "../../../../hosting/pill_hot_scan" }
 [dependencies]
 pill_core = { path = "../../../../engine/pill_core" }
 pill_engine = { path = "../../../../engine/pill_engine" }
+# The gizmo a component declares draws through the renderer contract.
+pill_renderer_api = { path = "../../../../rendering/pill_renderer_api" }
 serde = { version = "1", features = ["derive"] }
 
 [features]

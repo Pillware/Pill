@@ -41,7 +41,9 @@ use pill_core::platform::Instant;
 use pill_core::telemetry::telemetry_target;
 use pill_engine::common_components::TransformComponent;
 use pill_engine::AssetManager;
-use pill_renderer_api::{CameraComponent, RawWindowData, SurfaceId, SurfaceOptions};
+use pill_renderer_api::{
+    CameraComponent, PassSurfaces, RawWindowData, ResolvedPass, SurfaceId, SurfaceOptions,
+};
 
 // Current crate
 use crate::{
@@ -164,6 +166,12 @@ pub(crate) struct SurfaceTarget {
     offscreen: HashMap<String, RendererTexture>,
     /// The chain's pass objects bound to this surface's targets.
     chain: GpuChain,
+    /// The pass objects of the pipelines owners appended after the chain, bound
+    /// to the same targets.
+    appended: GpuChain,
+    /// The append passes last written to the log for this surface, so an
+    /// unchanged set does not write a line per frame.
+    appended_log: Option<String>,
     /// The camera this surface is drawn through, as a handle into the shared
     /// camera storage.
     camera: RendererCameraHandle,
@@ -278,7 +286,61 @@ struct SurfaceDraw<'a> {
     render_queue: &'a [RenderQueueItem],
 }
 
+/// The passes one surface draws: its chain's, then the ones owners appended.
+///
+/// They are planned separately because the chain owns opening the surface - the
+/// first of its passes clears the targets - and the appended passes draw over
+/// the picture it left.
+struct SurfacePlans<'a> {
+    /// The passes of the surface's chain, in the order the chain names them.
+    chain: &'a [PassPlan<'a>],
+    /// The passes appended after the chain, already planned to keep what is
+    /// there.
+    appended: &'a [PassPlan<'a>],
+}
+
+/// The passes owners appended after `surface`'s chain, ready to plan.
+///
+/// A pass runs here when its surfaces match the one asked for:
+/// [`PassSurfaces::Every`] everywhere, and [`PassSurfaces::EditorViews`] only on
+/// the frame's editor views, which is what keeps an editor's own pass off a
+/// game's window.
+fn append_passes_for(frame: &RenderFrame, surface: SurfaceId) -> Vec<ResolvedPass> {
+    let editor_view = frame.editor_views.contains(&surface);
+    frame
+        .append_passes
+        .iter()
+        .filter(|append| match append.surfaces {
+            PassSurfaces::Every => true,
+            PassSurfaces::EditorViews => editor_view,
+        })
+        .map(|append| append.pass.clone())
+        .collect()
+}
+
 impl Renderer {
+    /// Logs one surface's append passes when the set changed.
+    ///
+    /// The line names the surface and every pass that ran on it, so a suite can
+    /// read where an appended pass drew instead of inferring it from pixels.
+    fn note_append_passes(target: &mut SurfaceTarget, passes: &[ResolvedPass]) {
+        let names = passes
+            .iter()
+            .map(|pass| pass.name.as_str())
+            .collect::<Vec<&str>>()
+            .join(", ");
+        if target.appended_log.as_deref() == Some(names.as_str()) {
+            return;
+        }
+        target.appended_log = Some(names.clone());
+        info!(
+            target: telemetry_target::RENDERING,
+            surface = target.id.0,
+            passes = names.as_str(),
+            "append passes"
+        );
+    }
+
     /// Creates the renderer synchronously, blocking on [`Renderer::new_async`].
     ///
     /// For the renderer module's attach export, which crosses a C ABI no
@@ -576,9 +638,45 @@ impl PillRenderer for Renderer {
                 );
                 extra_plan.as_slice()
             };
+            // The passes appended after this surface's chain. Their objects are
+            // built by the same chain builder, so they read the same depth
+            // buffer and targets a chain pass does.
+            let appended_passes = append_passes_for(frame, SurfaceId(id));
+            Self::note_append_passes(target, &appended_passes);
+            let appended_plan = if appended_passes.is_empty() {
+                Vec::new()
+            } else {
+                let chain_context = self.rendering_resources_manager.chain_context(
+                    &mut self.state,
+                    target.surface.format(),
+                    target.surface.size(),
+                    &target.depth_texture,
+                    &mut target.offscreen,
+                );
+                target.appended.ensure(
+                    &appended_passes,
+                    assets_manager,
+                    frame.chain_generation,
+                    chain_context,
+                );
+                target.appended.plan(
+                    &appended_passes,
+                    &render_queue,
+                    self.rendering_resources_manager.shader_handles(),
+                )
+            };
+            // The chain owns opening the surface; an appended pass draws over
+            // what it left, so it never clears.
+            let mut appended_plan = appended_plan;
+            for entry in &mut appended_plan {
+                entry.keep_existing();
+            }
             let surface_render = self.state.render(
                 target,
-                plan,
+                SurfacePlans {
+                    chain: plan,
+                    appended: &appended_plan,
+                },
                 frame,
                 view_camera,
                 view_transform,
@@ -674,6 +772,8 @@ impl PillRenderer for Renderer {
             depth_texture,
             offscreen: HashMap::new(),
             chain: GpuChain::new(),
+            appended: GpuChain::new(),
+            appended_log: None,
             camera,
             overlay_targets,
             viewport: None,
@@ -756,11 +856,11 @@ impl PillRenderer for Renderer {
         }
     }
 
-    fn take_pick_results(&mut self) -> Vec<pill_renderer_api::PickResult> {
+    fn take_pick_results(&mut self) -> Vec<pill_renderer_api::editor::PickResult> {
         self.state.overlay.take_results(&self.state.device)
     }
 
-    fn take_preview_results(&mut self) -> Vec<pill_renderer_api::PreviewImage> {
+    fn take_preview_results(&mut self) -> Vec<pill_renderer_api::editor::PreviewImage> {
         self.state.preview.collect(&self.state.device)
     }
 }
@@ -821,6 +921,10 @@ pub struct State {
     /// The asset preview path: one small off-screen render per request, read
     /// back between frames.
     pub(crate) preview: crate::preview::PreviewRenderer,
+    /// The camera an asset preview draws through. A preview frames the asset it
+    /// shows - a fixed view of the sphere, or a view fitted to a mesh's bounds -
+    /// so it owns a camera slot rather than borrowing a surface's.
+    pub(crate) preview_camera: RendererCameraHandle,
     /// The UI painter: the game's UI and the debug labels, over every
     /// surface's overlay. Its pipeline is tied to the surfaces' colour format,
     /// and the debug font is registered in it from the start.
@@ -933,6 +1037,14 @@ impl State {
                 &device,
                 camera_bind_group_layout.clone(),
             ));
+        // The camera a preview draws through: its own slot, because a preview
+        // frames the asset it shows rather than the surface it sits beside.
+        let preview_camera = renderer_resource_storage
+            .cameras
+            .insert(RendererCamera::new(
+                &device,
+                camera_bind_group_layout.clone(),
+            ));
         // Step 4: Build the primary surface's target and the state that draws
         // it. The backend is read before the surface moves into the target, so
         // the ray tracing decision below can name it.
@@ -944,6 +1056,8 @@ impl State {
             depth_texture,
             offscreen: HashMap::new(),
             chain: GpuChain::new(),
+            appended: GpuChain::new(),
+            appended_log: None,
             camera,
             overlay_targets,
             viewport: None,
@@ -976,6 +1090,7 @@ impl State {
             adapter,
             overlay,
             preview,
+            preview_camera,
             ui_renderer,
             frames_since_ui_report: 0,
         };
@@ -1048,7 +1163,7 @@ impl State {
     fn render(
         &mut self,
         target: &mut SurfaceTarget,
-        plan: &[PassPlan],
+        plans: SurfacePlans<'_>,
         frame: &RenderFrame,
         camera: &CameraComponent,
         transform: &TransformComponent,
@@ -1067,7 +1182,13 @@ impl State {
         // Step 3: Record one wgpu render pass per pass of the chain, into the
         // same encoder. The first pass clears the targets it writes. The rest
         // add to what is there.
-        for entry in plan {
+        for entry in plans.chain {
+            self.record_pass(&mut encoder, entry, target, &draw);
+        }
+        // Step 3b: The passes owners appended after the chain, over the picture
+        // it produced and under the overlay. A surface the append list leaves
+        // out records none.
+        for entry in plans.appended {
             self.record_pass(&mut encoder, entry, target, &draw);
         }
         // Step 4: Draw the overlay and the UI over the chain's picture.
@@ -1593,10 +1714,15 @@ impl State {
         let Some(camera) = self.renderer_resource_storage.cameras.get(draw.camera) else {
             return;
         };
+        let editor_view = draw
+            .frame
+            .editor_views
+            .contains(&pill_renderer_api::SurfaceId(draw.surface_id));
         let labels = overlay::label_list(
             &draw.frame.debug,
             &camera.parameters_data.view_projection_matrix,
             draw.viewport,
+            editor_view,
         );
         self.overlay.record(
             &self.device,
@@ -1745,14 +1871,15 @@ fn create_ray_tracing_scene(
 /// Draw one asset preview, when the frame asked for one and the previous
 /// preview has been handed over.
 ///
-/// A texture is drawn from its file, which the preview path decodes and
-/// uploads on first use. A material is drawn as a sphere in the first colour
-/// parameter of its parameter map, and a mesh from its own file through the
-/// preview's mesh pipeline.
+/// A texture is drawn from its file, which the preview path decodes and uploads
+/// on first use. A material and a mesh are drawn by the renderer's own chain:
+/// the asset becomes one instance and the geometry pass draws it through the
+/// pipeline its material's shader carries - a material on the preview sphere, a
+/// mesh with the default material.
 ///
-/// Every request the frame took is answered: the first is drawn if the
-/// renderer is free, and anything not drawn is refused. A caller that waits
-/// for an answer that never comes stops asking.
+/// Every request the frame took is answered: the first is drawn if the renderer
+/// is free, and anything not drawn is refused. A caller that waits for an answer
+/// that never comes stops asking.
 ///
 /// The preview has its own encoder and submission, after the frame's surfaces,
 /// so it never delays a presented frame.
@@ -1780,91 +1907,241 @@ fn record_preview(renderer: &mut Renderer, frame: &RenderFrame, assets_manager: 
 ///
 /// # Errors
 ///
-/// Returns the reason as text when the asset's file cannot be decoded.
+/// Returns the reason as text when the asset's file cannot be decoded, the asset
+/// is not in the store, or the renderer has no GPU object for it yet.
 fn draw_preview(
     renderer: &mut Renderer,
-    request: &pill_renderer_api::PreviewRequest,
+    request: &pill_renderer_api::editor::PreviewRequest,
     assets_manager: &AssetManager,
 ) -> std::result::Result<(), &'static str> {
-    // What the fragment shader draws, and the source it samples: a texture
-    // file decoded here, or the preview's own white texture for a material.
-    let (mode, color, source) = match &request.asset {
-        pill_renderer_api::PreviewAsset::Texture { path } => {
+    match &request.asset {
+        pill_renderer_api::editor::PreviewAsset::Texture { path } => {
             let source = renderer
                 .state
                 .preview
                 .texture(&renderer.state.device, &renderer.state.queue, path)
                 .ok_or("the texture file could not be decoded")?;
-            (
-                crate::preview::PreviewMode::Texture,
-                [1.0f32; 4],
-                Some(source),
-            )
-        }
-        pill_renderer_api::PreviewAsset::Material { guid } => {
-            let color = pill_engine::AssetGuid::parse(guid)
-                .and_then(|guid| {
-                    assets_manager
-                        .get_by_guid::<crate::assets::Material>(guid)
-                        .and_then(|material| {
-                            material
-                                .parameters
-                                .values()
-                                .find_map(|parameter| match parameter {
-                                    pill_renderer_api::MaterialParameter::Color(color) => {
-                                        Some([color[0], color[1], color[2], 1.0])
-                                    }
-                                    _ => None,
-                                })
-                        })
-                })
-                .unwrap_or([0.72, 0.72, 0.72, 1.0]);
-            (crate::preview::PreviewMode::Material, color, None)
-        }
-        pill_renderer_api::PreviewAsset::Mesh { path } => {
-            let mesh = renderer
-                .state
-                .preview
-                .mesh(&renderer.state.device, &renderer.state.queue, path)
-                .ok_or("the mesh file could not be decoded")?;
             let mut encoder =
                 renderer
                     .state
                     .device
                     .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                        label: Some("preview_mesh_encoder"),
+                        label: Some("preview_encoder"),
                     });
-            renderer.state.preview.record_mesh(
+            renderer.state.preview.record_texture(
                 &renderer.state.device,
-                &renderer.state.queue,
                 &mut encoder,
                 request.id,
-                &mesh,
+                source,
             );
             renderer
                 .state
                 .queue
                 .submit(std::iter::once(encoder.finish()));
             renderer.state.preview.after_submit();
-            return Ok(());
+            Ok(())
         }
+        pill_renderer_api::editor::PreviewAsset::Material { guid } => {
+            let guid = pill_engine::AssetGuid::parse(guid).ok_or("the guid does not parse")?;
+            let material_handle = assets_manager
+                .handle_by_guid::<crate::assets::Material>(guid)
+                .ok_or("the material is not loaded")?;
+            let instance = pill_renderer_api::RenderInstance {
+                entity: pill_engine::Entity::NULL,
+                // The sphere sits at the origin; the camera is what stands
+                // back from it.
+                transform: TransformComponent::default(),
+                mesh: sphere_asset_key(assets_manager).ok_or("the preview sphere is not loaded")?,
+                material: pill_renderer_api::AssetKey(crate::assets::asset_key(material_handle)),
+                rendering_order: 0,
+            };
+            draw_asset_preview(
+                renderer,
+                request.id,
+                "material",
+                instance,
+                &crate::preview::sphere_framing(),
+            )
+        }
+        pill_renderer_api::editor::PreviewAsset::Mesh { path } => {
+            let mesh_handle = assets_manager
+                .handle_by_name::<crate::assets::Mesh>(path)
+                .ok_or("the mesh is not loaded")?;
+            let mesh = assets_manager
+                .get(mesh_handle)
+                .ok_or("the mesh is not loaded")?;
+            let framing = crate::preview::mesh_framing(&mesh.vertices)
+                .ok_or("the mesh has no bounds to frame")?;
+            let instance = pill_renderer_api::RenderInstance {
+                entity: pill_engine::Entity::NULL,
+                // The mesh is drawn where its own vertices put it, and the
+                // framing's camera looks at their centre.
+                transform: TransformComponent::default(),
+                mesh: pill_renderer_api::AssetKey(crate::assets::asset_key(mesh_handle)),
+                // A bare mesh names no material of its own, so it draws with
+                // the neutral one installed for previews rather than the
+                // chain's mirror-like default, which reads as an unlit shape.
+                material: preview_material_key(assets_manager),
+                rendering_order: 0,
+            };
+            draw_asset_preview(renderer, request.id, "mesh", instance, &framing)
+        }
+    }
+}
+
+/// The key of the sphere the renderer installs for material previews.
+fn sphere_asset_key(assets_manager: &AssetManager) -> Option<pill_renderer_api::AssetKey> {
+    assets_manager
+        .handle_by_name::<crate::assets::Mesh>(crate::preview::SPHERE_MESH_NAME)
+        .map(|handle| pill_renderer_api::AssetKey(crate::assets::asset_key(handle)))
+}
+
+/// The key of the material a mesh preview draws with.
+///
+/// A store that does not hold it - a test, or a renderer whose registration
+/// never ran against this world - leaves the instance naming no material, and
+/// the chain draws it with its own default.
+fn preview_material_key(assets_manager: &AssetManager) -> pill_renderer_api::AssetKey {
+    let handle = assets_manager
+        .handle_by_name::<crate::assets::Material>(crate::preview::MESH_MATERIAL_NAME)
+        .unwrap_or(pill_engine::Handle::INVALID);
+    pill_renderer_api::AssetKey(crate::assets::asset_key(handle))
+}
+
+/// Draws one asset through the renderer's chain into the preview target, then
+/// copies the square out for the readback.
+///
+/// The asset arrives as one instance of a one-instance frame, so the chain
+/// resolves it exactly as it resolves a game's meshes: the material's shader
+/// builds the pipeline, and the geometry pass draws the mesh through it. The
+/// framing's camera is where the preview looks from - never the asset's own
+/// transform, which would move the mesh to the eye point. The engine and camera
+/// parameters the shaders read are written for this small target; the next
+/// frame writes them again for its own surfaces.
+///
+/// # Errors
+///
+/// Returns the reason as text when the renderer has no GPU object for the
+/// asset yet, or no camera to draw through.
+fn draw_asset_preview(
+    renderer: &mut Renderer,
+    id: u64,
+    asset_label: &str,
+    instance: pill_renderer_api::RenderInstance,
+    framing: &crate::preview::PreviewFraming,
+) -> std::result::Result<(), &'static str> {
+    // Step 1: Resolve the draw through the same queue builder the frame uses.
+    let mut frame = RenderFrame::default();
+    frame.instances.push(instance);
+    let queue = renderer
+        .rendering_resources_manager
+        .build_queue(&frame, &renderer.state);
+    if queue.is_empty() {
+        return Err("the asset has no GPU object yet");
+    }
+    crate::instance::build_queued_instances(
+        &queue,
+        &frame.instances,
+        &mut renderer.queued_instances,
+    );
+    // Name what the preview draws through, so a suite can read which shader a
+    // material tile used instead of inferring it from pixels.
+    let shader_name = queue
+        .first()
+        .and_then(|item| {
+            renderer
+                .state
+                .renderer_resource_storage
+                .shaders
+                .get(item.shader)
+        })
+        .map_or("-", |shader| shader.name.as_str());
+    pill_core::info!(
+        target: telemetry_target::RENDERING,
+        id,
+        asset = asset_label,
+        shader = shader_name,
+        "[render] preview drew"
+    );
+    renderer.state.mesh_drawer.upload_instances(
+        &renderer.state.device,
+        &renderer.state.queue,
+        &renderer.queued_instances,
+    );
+    // Step 2: Write the parameters and the camera this preview draws with. Both
+    // are shared with the surfaces, so the next frame writes them again before
+    // anything of its own is drawn.
+    let size = crate::preview::PREVIEW_SIZE;
+    renderer
+        .state
+        .renderer_resource_storage
+        .engine_parameters
+        .update(
+            &renderer.state.queue,
+            NO_FOG_DENSITY,
+            NO_FOG_COLOR,
+            [size, size],
+            [0.0, 0.0, 0.0, 0.0],
+        );
+    let camera_handle = renderer.state.preview_camera;
+    let Some(renderer_camera) = renderer
+        .state
+        .renderer_resource_storage
+        .cameras
+        .get_mut(camera_handle)
+    else {
+        return Err("the preview camera is gone");
     };
+    renderer_camera.update(
+        &renderer.state.queue,
+        &framing.camera,
+        &framing.transform,
+        1.0,
+    );
+    // Step 3: Record the instance into the preview target and copy it out.
     let mut encoder =
         renderer
             .state
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("preview_encoder"),
+                label: Some("preview_asset_encoder"),
             });
-    renderer.state.preview.record(
-        &renderer.state.device,
-        &renderer.state.queue,
+    let color_attachments = [Some(wgpu::RenderPassColorAttachment {
+        view: renderer.state.preview.target_view(),
+        depth_slice: None,
+        resolve_target: None,
+        ops: wgpu::Operations {
+            load: wgpu::LoadOp::Clear(CLEAR_TRANSPARENT),
+            store: wgpu::StoreOp::Store,
+        },
+    })];
+    let ranges = [crate::chain::DrawRange {
+        range: 0..queue.len() as u32,
+        own_pipeline: false,
+    }];
+    let Some(renderer_camera) = renderer
+        .state
+        .renderer_resource_storage
+        .cameras
+        .get(camera_handle)
+    else {
+        return Err("the preview camera is gone");
+    };
+    renderer.state.mesh_drawer.record_draw_commands(
         &mut encoder,
-        request.id,
-        mode,
-        color,
-        source,
+        &renderer.state.renderer_resource_storage,
+        "preview_asset",
+        None,
+        &color_attachments,
+        depth_attachment(renderer.state.preview.depth_view(), true),
+        renderer_camera,
+        &queue,
+        &ranges,
+        RenderViewport::full(size, size),
+        None,
     );
+    renderer.state.preview.mark_in_flight(id);
+    renderer.state.preview.copy_target_to_readback(&mut encoder);
     renderer
         .state
         .queue
@@ -2017,6 +2294,7 @@ fn viewport_in_target(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pill_renderer_api::{AppendPass, PassSettings};
 
     #[test]
     fn a_viewport_in_a_scaled_target_is_scaled_with_it() {
@@ -2051,20 +2329,65 @@ mod tests {
         ));
     }
 
+    fn named_pass(name: &str) -> ResolvedPass {
+        ResolvedPass {
+            name: name.to_string(),
+            shader: None,
+            settings: PassSettings::default(),
+            parameters: BTreeMap::new(),
+            inputs: BTreeMap::new(),
+            textures: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn an_editor_view_pass_runs_on_editor_views_only() {
+        let frame = RenderFrame {
+            editor_views: vec![SurfaceId(1), SurfaceId(2)],
+            append_passes: vec![
+                AppendPass {
+                    pass: named_pass("everywhere"),
+                    surfaces: PassSurfaces::Every,
+                },
+                AppendPass {
+                    pass: named_pass("editor only"),
+                    surfaces: PassSurfaces::EditorViews,
+                },
+            ],
+            ..RenderFrame::default()
+        };
+
+        let names = |surface: u32| {
+            append_passes_for(&frame, SurfaceId(surface))
+                .into_iter()
+                .map(|pass| pass.name)
+                .collect::<Vec<String>>()
+        };
+
+        // The game's own window is surface 0 and gets the shared pass alone.
+        assert_eq!(names(0), vec!["everywhere".to_string()]);
+        assert_eq!(
+            names(1),
+            vec!["everywhere".to_string(), "editor only".to_string()]
+        );
+    }
+
     /// The instance buffer is uploaded once per frame, not once per surface:
     /// `State::render` runs for the primary surface and again for every extra
     /// one, all with the same queue.
     ///
     /// The upload needs a device, so this reads the frame path instead: one
-    /// upload call, in `Renderer::render`, and no instance slice threaded into
-    /// the per-surface path at all.
+    /// upload call for the frame, in `Renderer::render`, and no instance slice
+    /// threaded into the per-surface path at all. An asset preview draws one
+    /// instance of its own after the frame's submission, so it uploads that one
+    /// separately.
     #[test]
     fn the_instance_buffer_is_uploaded_once_per_frame() {
         let source = include_str!("renderer.rs");
         assert_eq!(
             source.matches(concat!("upload_", "instances(")).count(),
-            1,
-            "a frame draws N surfaces from one instance buffer, so it uploads it once"
+            2,
+            "a frame draws N surfaces from one instance buffer, and a preview uploads its own one instance"
         );
         assert!(
             !source.contains(concat!("(inst", "ances, render", "_queue)")),

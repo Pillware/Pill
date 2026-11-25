@@ -14,6 +14,7 @@ pill_core_macros = { path = "../../engine/pill_core_macros" }
 # into, the same shared dylib `pill_input` maps into: frontends name the
 # core, never the `pill_engine` facade with its per-DLL registries.
 pill_engine_core = { path = "../../engine/pill_engine_core" }
+pill_renderer_api = { path = "../../rendering/pill_renderer_api" }
 thiserror = "2"
 miette = { version = "7", features = ["derive"] }
 tracing = "0.1"

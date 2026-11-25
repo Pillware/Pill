@@ -5,8 +5,10 @@
 //! - Draw the frame's debug line segments as screen-facing quads, projected and
 //!   clipped at the camera's near side by the shared projection code
 //!   ([`render`]).
-//! - Draw the frame's labels with a small bitmap font in uppercase.
-//! - Hide a line the scene covers when the line asks to be depth-tested.
+//! - Draw the frame's labels in the shared bitmap font, at the style the label
+//!   asks for.
+//! - Honour each drawing's depth: hidden by the scene, over it, or showing
+//!   through it in the muted look.
 //!
 //! # Design
 //!
@@ -16,19 +18,20 @@
 //! segment's depth, which is what lets the depth buffer hide it behind scene
 //! geometry.
 //!
-//! The font is drawn here rather than sampled from a texture: a label is a
-//! three-pixel-wide, five-pixel-tall bitmap per character, scaled up so it is
-//! legible on a small panel. That keeps the label path free of a texture atlas
-//! while the UI path keeps its images.
+//! The glyphs come from the font both renderers share
+//! (`pill_rendering_core::debug_font`) and are drawn straight into the
+//! framebuffer, so the label path needs no texture atlas while the UI path keeps
+//! its images.
 //!
 //! Gizmos, selection outlines, the scene grid and picking belong to the editor,
 //! which always uses the GPU renderer, so nothing here draws them.
 
 // External crates
 use pill_core::math::Matrix4f;
-use pill_engine::{DebugFrame, DebugLabel};
 use pill_renderer_api::RenderViewport;
-use pill_rendering_core::projection::{label_origin, line_quad, to_pixels};
+use pill_renderer_api::{DebugDepth, DebugFrame, DebugLabel, LabelAlign};
+use pill_rendering_core::debug_font::{glyph_rows, GLYPH_ROWS, GLYPH_WIDTH};
+use pill_rendering_core::projection::{label_depth, label_origin, line_quad, to_pixels};
 
 // Current crate
 use crate::framebuffer::Framebuffer;
@@ -42,15 +45,13 @@ use crate::framebuffer::Framebuffer;
 /// a soft edge on a small panel.
 const LINE_HALF_WIDTH: f32 = 0.75;
 
-/// How many panel pixels one font pixel covers.
-const GLYPH_SCALE: u32 = 2;
+/// How many panel pixels one font pixel covers. The panel draws the shared font
+/// at its own size, so one glyph pixel is one panel pixel.
+const GLYPH_SCALE: u32 = 1;
 
-/// The width of one character cell in font pixels: three glyph columns and one
-/// of spacing.
-const GLYPH_ADVANCE: u32 = 4;
-
-/// The height of one font row in font pixels.
-const GLYPH_ROWS: u32 = 5;
+/// The width of one character cell in font pixels: the glyph and one column of
+/// spacing.
+const GLYPH_ADVANCE: u32 = GLYPH_WIDTH + 1;
 
 // =============================================================================
 // Free Functions
@@ -59,8 +60,8 @@ const GLYPH_ROWS: u32 = 5;
 /// Draws the frame's debug lines and labels into `framebuffer`.
 ///
 /// `depth` is the scene's depth buffer, one entry per panel pixel, or an empty
-/// slice when there is none; a line that asks for a depth test against an empty
-/// buffer is drawn. Returns whether anything reached the framebuffer.
+/// slice when there is none; a drawing that asks for a depth test against an
+/// empty buffer is drawn. Returns whether anything reached the framebuffer.
 pub fn render(
     framebuffer: &mut Framebuffer,
     frame: &DebugFrame,
@@ -72,16 +73,11 @@ pub fn render(
         return false;
     }
     let mut drew = false;
-    for line in &frame.lines {
-        // A line that belongs to the editor's own chrome is drawn by an editor
-        // view only, which this renderer never is.
-        if line.chrome {
-            continue;
-        }
+    for line in frame.visible_lines(false) {
         drew |= draw_line(framebuffer, line, view_projection, viewport, depth);
     }
-    for label in &frame.labels {
-        drew |= draw_label(framebuffer, label, view_projection, viewport);
+    for label in frame.visible_labels(false) {
+        drew |= draw_label(framebuffer, label, view_projection, viewport, depth);
     }
     drew
 }
@@ -93,7 +89,7 @@ pub fn render(
 /// Draws one line segment, or nothing when it is behind the camera.
 fn draw_line(
     framebuffer: &mut Framebuffer,
-    line: &pill_engine::DebugLine,
+    line: &pill_renderer_api::DebugLine,
     view_projection: &Matrix4f,
     viewport: RenderViewport,
     depth: &[u16],
@@ -135,21 +131,24 @@ fn draw_line(
             viewport,
             [first, second, third],
             line.color,
-            line.depth_test,
+            line.depth,
             depth,
         );
     }
     drew
 }
 
-/// Fills one triangle with one blended colour, honouring the depth test when
-/// it is asked for.
+/// Fills one triangle with one blended colour, honouring `depth`.
+///
+/// A drawing that shows through geometry keeps its colour where it is in front
+/// and takes the hidden look where it is behind: muted, and checkered when the
+/// look asks for it, so the two are told apart without the drawing disappearing.
 fn fill_triangle(
     framebuffer: &mut Framebuffer,
     viewport: RenderViewport,
     mut triangle: [(f32, f32, f32); 3],
     color: [f32; 4],
-    depth_test: bool,
+    mode: DebugDepth,
     depth: &[u16],
 ) -> bool {
     // Step 1: One winding for the three edge tests.
@@ -189,8 +188,8 @@ fn fill_triangle(
         .ceil()
         .min((viewport.y + viewport.height) as f32);
 
-    let depth_test =
-        depth_test && depth.len() == framebuffer.width() as usize * framebuffer.height() as usize;
+    let depth_test = matches!(mode, DebugDepth::Hidden | DebugDepth::Dimmed { .. })
+        && depth.len() == framebuffer.width() as usize * framebuffer.height() as usize;
     let mut drew = false;
     for y in minimum_y as u32..maximum_y as u32 {
         let pixel_y = y as f32 + 0.5;
@@ -202,16 +201,32 @@ fn fill_triangle(
             if weight_first < 0.0 || weight_second < 0.0 || weight_third < 0.0 {
                 continue;
             }
+            let mut pixel_color = color;
             if depth_test {
                 let line_depth =
                     weight_first * first.2 + weight_second * second.2 + weight_third * third.2;
                 let line_depth = (line_depth * f32::from(u16::MAX)) as u16;
                 let index = y as usize * framebuffer.width() as usize + x as usize;
                 if line_depth > depth[index] {
-                    continue;
+                    // Geometry is in front of this pixel. A drawing that hides
+                    // behind it stops here; a dimmed one goes on in its muted
+                    // look, which is what tells a hidden part from a visible one.
+                    let Some(hidden) = mode.hidden_look() else {
+                        continue;
+                    };
+                    if hidden.checker && (x + y) % 2 == 1 {
+                        continue;
+                    }
+                    let brightness = hidden.brightness.clamp(0.0, 1.0);
+                    pixel_color = [
+                        pixel_color[0] * brightness,
+                        pixel_color[1] * brightness,
+                        pixel_color[2] * brightness,
+                        pixel_color[3] * brightness,
+                    ];
                 }
             }
-            framebuffer.blend_pixel(x, y, color);
+            framebuffer.blend_pixel(x, y, pixel_color);
             drew = true;
         }
     }
@@ -234,26 +249,90 @@ fn edge_of(from: (f32, f32, f32), to: (f32, f32, f32), x: f32, y: f32) -> f32 {
 // Labels
 // =============================================================================
 
-/// Draws one label's text from its anchor, in uppercase.
+/// Draws one label's text from its anchor, in the style it asks for.
+///
+/// The label's depth is tested at its anchor: a label whose anchor the scene
+/// covers is dropped as a whole, or drawn in the muted look when it asks to
+/// show through.
 fn draw_label(
     framebuffer: &mut Framebuffer,
     label: &DebugLabel,
     view_projection: &Matrix4f,
     viewport: RenderViewport,
+    depth: &[u16],
 ) -> bool {
     let Some((origin_x, origin_y)) = label_origin(label.anchor, view_projection, viewport) else {
         return false;
     };
-    // A screen anchor is given in panel pixels and a world anchor is projected
-    // into the viewport, so both are panel pixels here: the panel is the
-    // surface.
+    // Step 1: the anchor's depth, tested once for the whole label.
+    let mut color = label.color;
+    if let Some(anchor_depth) = label_depth(label.anchor, view_projection) {
+        let index = origin_y as usize * framebuffer.width() as usize + origin_x as usize;
+        let covered = depth.len() == framebuffer.width() as usize * framebuffer.height() as usize
+            && depth[index] < (anchor_depth * f32::from(u16::MAX)) as u16;
+        if covered {
+            let Some(hidden) = label.depth.hidden_look() else {
+                return false;
+            };
+            let brightness = hidden.brightness.clamp(0.0, 1.0);
+            color = [
+                color[0] * brightness,
+                color[1] * brightness,
+                color[2] * brightness,
+                color[3] * brightness,
+            ];
+        }
+    }
+
+    // Step 2: the text's cell, placed around the anchor by its alignment, and
+    // the plate behind it.
+    let scale = label.scale.max(0.1);
+    let cell = |value: u32| (value as f32 * scale) as u32;
+    let columns = label.text.chars().count() as u32;
+    let text_width = columns * cell(GLYPH_ADVANCE);
+    let start_x = match label.align {
+        LabelAlign::Left => origin_x,
+        LabelAlign::Center => origin_x - text_width as f32 * 0.5,
+        LabelAlign::Right => origin_x - text_width as f32,
+    };
     let mut drew = false;
+    if let Some(background) = label.background {
+        drew |= fill_plate(
+            framebuffer,
+            start_x,
+            origin_y,
+            text_width,
+            cell(GLYPH_ROWS as u32),
+            background,
+        );
+    }
+
+    // Step 3: the glyphs, one cell each.
     for (index, character) in label.text.chars().enumerate() {
-        let Some(glyph) = glyph(character) else {
+        let Some(glyph) = glyph_rows(character) else {
             continue;
         };
-        let cell_x = origin_x + (index as u32 * GLYPH_ADVANCE * GLYPH_SCALE) as f32;
-        drew |= draw_glyph(framebuffer, glyph, cell_x, origin_y, label.color);
+        let cell_x = start_x + (index as u32 * cell(GLYPH_ADVANCE)) as f32;
+        drew |= draw_glyph(framebuffer, glyph, cell_x, origin_y, color, scale);
+    }
+    drew
+}
+
+/// Fills one label's background plate and answers whether it drew anything.
+fn fill_plate(
+    framebuffer: &mut Framebuffer,
+    origin_x: f32,
+    origin_y: f32,
+    width: u32,
+    height: u32,
+    color: [f32; 4],
+) -> bool {
+    let mut drew = false;
+    for y in origin_y as u32..origin_y as u32 + height {
+        for x in origin_x as u32..origin_x as u32 + width {
+            framebuffer.blend_pixel(x, y, color);
+            drew = true;
+        }
     }
     drew
 }
@@ -261,21 +340,23 @@ fn draw_label(
 /// Draws one glyph's lit font pixels at `origin`, scaled up.
 fn draw_glyph(
     framebuffer: &mut Framebuffer,
-    glyph: [u8; GLYPH_ROWS as usize],
+    glyph: [u8; GLYPH_ROWS],
     origin_x: f32,
     origin_y: f32,
     color: [f32; 4],
+    scale: f32,
 ) -> bool {
     let mut drew = false;
+    let step = (GLYPH_SCALE as f32 * scale).max(1.0) as u32;
     for (row, bits) in glyph.iter().enumerate() {
-        for column in 0..3u32 {
-            if bits & (1 << (2 - column)) == 0 {
+        for column in 0..GLYPH_WIDTH {
+            if bits & (1 << (GLYPH_WIDTH - 1 - column)) == 0 {
                 continue;
             }
-            for offset_y in 0..GLYPH_SCALE {
-                for offset_x in 0..GLYPH_SCALE {
-                    let x = origin_x as u32 + column * GLYPH_SCALE + offset_x;
-                    let y = origin_y as u32 + row as u32 * GLYPH_SCALE + offset_y;
+            for offset_y in 0..step {
+                for offset_x in 0..step {
+                    let x = origin_x as u32 + column * step + offset_x;
+                    let y = origin_y as u32 + row as u32 * step + offset_y;
                     framebuffer.blend_pixel(x, y, color);
                     drew = true;
                 }
@@ -283,61 +364,6 @@ fn draw_glyph(
         }
     }
     drew
-}
-
-/// The five rows of one character's glyph, or `None` for a character the font
-/// has no glyph for (a space draws nothing).
-///
-/// Each row holds three bits, the leftmost column in bit 2. Characters are
-/// drawn in uppercase; a lowercase letter uses its uppercase glyph.
-fn glyph(character: char) -> Option<[u8; GLYPH_ROWS as usize]> {
-    let uppercase = character.to_ascii_uppercase();
-    let glyph = match uppercase {
-        'A' => [0b010, 0b101, 0b111, 0b101, 0b101],
-        'B' => [0b110, 0b101, 0b110, 0b101, 0b110],
-        'C' => [0b011, 0b100, 0b100, 0b100, 0b011],
-        'D' => [0b110, 0b101, 0b101, 0b101, 0b110],
-        'E' => [0b111, 0b100, 0b110, 0b100, 0b111],
-        'F' => [0b111, 0b100, 0b110, 0b100, 0b100],
-        'G' => [0b011, 0b100, 0b101, 0b101, 0b011],
-        'H' => [0b101, 0b101, 0b111, 0b101, 0b101],
-        'I' => [0b111, 0b010, 0b010, 0b010, 0b111],
-        'J' => [0b001, 0b001, 0b001, 0b101, 0b010],
-        'K' => [0b101, 0b101, 0b110, 0b101, 0b101],
-        'L' => [0b100, 0b100, 0b100, 0b100, 0b111],
-        'M' => [0b101, 0b111, 0b111, 0b101, 0b101],
-        'N' => [0b110, 0b101, 0b101, 0b101, 0b101],
-        'O' => [0b010, 0b101, 0b101, 0b101, 0b010],
-        'P' => [0b110, 0b101, 0b110, 0b100, 0b100],
-        'Q' => [0b010, 0b101, 0b101, 0b110, 0b011],
-        'R' => [0b110, 0b101, 0b110, 0b101, 0b101],
-        'S' => [0b011, 0b100, 0b010, 0b001, 0b110],
-        'T' => [0b111, 0b010, 0b010, 0b010, 0b010],
-        'U' => [0b101, 0b101, 0b101, 0b101, 0b011],
-        'V' => [0b101, 0b101, 0b101, 0b101, 0b010],
-        'W' => [0b101, 0b101, 0b111, 0b111, 0b101],
-        'X' => [0b101, 0b101, 0b010, 0b101, 0b101],
-        'Y' => [0b101, 0b101, 0b010, 0b010, 0b010],
-        'Z' => [0b111, 0b001, 0b010, 0b100, 0b111],
-        '0' => [0b111, 0b101, 0b101, 0b101, 0b111],
-        '1' => [0b010, 0b110, 0b010, 0b010, 0b111],
-        '2' => [0b110, 0b001, 0b010, 0b100, 0b111],
-        '3' => [0b110, 0b001, 0b010, 0b001, 0b110],
-        '4' => [0b101, 0b101, 0b111, 0b001, 0b001],
-        '5' => [0b111, 0b100, 0b110, 0b001, 0b110],
-        '6' => [0b011, 0b100, 0b110, 0b101, 0b010],
-        '7' => [0b111, 0b001, 0b010, 0b010, 0b010],
-        '8' => [0b010, 0b101, 0b010, 0b101, 0b010],
-        '9' => [0b010, 0b101, 0b011, 0b001, 0b110],
-        '.' => [0b000, 0b000, 0b000, 0b000, 0b010],
-        '-' => [0b000, 0b000, 0b111, 0b000, 0b000],
-        ':' => [0b000, 0b010, 0b000, 0b010, 0b000],
-        '/' => [0b001, 0b001, 0b010, 0b100, 0b100],
-        '+' => [0b000, 0b010, 0b111, 0b010, 0b000],
-        ' ' => [0b000; GLYPH_ROWS as usize],
-        _ => return None,
-    };
-    Some(glyph)
 }
 
 // =============================================================================
@@ -348,8 +374,8 @@ fn glyph(character: char) -> Option<[u8; GLYPH_ROWS as usize]> {
 mod tests {
     use super::*;
 
-    use pill_engine::{DebugColor, DebugLine, LabelAnchor};
     use pill_renderer_api::CameraComponent;
+    use pill_renderer_api::{DebugColor, DebugDepth, DebugLine, LabelAlign, LabelAnchor};
     use pill_rendering_core::camera::{projection_matrix, view_matrix};
 
     /// A camera three units in front of the origin, looking down `-Z`.
@@ -365,13 +391,13 @@ mod tests {
     }
 
     /// A debug line from `start` to `end` in world space.
-    fn line(start: [f32; 3], end: [f32; 3], depth_test: bool) -> DebugLine {
+    fn line(start: [f32; 3], end: [f32; 3], depth: DebugDepth) -> DebugLine {
         DebugLine {
             start,
             end,
             color: [1.0, 0.0, 0.0, 1.0],
-            depth_test,
-            chrome: false,
+            depth,
+            editor_only: false,
         }
     }
 
@@ -382,7 +408,7 @@ mod tests {
         let mut frame = DebugFrame::default();
         frame
             .lines
-            .push(line([-0.5, 0.0, 0.0], [0.5, 0.0, 0.0], false));
+            .push(line([-0.5, 0.0, 0.0], [0.5, 0.0, 0.0], DebugDepth::OnTop));
 
         let drew = render(
             &mut framebuffer,
@@ -408,13 +434,18 @@ mod tests {
     /// A line that asks to be depth-tested is hidden by scene geometry in front
     /// of it, and one that does not ask is drawn over everything.
     #[test]
-    fn a_depth_tested_line_is_hidden_by_the_scene() {
-        for depth_test in [true, false] {
+    fn a_hidden_line_is_covered_by_the_scene() {
+        for hidden in [true, false] {
+            let depth = if hidden {
+                DebugDepth::Hidden
+            } else {
+                DebugDepth::OnTop
+            };
             let mut framebuffer = Framebuffer::new(240, 240);
             let mut frame = DebugFrame::default();
             frame
                 .lines
-                .push(line([-0.5, 0.0, 0.0], [0.5, 0.0, 0.0], depth_test));
+                .push(line([-0.5, 0.0, 0.0], [0.5, 0.0, 0.0], depth));
             // A scene depth of zero everywhere: geometry at the near plane, in
             // front of any debug line.
             let depth = vec![0u16; 240 * 240];
@@ -428,7 +459,7 @@ mod tests {
             );
 
             let drawn = framebuffer.pixel(120, 120) != Some(0x0000);
-            assert_eq!(drawn, !depth_test, "depth_test={depth_test}");
+            assert_eq!(drawn, !hidden, "hidden={hidden}");
         }
     }
 
@@ -441,6 +472,11 @@ mod tests {
             anchor: LabelAnchor::Screen { x: 10.0, y: 20.0 },
             text: "AB".to_string(),
             color: [1.0, 1.0, 1.0, 1.0],
+            depth: DebugDepth::OnTop,
+            editor_only: false,
+            scale: 1.0,
+            align: LabelAlign::Left,
+            background: None,
         });
 
         let drew = render(
@@ -462,9 +498,9 @@ mod tests {
     /// still gets readable text.
     #[test]
     fn a_lowercase_label_uses_its_uppercase_glyph() {
-        assert_eq!(glyph('a'), glyph('A'));
-        assert_eq!(glyph('?'), None);
-        assert_eq!(glyph(' '), Some([0; GLYPH_ROWS as usize]));
+        assert_eq!(glyph_rows('a'), glyph_rows('A'));
+        assert_eq!(glyph_rows('@'), None);
+        assert_eq!(glyph_rows(' '), Some([0; GLYPH_ROWS]));
     }
 
     /// A line behind the camera draws nothing instead of a streak across the
@@ -475,7 +511,7 @@ mod tests {
         let mut frame = DebugFrame::default();
         frame
             .lines
-            .push(line([0.0, 0.0, 10.0], [0.0, 0.0, 20.0], false));
+            .push(line([0.0, 0.0, 10.0], [0.0, 0.0, 20.0], DebugDepth::OnTop));
 
         let drew = render(
             &mut framebuffer,
@@ -496,7 +532,7 @@ mod tests {
         let mut frame = DebugFrame::default();
         frame
             .lines
-            .push(line([-0.5, 0.0, 0.0], [0.5, 0.0, 0.0], false));
+            .push(line([-0.5, 0.0, 0.0], [0.5, 0.0, 0.0], DebugDepth::OnTop));
 
         render(
             &mut framebuffer,

@@ -9,6 +9,10 @@
 //!   shader.
 //! - Load the sample map, which no material binds: it is what gives the host's
 //!   asset watcher an import the asset suites can reimport in place.
+//! - Load the second material shader the preview suites compare against the
+//!   chain's.
+//! - Import the append-pass fixture, a fullscreen pass that samples the
+//!   surface's depth after the chain has drawn.
 //! - Hand the handles back, so the scene never looks an asset up by name.
 //!
 //! # Design
@@ -30,7 +34,7 @@
 
 // External crates
 use pill_engine::{AssetManager, Handle, World};
-use pill_rendering::{AssetLoader, Material, Mesh, Texture};
+use pill_rendering::{AssetLoader, Material, Mesh, RenderPass, RenderingPipeline, Shader, Texture};
 use std::path::{Path, PathBuf};
 
 /// The handles [`load`] returns: the one mesh every model draws and the
@@ -59,12 +63,18 @@ pub(crate) fn load(world: &mut World) -> Result<SceneAssets, Box<dyn std::error:
     /// edit, corrupt and move it, and only a loaded asset is reimported in
     /// place.
     const SAMPLE_MAP_PATH: &str = "textures/reimport_sample.png";
+    /// The second material shader. A material resolves the shader it names
+    /// against the store, so a shader nothing loaded leaves the material on the
+    /// chain's own; loading it here is what lets the preview suites compare two
+    /// materials that differ in nothing but their shader.
+    const PREVIEW_SHADER_PATH: &str = "shaders/preview_shader_probe_fragment.hlsl";
 
     // Mounting the directory is what the path-based load resolves through.
     AssetLoader::set_root(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("res"));
 
     let mesh = world.load_asset::<Mesh>(MODEL_PATH)?;
     let _sample_map: Handle<Texture> = world.load_asset::<Texture>(SAMPLE_MAP_PATH)?;
+    let _preview_shader: Handle<Shader> = world.load_asset::<Shader>(PREVIEW_SHADER_PATH)?;
 
     let assets = world
         .get_resource_mut::<AssetManager>()
@@ -74,4 +84,33 @@ pub(crate) fn load(world: &mut World) -> Result<SceneAssets, Box<dyn std::error:
         .handle;
 
     Ok(SceneAssets { mesh, material })
+}
+
+/// Imports the append-pass fixture's pass, then the pipeline that names it.
+///
+/// The pass comes first: the pipeline names it by guid, so the pass has to be in
+/// the store before the pipeline resolves it. Importing a file that is already
+/// loaded hands back the handle a previous generation holds, which is what keeps
+/// a project reload from failing on a taken name.
+///
+/// # Errors
+///
+/// Returns an error naming the file when the pass or the pipeline will not load.
+pub(crate) fn load_append_pipeline(
+    world: &mut World,
+) -> Result<Handle<RenderingPipeline>, Box<dyn std::error::Error>> {
+    /// The fullscreen pass that samples the surface's depth.
+    const PASS_PATH: &str = "append_depth_probe.render_pass";
+    /// The one-pass pipeline the manager appends.
+    const PIPELINE_PATH: &str = "pipelines/append_depth_probe.pipeline";
+
+    let assets = world
+        .get_resource_mut::<AssetManager>()
+        .ok_or_else(|| "the engine AssetManager resource is missing".to_owned())?;
+    assets.import_standalone::<RenderPass>(Path::new(PASS_PATH))?;
+    let pipeline = assets
+        .import_standalone::<RenderingPipeline>(Path::new(PIPELINE_PATH))?
+        .handle;
+
+    Ok(pipeline)
 }

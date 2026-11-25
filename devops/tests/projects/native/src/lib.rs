@@ -45,8 +45,8 @@ use pill_engine::*;
 // data crate this project depends on; `MeshRendererComponent` is that
 // renderer's own idea of a thing to draw.
 use pill_rendering::{
-    CameraComponent, DirectionalLightComponent, Material, Mesh, MeshRendererComponent, RenderPass,
-    RenderingManager, RenderingPipeline, Shader, TransformComponent,
+    CameraComponent, DirectionalLightComponent, Material, Mesh, MeshRendererComponent,
+    PassSurfaces, RenderPass, RenderingManager, RenderingPipeline, Shader, TransformComponent,
 };
 use pill_spline::Spline;
 
@@ -79,6 +79,18 @@ const PASS_PATH: &str = "dwdw.render_pass";
 /// The frame this project runs, authored as a file: it names [`PASS_PATH`] by
 /// guid in the order the pass runs.
 const CHAIN_PATH: &str = "pipelines/main.pipeline";
+
+/// The append-pass fixture's pass: a fullscreen pass that samples the surface's
+/// depth after the chain has drawn.
+const APPEND_PASS_PATH: &str = "append_depth_probe.render_pass";
+
+/// The one-pass pipeline the manager appends, naming [`APPEND_PASS_PATH`].
+const APPEND_PIPELINE_PATH: &str = "pipelines/append_depth_probe.pipeline";
+
+/// The order the fixture appends at. Orders from 1000 up belong to the test
+/// fixtures, so this pass always runs after anything an engine, host or project
+/// pass appends.
+const APPEND_PASS_ORDER: i32 = 1000;
 
 /// A shader asset of the project's own, as a file in `res`.
 ///
@@ -231,6 +243,31 @@ pub fn init(engine: &mut Engine) -> u32 {
         .get_resource_mut::<RenderingManager>()
         .expect("the renderer data crate registers its manager")
         .set_pipeline(chain);
+    // The append-pass fixture, for the surfaces an editor's scene views draw:
+    // the pass runs after the chain has finished, which is what lets it read the
+    // depth the chain wrote. A run that loads no renderer cannot cook its
+    // fragment - the vertex stage it pairs with is a renderer module file - so
+    // the fixture is skipped there rather than failing the project, the same way
+    // the probe shader below is.
+    match load_append_pipeline(engine.world_mut()) {
+        Ok(pipeline) => {
+            engine
+                .world_mut()
+                .get_resource_mut::<RenderingManager>()
+                .expect("the renderer data crate registers its manager")
+                .set_append_pipeline(
+                    env!("CARGO_PKG_NAME"),
+                    pipeline,
+                    PassSurfaces::EditorViews,
+                    APPEND_PASS_ORDER,
+                );
+        }
+        Err(message) => pill_engine::tracing::warn!(
+            target: "project",
+            error = message.as_str(),
+            "[project] append pass fixture skipped"
+        ),
+    }
     // The project's own shader: importing it is what puts the asset in the
     // store, and the renderer compiles every shader asset it finds there.
     // Its vertex stage is a file of the renderer module's own `res`, so a run
@@ -577,6 +614,25 @@ fn load_chain(assets: &mut AssetManager) -> Result<Handle<RenderingPipeline>, St
         .import_standalone::<RenderingPipeline>(Path::new(CHAIN_PATH))
         .map_err(|error| format!("`{CHAIN_PATH}` did not load: {error}"))
         .map(|loaded| loaded.handle)
+}
+
+/// Import the append-pass fixture: its pass first, then the pipeline that names
+/// it by guid.
+///
+/// # Errors
+///
+/// A message naming the file when the pass or the pipeline will not load.
+fn load_append_pipeline(world: &mut World) -> Result<Handle<RenderingPipeline>, String> {
+    let assets = world
+        .get_resource_mut::<AssetManager>()
+        .expect("Engine always owns an AssetManager");
+    assets
+        .import_standalone::<RenderPass>(Path::new(APPEND_PASS_PATH))
+        .map_err(|error| format!("`{APPEND_PASS_PATH}` did not load: {error}"))?;
+    assets
+        .import_standalone::<RenderingPipeline>(Path::new(APPEND_PIPELINE_PATH))
+        .map(|loaded| loaded.handle)
+        .map_err(|error| format!("`{APPEND_PIPELINE_PATH}` did not load: {error}"))
 }
 
 // =============================================================================

@@ -1165,13 +1165,13 @@ impl EditorSnapshot {
                 .unwrap_or(false),
             gizmos_enabled: engine
                 .world()
-                .get_resource::<pill_engine::gizmos::GizmoRegistry>()
-                .map(pill_engine::gizmos::GizmoRegistry::is_enabled)
+                .get_resource::<pill_renderer_api::gizmos::GizmoRegistry>()
+                .map(pill_renderer_api::gizmos::GizmoRegistry::is_enabled)
                 .unwrap_or(false),
             component_tools: Self::capture_component_tools(engine),
             gizmo_types: engine
                 .world()
-                .get_resource::<pill_engine::gizmos::GizmoRegistry>()
+                .get_resource::<pill_renderer_api::gizmos::GizmoRegistry>()
                 .map(|registry| {
                     registry
                         .entries()

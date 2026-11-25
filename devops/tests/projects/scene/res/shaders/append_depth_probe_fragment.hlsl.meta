@@ -1,0 +1,15 @@
+format_version: 1
+asset_type: pill_rendering::Shader
+guid: 4b0f8e2c6d1a4977b3c58a0f92d7e641
+settings:
+  vertex: shaders/post_processing/fullscreen_vertex.wgsl
+  parameters:
+  - name: tint
+    type: Color
+  textures:
+  - name: depth
+    type: Depth
+    texture_binding: 0
+    sampler_binding: 1
+  engine_parameters: true
+  camera_parameters: true

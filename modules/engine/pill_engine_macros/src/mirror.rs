@@ -1455,13 +1455,17 @@ pub(crate) fn mirror_object(attribute: TokenStream2, item: syn::Item) -> syn::Re
 // #[pill_mirror_resource]
 // =============================================================================
 
-/// The attribute of `#[pill_mirror_resource]`: the resource's shared name and
-/// the names it was stored under before.
+/// The attribute of `#[pill_mirror_resource]`: the resource's shared name, the
+/// names it was stored under before, and the files that define its layout.
 struct ResourceAttribute {
     /// The name C# and every binary know the resource by.
     name: syn::LitStr,
     /// The names the resource was stored under before `name`.
     former_names: Vec<syn::LitStr>,
+    /// The files whose contents define the resource's layout.
+    layout_sources: Option<Vec<String>>,
+    /// The crates whose resolved version can change the resource's layout.
+    layout_dependencies: Option<Vec<String>>,
 }
 
 impl syn::parse::Parse for ResourceAttribute {
@@ -1470,23 +1474,45 @@ impl syn::parse::Parse for ResourceAttribute {
         // it, so it stays the one argument a reader has to understand.
         let name: syn::LitStr = input.parse()?;
         let mut former_names = Vec::new();
+        let mut layout_sources = None;
+        let mut layout_dependencies = None;
         while input.peek(syn::Token![,]) {
             input.parse::<syn::Token![,]>()?;
             if input.is_empty() {
                 break;
             }
             let key: syn::Ident = input.parse()?;
-            if key != "former" {
-                return Err(syn::Error::new_spanned(
-                    &key,
-                    format!("unknown `#[pill_mirror_resource]` option `{key}`; expected `former`"),
-                ));
+            match key.to_string().as_str() {
+                "former" => {
+                    input.parse::<syn::Token![=]>()?;
+                    let literal: syn::LitStr = input.parse()?;
+                    former_names.push(literal);
+                }
+                "layout_sources" => {
+                    input.parse::<syn::Token![=]>()?;
+                    layout_sources = Some(crate::parse_string_list(input)?);
+                }
+                "layout_dependencies" => {
+                    input.parse::<syn::Token![=]>()?;
+                    layout_dependencies = Some(crate::parse_string_list(input)?);
+                }
+                _ => {
+                    return Err(syn::Error::new_spanned(
+                        &key,
+                        format!(
+                            "unknown `#[pill_mirror_resource]` option `{key}`; expected `former`, \
+                             `layout_sources` or `layout_dependencies`"
+                        ),
+                    ))
+                }
             }
-            input.parse::<syn::Token![=]>()?;
-            let literal: syn::LitStr = input.parse()?;
-            former_names.push(literal);
         }
-        Ok(Self { name, former_names })
+        Ok(Self {
+            name,
+            former_names,
+            layout_sources,
+            layout_dependencies,
+        })
     }
 }
 
@@ -1500,28 +1526,34 @@ impl syn::parse::Parse for ResourceAttribute {
 /// `former = "old::Name"` (repeatable) declares the names the resource was
 /// stored under before, which a reload snapshot taken then still uses.
 ///
-/// The emitted `Resource` impl resolves a `Clone` probe at the type's own site,
-/// so the editor's play mode can copy the value at Play and put it back at
-/// Stop. A mirrored resource that does not derive `Clone` refuses Play by name.
+/// `layout_sources = ["..."]` and `layout_dependencies = ["..."]` declare what
+/// defines the resource's layout, exactly as `#[resource]` does: the host
+/// fingerprints the files and crate versions and drops the live value with a
+/// `resource layout changed` warning when they differ, instead of reading a
+/// changed value through the old type.
 ///
 /// # Errors
 ///
 /// Returns an error when the attribute does not start with a string literal or
-/// names an option other than `former`, and when the item is not a non-generic
-/// struct.
+/// names an option other than `former`, `layout_sources` or
+/// `layout_dependencies`, and when the item is not a non-generic struct.
 pub(crate) fn mirror_resource(
     attribute: TokenStream2,
     item: syn::Item,
 ) -> syn::Result<TokenStream2> {
     // Step 1: read the shared name and former names the attribute carries.
-    let ResourceAttribute { name, former_names } = syn::parse2::<ResourceAttribute>(attribute)
-        .map_err(|error| {
-            syn::Error::new(
-                error.span(),
-                "`#[pill_mirror_resource]` takes the resource's shared name: \
+    let ResourceAttribute {
+        name,
+        former_names,
+        layout_sources,
+        layout_dependencies,
+    } = syn::parse2::<ResourceAttribute>(attribute).map_err(|error| {
+        syn::Error::new(
+            error.span(),
+            "`#[pill_mirror_resource]` takes the resource's shared name: \
              `#[pill_mirror_resource(\"my_crate::MyResource\")]`",
-            )
-        })?;
+        )
+    })?;
     // The name is a process-wide identity and a file value, so it takes the
     // same `<prefix>::<Type>` shape every other shared name has.
     crate::validated_shared_name(&name, "resource")?;
@@ -1564,6 +1596,9 @@ pub(crate) fn mirror_resource(
             }
         }
     };
+    let layout_sources_impl = crate::layout_field_impl("layout_sources", layout_sources.as_deref());
+    let layout_dependencies_impl =
+        crate::layout_field_impl("layout_dependencies", layout_dependencies.as_deref());
     Ok(quote! {
         #item
 
@@ -1573,6 +1608,10 @@ pub(crate) fn mirror_resource(
             }
 
             #former_names_impl
+
+            #layout_sources_impl
+
+            #layout_dependencies_impl
 
             /// A copy of this value for the editor's play mode.
             ///

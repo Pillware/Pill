@@ -292,15 +292,49 @@ impl ResolvedPass {
 // ChainSource
 // =============================================================================
 
-/// What a frame's resolved pass chain was read from: the two values that, when
-/// either moves, mean the chain has to be resolved again.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// What a frame's resolved pass chain was read from: the values that, when any
+/// of them moves, mean the chain has to be resolved again.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChainSource {
     /// The asset manager's revision when the chain was resolved.
     pub revision: u64,
     /// Key of the pipeline asset the chain came from, when one is selected.
     pub pipeline: Option<AssetKey>,
+    /// The pipelines the frame's append passes were resolved from, in the order
+    /// they run.
+    ///
+    /// An owner that sets, clears or reorders an append pipeline moves this
+    /// list, which is what makes the frame resolve the whole chain again.
+    pub append_pipelines: Vec<AssetKey>,
 }
+
+// =============================================================================
+// PassSurfaces / AppendPass
+// =============================================================================
+
+/// Which surfaces a set of passes runs on.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PassSurfaces {
+    /// Every surface the frame draws, a game's window included - the default.
+    #[default]
+    Every,
+    /// Only the surfaces the frame marks as editor views, so an editor's own
+    /// pass never reaches a game's window.
+    EditorViews,
+}
+
+/// One owner's pass, appended after a surface's chain.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AppendPass {
+    /// The pass to run, resolved the way a chain pass is.
+    pub pass: ResolvedPass,
+    /// The surfaces it runs on.
+    pub surfaces: PassSurfaces,
+}
+
+/// The reserved name a pass uses in its inputs to read the surface's depth
+/// buffer, rather than an offscreen target an earlier pass wrote.
+pub const DEPTH_INPUT: &str = "depth";
 
 // =============================================================================
 // RenderFrame
@@ -329,6 +363,13 @@ pub struct RenderFrame {
     /// selected. An empty chain asks for a cleared frame and nothing else,
     /// which is what a pipeline with every pass disabled means.
     pub passes: Vec<ResolvedPass>,
+    /// The passes owners appended after the chain, in the order they run.
+    ///
+    /// Each one says which surfaces it runs on, so an editor's own pass can stay
+    /// off a game's window. They run after [`Self::passes`] and before the
+    /// renderer's own overlay, so an appended pass draws over the picture the
+    /// chain produced.
+    pub append_passes: Vec<AppendPass>,
     /// What the current `passes` were resolved from.
     ///
     /// Resolving clones every pass's strings and maps, so it only happens again
@@ -355,13 +396,13 @@ pub struct RenderFrame {
     pub surface_views: BTreeMap<crate::SurfaceId, crate::SurfaceView>,
     /// What systems debug-drew for this frame: lines, labels and gizmo handles.
     /// It is empty while debug drawing is off.
-    pub debug: pill_engine::DebugFrame,
+    pub debug: crate::debug_draw::DebugFrame,
     /// The entities to outline this frame, and the outline colour.
     ///
-    /// This is the [`crate::SelectionOutlines`] resource's value, carried whole
+    /// This is the [`crate::editor::SelectionOutlines`] resource's value, carried whole
     /// instead of copied field by field, so an editor writes one resource and
     /// the renderer reads one value. An empty `entities` list means no outline.
-    pub outlines: crate::SelectionOutlines,
+    pub outlines: crate::editor::SelectionOutlines,
     /// Whether the game asked for the frame's shadows to be traced with ray
     /// tracing.
     ///
@@ -372,24 +413,24 @@ pub struct RenderFrame {
     /// a frontend turned the grid on. `None` draws no grid.
     ///
     /// The grid is drawn on the surfaces in [`Self::editor_views`], the same
-    /// view-bound surfaces that carry the editor's other chrome, so the frame
-    /// names that set once instead of twice.
+    /// view-bound surfaces that carry the editor's other own drawing, so the
+    /// frame names that set once instead of twice.
     pub grid_cell_size: Option<f32>,
     /// The surfaces this frame marks as editor views, in ascending order.
     ///
     /// A surface bound to a view camera is an editor's own viewport: it draws
-    /// the grid, when the grid is on, and carries the editor's chrome - the
-    /// transform gizmo and the selection outlines. A surface drawn through a
-    /// world camera is a game's window and never gets that chrome. An empty
-    /// list means no editor is looking.
+    /// the grid, when the grid is on, and carries the editor's own drawing - the
+    /// transform gizmo, the selection outlines, and every debug item marked
+    /// `editor_only`. A surface drawn through a world camera is a game's window
+    /// and never gets any of it. An empty list means no editor is looking.
     pub editor_views: Vec<crate::SurfaceId>,
     /// The picks asked for since the last frame. The renderer answers them
     /// through [`crate::PillRenderer::take_pick_results`].
-    pub pick_requests: Vec<crate::PickRequest>,
+    pub pick_requests: Vec<crate::editor::PickRequest>,
     /// The previews asked for since the last frame. The renderer draws at most
     /// one per frame and answers every request through
     /// [`crate::PillRenderer::take_preview_results`].
-    pub preview_requests: Vec<crate::PreviewRequest>,
+    pub preview_requests: Vec<crate::editor::PreviewRequest>,
     /// The number of this frame, counting from one. It is packed into the
     /// engine parameters beside the clocks.
     pub sequence: u64,
@@ -404,13 +445,14 @@ impl Default for RenderFrame {
         Self {
             instances: Vec::new(),
             passes: Vec::new(),
+            append_passes: Vec::new(),
             chain_source: None,
             chain_generation: 0,
             seconds: 0.0,
             delta_seconds: 0.0,
             surface_views: BTreeMap::new(),
-            debug: pill_engine::DebugFrame::default(),
-            outlines: crate::SelectionOutlines::default(),
+            debug: crate::debug_draw::DebugFrame::default(),
+            outlines: crate::editor::SelectionOutlines::default(),
             ray_traced_shadows: false,
             grid_cell_size: None,
             editor_views: Vec::new(),

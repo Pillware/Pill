@@ -156,12 +156,8 @@ impl Surface {
         // Step 3: decide whether this run traces rays. The answer is logged
         // either way, because a run that expected the path and did not get it
         // has to be able to read why from the log.
-        let ray_tracing = crate::ray_tracing::decide(
-            crate::ray_tracing::COMPILED,
-            crate::ray_tracing::requested(),
-            backend,
-            adapter.features(),
-        );
+        let ray_tracing =
+            crate::ray_tracing::decide(crate::ray_tracing::COMPILED, backend, adapter.features());
         match ray_tracing.reason() {
             None => info!(
                 target: telemetry_target::RENDERING,
@@ -195,8 +191,8 @@ impl Surface {
                 experimental_features: if ray_tracing.is_on() {
                     // SAFETY: this is the opt-in for wgpu's experimental
                     // features, and the ray tracing path is what asked for
-                    // it: the caller set `PILL_RAY_TRACING`, the build carries
-                    // the feature, and the adapter reports the extensions.
+                    // it: the build was compiled with the feature and the
+                    // adapter reports the extensions.
                     unsafe { wgpu::ExperimentalFeatures::enabled() }
                 } else {
                     wgpu::ExperimentalFeatures::disabled()

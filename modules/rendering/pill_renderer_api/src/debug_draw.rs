@@ -14,16 +14,17 @@
 //!
 //! # Design
 //!
-//! The resource is plain data in the engine core and names no renderer, so a
-//! game, an extension or an editor crate can draw without depending on one.
-//! Every renderer that implements the contract draws the same frame. Shapes
-//! are line segments by the time they leave here, so a renderer only has to
-//! draw a line, a triangle, a point and a text label. Label text is owned
-//! (`String`) rather than borrowed from the module that drew it, so a reload
-//! cannot leave a label pointing into memory that was unloaded.
+//! The resource holds plain data and names no renderer, so a game, an
+//! extension or an editor crate can draw without depending on one. It lives in
+//! the contract because a renderer draws it and the engine has no drawing
+//! vocabulary of its own. Every renderer that implements the contract draws the
+//! same frame. Shapes are line segments by the time they leave here, so a
+//! renderer only has to draw a line, a triangle, a point and a text label.
+//! Label text is owned (`String`) rather than borrowed from the module that drew
+//! it, so a reload cannot leave a label pointing into memory that was unloaded.
 
-// Current crate
-use crate::resource::Resource;
+// External crates
+use pill_engine::Resource;
 
 // =============================================================================
 // Constants
@@ -40,6 +41,69 @@ const CIRCLE_SEGMENTS: usize = 32;
 pub type DebugColor = [f32; 4];
 
 // =============================================================================
+// DebugDepth
+// =============================================================================
+
+/// How a drawn item relates to the scene's depth.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum DebugDepth {
+    /// Scene geometry in front of it hides it - the default, which is what a
+    /// drawing that marks a position in the world wants.
+    #[default]
+    Hidden,
+    /// Drawn over everything, whatever is in front of it.
+    OnTop,
+    /// Drawn over the geometry in front of it too, in [`HiddenLook`], so a
+    /// position hidden behind something is still readable without being
+    /// mistaken for a visible one.
+    Dimmed {
+        /// The look the part behind the geometry is drawn in.
+        hidden: HiddenLook,
+    },
+}
+
+impl DebugDepth {
+    /// The muted look of the part of a drawing that geometry hides, when this
+    /// depth asks for one.
+    pub fn hidden_look(self) -> Option<HiddenLook> {
+        match self {
+            Self::OnTop | Self::Hidden => None,
+            Self::Dimmed { hidden } => Some(hidden),
+        }
+    }
+}
+
+// =============================================================================
+// HiddenLook
+// =============================================================================
+
+/// The look a drawing takes where scene geometry hides it.
+///
+/// A drawing that asks to be seen through geometry ([`DebugDepth::Dimmed`])
+/// still has to read as being behind it, or it looks like it floats in front.
+/// Muting the colour and dropping every other pixel does that.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HiddenLook {
+    /// How much of the drawing's colour it keeps, from `0` to `1`.
+    pub brightness: f32,
+    /// Whether every other pixel is dropped, so the drawing reads as a
+    /// dotted line behind the geometry.
+    pub checker: bool,
+}
+
+impl Default for HiddenLook {
+    /// The look [`DebugDepth::Dimmed`] uses when the caller names none: a
+    /// drawing at about a third of its brightness with every other pixel
+    /// dropped.
+    fn default() -> Self {
+        Self {
+            brightness: 0.35,
+            checker: true,
+        }
+    }
+}
+
+// =============================================================================
 // DebugLifetime
 // =============================================================================
 
@@ -54,6 +118,23 @@ pub enum DebugLifetime {
 }
 
 // =============================================================================
+// LabelAlign
+// =============================================================================
+
+/// Where a label's text sits relative to its anchor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LabelAlign {
+    /// The anchor is the text's left edge, level with its baseline - the
+    /// default.
+    #[default]
+    Left,
+    /// The anchor is the middle of the text.
+    Center,
+    /// The anchor is the text's right edge.
+    Right,
+}
+
+// =============================================================================
 // DebugStyle
 // =============================================================================
 
@@ -62,15 +143,23 @@ pub enum DebugLifetime {
 pub struct DebugStyle {
     /// Its colour.
     pub color: DebugColor,
-    /// Whether scene geometry in front of it hides it (`true`), or it draws
-    /// over everything (`false`).
-    pub depth_test: bool,
+    /// Whether scene geometry in front of it hides it, it draws over
+    /// everything, or it shows through in a muted look.
+    pub depth: DebugDepth,
     /// Whether this is the editor's own drawing - a drag guide, a constraint
     /// line - rather than the game's. An editor view draws it. A game surface
     /// does not.
-    pub chrome: bool,
+    pub editor_only: bool,
     /// How long it stays.
     pub lifetime: DebugLifetime,
+    /// How large a label draws, as a multiple of the font's own size. Labels
+    /// only.
+    pub scale: f32,
+    /// Where a label's text sits relative to its anchor. Labels only.
+    pub align: LabelAlign,
+    /// The plate drawn behind a label's text, or `None` for text over
+    /// whatever is already there. Labels only.
+    pub background: Option<DebugColor>,
 }
 
 impl DebugStyle {
@@ -87,9 +176,12 @@ impl Default for DebugStyle {
     fn default() -> Self {
         Self {
             color: [1.0, 1.0, 1.0, 1.0],
-            depth_test: true,
-            chrome: false,
+            depth: DebugDepth::Hidden,
+            editor_only: false,
             lifetime: DebugLifetime::OneFrame,
+            scale: 1.0,
+            align: LabelAlign::Left,
+            background: None,
         }
     }
 }
@@ -125,10 +217,10 @@ pub struct DebugLine {
     pub end: [f32; 3],
     /// Its colour.
     pub color: DebugColor,
-    /// Whether scene geometry hides it.
-    pub depth_test: bool,
+    /// How it relates to the scene's depth.
+    pub depth: DebugDepth,
     /// Whether only an editor view draws it.
-    pub chrome: bool,
+    pub editor_only: bool,
 }
 
 // =============================================================================
@@ -145,6 +237,16 @@ pub struct DebugLabel {
     pub text: String,
     /// Its colour.
     pub color: DebugColor,
+    /// How it relates to the scene's depth, tested at its anchor.
+    pub depth: DebugDepth,
+    /// Whether only an editor view draws it.
+    pub editor_only: bool,
+    /// How large it draws, as a multiple of the font's own size.
+    pub scale: f32,
+    /// Where its text sits relative to its anchor.
+    pub align: LabelAlign,
+    /// The plate drawn behind its text, or `None`.
+    pub background: Option<DebugColor>,
 }
 
 // =============================================================================
@@ -202,11 +304,14 @@ pub enum GizmoPointShape {
 // GizmoPoint
 // =============================================================================
 
-/// One gizmo point handle: a mark drawn on top of everything, pickable by its
-/// handle id, whose size is given in pixels rather than in world units.
+/// One gizmo point: a mark drawn on top of everything, whose size is given in
+/// pixels rather than in world units.
 ///
-/// A handle that keeps its size on screen stays as easy to hit in a small
-/// viewport as in a large one, which is why the size is pixels.
+/// A mark that keeps its size on screen stays as easy to hit in a small
+/// viewport as in a large one, which is why the size is pixels. A pickable
+/// one reports its [`Self::handle`]; a mark that only shows a position - a
+/// control point nothing can be grabbed by - says so with
+/// [`Self::pickable`] and a pick passes through it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GizmoPoint {
     /// Where it sits, in world space.
@@ -220,6 +325,9 @@ pub struct GizmoPoint {
     /// The id a pick of this point reports. It must fit in the low 31 bits,
     /// because a pick sets the top bit to mark a handle.
     pub handle: u32,
+    /// Whether a pick ray reports it. A mark that only shows a position sets
+    /// this `false`, so a click on it reaches whatever is behind.
+    pub pickable: bool,
 }
 
 // =============================================================================
@@ -249,6 +357,24 @@ impl DebugFrame {
             && self.gizmo_lines.is_empty()
             && self.gizmo_triangles.is_empty()
             && self.gizmo_points.is_empty()
+    }
+
+    /// The lines a surface draws: everything the game drew, and the
+    /// editor-only ones as well on an editor view.
+    ///
+    /// Every renderer filters through here, so the rule for which surface
+    /// shows an editor's own drawing lives in one place.
+    pub fn visible_lines(&self, editor_view: bool) -> impl Iterator<Item = &DebugLine> {
+        self.lines
+            .iter()
+            .filter(move |line| editor_view || !line.editor_only)
+    }
+
+    /// The labels a surface draws, by the same rule as [`Self::visible_lines`].
+    pub fn visible_labels(&self, editor_view: bool) -> impl Iterator<Item = &DebugLabel> {
+        self.labels
+            .iter()
+            .filter(move |label| editor_view || !label.editor_only)
     }
 }
 
@@ -329,8 +455,8 @@ impl DebugDraw {
                     start,
                     end,
                     color: style.color,
-                    depth_test: style.depth_test,
-                    chrome: style.chrome,
+                    depth: style.depth,
+                    editor_only: style.editor_only,
                 },
                 lifetime: style.lifetime,
             });
@@ -465,6 +591,11 @@ impl DebugDraw {
                     anchor,
                     text: text.to_owned(),
                     color: style.color,
+                    depth: style.depth,
+                    editor_only: style.editor_only,
+                    scale: style.scale,
+                    align: style.align,
+                    background: style.background,
                 },
                 lifetime: style.lifetime,
             });
@@ -526,6 +657,33 @@ impl DebugDraw {
                 shape,
                 color,
                 handle,
+                pickable: true,
+            });
+        }
+        self
+    }
+
+    /// Draws a gizmo mark on top for the next frame, which a pick ray passes
+    /// through.
+    ///
+    /// It is the same shape as [`Self::gizmo_point`], for a position worth
+    /// showing rather than a handle worth grabbing: a control point while its
+    /// tool is idle, say. A click on it reaches whatever is behind.
+    pub fn gizmo_mark(
+        &mut self,
+        position: [f32; 3],
+        size_pixels: f32,
+        shape: GizmoPointShape,
+        color: DebugColor,
+    ) -> &mut Self {
+        if self.enabled {
+            self.gizmo_points.push(GizmoPoint {
+                position,
+                size_pixels,
+                shape,
+                color,
+                handle: 0,
+                pickable: false,
             });
         }
         self
@@ -567,12 +725,12 @@ impl Default for DebugDraw {
 impl Resource for DebugDraw {
     /// Infrastructure, not game state: Play leaves this value alone and
     /// Stop does not restore it.
-    fn play_state() -> crate::resource::PlayState {
-        crate::resource::PlayState::Keep
+    fn play_state() -> pill_engine::PlayState {
+        pill_engine::PlayState::Keep
     }
 
     fn shared_name() -> Option<&'static str> {
-        Some("pill_engine::DebugDraw")
+        Some("pill_renderer_api::DebugDraw")
     }
 }
 
@@ -677,6 +835,96 @@ mod tests {
         assert_eq!(point.shape, GizmoPointShape::Diamond);
         assert_eq!(point.handle, 12);
         assert!(draw.collect_frame(0.0).is_empty());
+    }
+
+    /// A gizmo mark is drawn like a point and takes no pick handle.
+    #[test]
+    fn a_gizmo_mark_is_drawn_but_not_pickable() {
+        let mut draw = DebugDraw::new(true);
+        draw.gizmo_mark([1.0, 2.0, 3.0], 9.0, GizmoPointShape::Square, [0.5; 4]);
+        let frame = draw.collect_frame(0.0);
+        assert_eq!(frame.gizmo_points.len(), 1);
+        let mark = frame.gizmo_points[0];
+        assert_eq!(mark.position, [1.0, 2.0, 3.0]);
+        assert_eq!(mark.size_pixels, 9.0);
+        assert_eq!(mark.shape, GizmoPointShape::Square);
+        assert!(!mark.pickable, "a pick passes through a mark");
+    }
+
+    /// A frame hides the editor's own drawings from a game surface, and shows
+    /// them on an editor view - for lines and labels alike.
+    #[test]
+    fn editor_only_drawings_reach_an_editor_view_only() {
+        let mut draw = DebugDraw::new(true);
+        let editor_only = DebugStyle {
+            editor_only: true,
+            ..DebugStyle::default()
+        };
+        draw.line([0.0; 3], [1.0; 3], editor_only)
+            .line([0.0; 3], [1.0; 3], DebugStyle::default())
+            .label_world([0.0; 3], "guide", editor_only)
+            .label_world([0.0; 3], "game", DebugStyle::default());
+        let frame = draw.collect_frame(0.0);
+        assert_eq!(frame.visible_lines(false).count(), 1);
+        assert_eq!(frame.visible_labels(false).count(), 1);
+        assert_eq!(frame.visible_lines(true).count(), 2);
+        assert_eq!(frame.visible_labels(true).count(), 2);
+        let game_label: Vec<&str> = frame
+            .visible_labels(false)
+            .map(|label| label.text.as_str())
+            .collect();
+        assert_eq!(game_label, ["game"], "the editor's label stays off it");
+    }
+
+    /// The hidden look is the default a dimmed drawing uses: muted, checkered.
+    #[test]
+    fn the_default_hidden_look_is_muted_and_checkered() {
+        let look = HiddenLook::default();
+        assert!((look.brightness - 0.35).abs() < 1e-6, "about a third");
+        assert!(look.checker);
+        assert_eq!(
+            DebugDepth::OnTop.hidden_look(),
+            None,
+            "drawn over everything, nothing is hidden"
+        );
+        assert_eq!(DebugDepth::Hidden.hidden_look(), None);
+        assert_eq!(
+            DebugDepth::Dimmed { hidden: look }.hidden_look(),
+            Some(look)
+        );
+    }
+
+    /// A label carries the style it was drawn with, so a renderer can place and
+    /// size it without guessing.
+    #[test]
+    fn a_label_carries_its_placement_style() {
+        let mut draw = DebugDraw::new(true);
+        draw.label_world(
+            [1.0, 2.0, 3.0],
+            "text",
+            DebugStyle {
+                depth: DebugDepth::Dimmed {
+                    hidden: HiddenLook::default(),
+                },
+                editor_only: true,
+                scale: 2.0,
+                align: LabelAlign::Center,
+                background: Some([0.0, 0.0, 0.0, 0.5]),
+                ..DebugStyle::default()
+            },
+        );
+        let label = &draw.collect_frame(0.0).labels[0];
+        assert_eq!(label.anchor, LabelAnchor::World([1.0, 2.0, 3.0]));
+        assert_eq!(label.scale, 2.0);
+        assert_eq!(label.align, LabelAlign::Center);
+        assert_eq!(label.background, Some([0.0, 0.0, 0.0, 0.5]));
+        assert!(label.editor_only);
+        assert_eq!(
+            label.depth,
+            DebugDepth::Dimmed {
+                hidden: HiddenLook::default()
+            }
+        );
     }
 
     /// One-frame items are drawn once, timed ones until their time runs out.

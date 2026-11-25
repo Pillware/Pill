@@ -18,8 +18,14 @@ import re
 from pathlib import Path
 
 from core import log_layout
-from core.editor_log_tokens import ENGINE_COMMANDS_APPLIED_TOKEN, TAB_ACTIVATED_TOKEN
-from editor_step_areas import StepArea
+from core.editor_log_tokens import (
+    EDITOR_WINDOW_CREATED_TOKEN,
+    EGUI_SHELL_LOADED_TOKEN,
+    ENGINE_COMMANDS_APPLIED_TOKEN,
+    TAB_ACTIVATED_TOKEN,
+)
+from core.editor_session import EditorSession
+from editor_step_areas import StepArea, StepContext
 from editor_step_support import (
     StepState,
     occurrence_count,
@@ -73,10 +79,36 @@ def field_of(row: str, name: str) -> str:
     return match.group(1)
 
 
-def run_project_settings_steps(state: StepState) -> None:
+def run_project_settings_steps(context: "StepContext") -> None:
     """The steps through: the tab opens, a write keeps the file's comments, a
-    local write lands in the override, and a reset takes the key back out."""
-    session = state.session
+    local write lands in the override, and a reset takes the key back out.
+
+    The area opens a session of its own: the run's shared one has already quit
+    its editor by the time this area runs, and the first wait below carries this
+    session's startup.
+    """
+    session = EditorSession(
+        "project_settings",
+        "main",
+        project=context.project,
+        test_seconds=420,
+        binary=context.binary,
+    )
+    session.start(extra_env={"PILL_EDITOR_CONTINUOUS_REDRAW": "1"})
+    try:
+        session.wait_for_match(
+            re.escape(EDITOR_WINDOW_CREATED_TOKEN), 180, "settings startup"
+        )
+        session.wait_for_match(
+            re.escape(EGUI_SHELL_LOADED_TOKEN), 180, "settings shell load"
+        )
+        _drive_settings(context.state, session)
+    finally:
+        session.close()
+
+
+def _drive_settings(state: "StepState", session) -> None:
+    """The tab's reads and writes, run while the area's own session is alive."""
     settings_path = Path(state.project_settings_path)
     local_path = settings_path.with_name("project_settings.local.yaml")
     original = settings_path.read_text(encoding="utf-8")
@@ -172,7 +204,7 @@ def run_project_settings_steps(state: StepState) -> None:
 AREA = StepArea(
     name="project_settings",
     order=18,
-    run=lambda context: run_project_settings_steps(context.state),
+    run=run_project_settings_steps,
     needs=(),
     provides=(),
 )

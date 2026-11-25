@@ -100,6 +100,31 @@ impl Resource for PreviewRequests {
 }
 
 // =============================================================================
+// PreviewGeneration
+// =============================================================================
+
+/// How many renderer generations have installed preview drawing.
+///
+/// A frontend keeps the generation its tiles were drawn by and drops the
+/// pictures when the number moves: a reloaded renderer keeps the same assets
+/// but draws them through new code - a new framing, a new chain, a new shader -
+/// so a picture that survived the swap may show what the old generation drew.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct PreviewGeneration(pub u64);
+
+impl Resource for PreviewGeneration {
+    /// Infrastructure, not game state: Play leaves this value alone and
+    /// Stop does not restore it.
+    fn play_state() -> pill_engine::resource::PlayState {
+        pill_engine::resource::PlayState::Keep
+    }
+
+    fn shared_name() -> Option<&'static str> {
+        Some("pill_renderer_api::PreviewGeneration")
+    }
+}
+
+// =============================================================================
 // PreviewImage
 // =============================================================================
 
@@ -182,6 +207,9 @@ pub fn ensure_preview_resources(world: &mut World) {
     }
     if !world.has_resource::<PreviewResults>() {
         world.insert_resource(PreviewResults::default());
+    }
+    if !world.has_resource::<PreviewGeneration>() {
+        world.insert_resource(PreviewGeneration::default());
     }
 }
 

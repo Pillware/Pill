@@ -1,10 +1,7 @@
-//! Hardware ray tracing: whether this build, this machine and this run can
-//! trace rays.
+//! Hardware ray tracing: whether this build and this machine can trace rays.
 //!
 //! # Responsibilities
 //!
-//! - Read `PILL_RAY_TRACING` once, the way [`crate::profiler`] reads
-//!   `PILL_GPU_PROFILE`, and say whether this run asked for ray tracing.
 //! - Decide whether the path can run - the build must carry the feature, the
 //!   backend must be Vulkan and the adapter must offer the wgpu features the
 //!   path needs - and name the reason when it cannot.
@@ -23,9 +20,10 @@
 //!
 //! The decision is one value with its reason, so the startup line and the
 //! tests read the same answer and a session can say why the path did not run.
-
-// Standard library
-use std::env;
+//! The build option is the only ask: a build compiled with the `ray_tracing`
+//! feature takes the path whenever its adapter supports it, and a game turns
+//! the shadows it produces on and off with
+//! [`pill_renderer_api::RayTracedShadows`].
 
 // External crates
 use wgpu::Features;
@@ -56,13 +54,6 @@ pub(crate) mod shadow_pass;
 pub(crate) use acceleration::RayTracingScene;
 
 // =============================================================================
-// Constants
-// =============================================================================
-
-/// Environment variable that asks for ray tracing (`PILL_RAY_TRACING=1`).
-const RAY_TRACING_ENVIRONMENT_VARIABLE: &str = "PILL_RAY_TRACING";
-
-// =============================================================================
 // Decision
 // =============================================================================
 
@@ -91,27 +82,6 @@ impl Decision {
 }
 
 // =============================================================================
-// The switch
-// =============================================================================
-
-/// Whether this run asked for ray tracing.
-pub(crate) fn requested() -> bool {
-    parse_requested(env::var(RAY_TRACING_ENVIRONMENT_VARIABLE).ok().as_deref())
-}
-
-/// Whether `value` - the variable's text - asks for ray tracing.
-///
-/// `1` and `true` in any case, trimmed, ask for it; anything else, including an
-/// unset variable, leaves it off. Off is the default, so a variable that only
-/// ever turns the path on cannot change a run by accident.
-pub(crate) fn parse_requested(value: Option<&str>) -> bool {
-    matches!(
-        value.map(str::trim).map(str::to_ascii_lowercase).as_deref(),
-        Some("1" | "true")
-    )
-}
-
-// =============================================================================
 // The decision
 // =============================================================================
 
@@ -119,19 +89,15 @@ pub(crate) fn parse_requested(value: Option<&str>) -> bool {
 /// adapter offer.
 ///
 /// The reasons are the ones the startup line prints, so they say what a person
-/// can change: compile the feature, set the variable, use Vulkan, or run on a
-/// driver that supports the extension.
+/// can change: compile the feature, use Vulkan, or run on a driver that
+/// supports the extension.
 pub(crate) fn decide(
     compiled: bool,
-    requested: bool,
     backend: wgpu::Backend,
     adapter_features: Features,
 ) -> Decision {
     if !compiled {
         return Decision::Off("feature not compiled");
-    }
-    if !requested {
-        return Decision::Off("not requested");
     }
     if backend != wgpu::Backend::Vulkan {
         return Decision::Off("not the Vulkan backend");
@@ -164,50 +130,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_variable_that_says_one_or_true_asks_for_ray_tracing() {
-        for value in ["1", "true", " TRUE ", "True", " 1 "] {
-            assert!(parse_requested(Some(value)), "{value:?} should ask for it");
-        }
-    }
-
-    #[test]
-    fn an_unset_or_unrecognized_variable_leaves_ray_tracing_off() {
-        for value in [
-            None,
-            Some(""),
-            Some("0"),
-            Some("false"),
-            Some("yes"),
-            Some("on"),
-        ] {
-            assert!(!parse_requested(value), "{value:?} should leave it off");
-        }
-    }
-
-    #[test]
     fn a_build_without_the_feature_says_so_before_anything_else() {
         assert_eq!(
-            decide(false, true, wgpu::Backend::Vulkan, Features::all()),
+            decide(false, wgpu::Backend::Vulkan, Features::all()),
             Decision::Off("feature not compiled")
-        );
-    }
-
-    #[test]
-    fn a_run_that_did_not_ask_says_not_requested() {
-        assert_eq!(
-            decide(true, false, wgpu::Backend::Vulkan, Features::all()),
-            Decision::Off("not requested")
         );
     }
 
     #[test]
     fn another_backend_is_refused_and_a_vulkan_one_with_the_extensions_runs() {
         assert_eq!(
-            decide(true, true, wgpu::Backend::Dx12, Features::all()),
+            decide(true, wgpu::Backend::Dx12, Features::all()),
             Decision::Off("not the Vulkan backend")
         );
         assert_eq!(
-            decide(true, true, wgpu::Backend::Vulkan, Features::all()),
+            decide(true, wgpu::Backend::Vulkan, Features::all()),
             Decision::On
         );
     }
@@ -216,7 +153,6 @@ mod tests {
     fn a_vulkan_adapter_without_the_extensions_says_which_part_is_missing() {
         assert_eq!(
             decide(
-                true,
                 true,
                 wgpu::Backend::Vulkan,
                 Features::EXPERIMENTAL_RAY_QUERY

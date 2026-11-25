@@ -25,6 +25,7 @@
 // External crates
 use pill_core::telemetry::telemetry_target;
 use pill_engine::*;
+use pill_renderer_api::DebugDraw;
 
 // =============================================================================
 // Function inventory

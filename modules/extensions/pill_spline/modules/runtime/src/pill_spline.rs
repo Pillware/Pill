@@ -30,7 +30,7 @@ use pill_engine::*;
 pub mod component;
 /// The seeded demonstration path and its entity count.
 pub mod demo;
-/// The curve, its control points and its tangents, drawn as editor chrome.
+/// The curve, its control points and its tangents, drawn as editor-only.
 pub mod gizmo;
 /// The two curve segments a spline samples from.
 pub mod math;

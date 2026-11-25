@@ -61,6 +61,10 @@ SCENE_BADGE_RECT_TOKEN = "[editor] scene badge rect"
 SCENE_BADGE_TOKEN = "[editor] scene badge"
 PREVIEW_REQUESTED_TOKEN = "[editor] preview requested"
 PREVIEW_READY_TOKEN = "[editor] preview ready"
+# What a preview drew through: the renderer names the asset's kind and the
+# shader pipeline it used, so a suite can compare two materials' tiles without
+# reading pixels.
+PREVIEW_DREW_TOKEN = "[render] preview drew"
 PROJECT_RELOAD_TOKEN = "hot reload complete"
 EXTENSION_RELOAD_TOKEN = "extension reload processed"
 SCENE_VIEW_RECT_TOKEN = "[editor] scene view rect"
@@ -486,10 +490,19 @@ GIZMOS_PATTERN = log_layout.message_then_fields_pattern(
     r"\s+count=(\d+)\s+hidden=(\d+)\s+enabled=(true|false)\s+surfaces=(\S*)",
 )
 # One registered gizmo: its type, the package that declared it, when it draws,
-# whether an editor hid it, and how many entities it drew last frame.
+# whether an editor hid it, how many entities it drew last frame, and which of
+# its drawings is the one on screen - the declaration, an override, or both.
 GIZMO_PATTERN = log_layout.message_then_fields_pattern(
     re.escape(GIZMO_TOKEN),
-    r'\s+gizmo_type="?([^"\s]+)"?\s+owner="?([^"\s]+)"?\s+when=(\w+)\s+visible=(true|false)\s+drew=(\d+)',
+    r'\s+gizmo_type="?([^"\s]+)"?\s+owner="?([^"\s]+)"?\s+when=(\w+)\s+visible=(true|false)\s+drew=(\d+)\s+source="?(\w+)"?\s+source_owner="?([^"\s]*)"?',
+)
+# The passes an owner appended after a surface's chain, by the surface the
+# renderer drew them on: an editor's own view, or the game's surface. The list
+# is empty when nothing was appended for that surface.
+APPEND_PASSES_TOKEN = "append passes"
+APPEND_PASSES_PATTERN = log_layout.message_then_fields_pattern(
+    re.escape(APPEND_PASSES_TOKEN),
+    r'\s+surface=(\d+)\s+passes="([^"]*)"',
 )
 # The two answers a scripted scene click can produce, as full patterns.
 PICK_ENTITY_PATTERN = log_layout.message_then_fields_pattern(re.escape(SCENE_PICK_ENTITY_TOKEN), r"\s+entity=(\S+)")

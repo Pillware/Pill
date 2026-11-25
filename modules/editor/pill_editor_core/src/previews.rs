@@ -55,30 +55,55 @@ pub fn render_previews(preferences_document: &Map<String, Value>) -> bool {
 ///
 /// Returns `None` for every other type.
 ///
-/// A texture and a mesh are named by their file, below the root they come
-/// from. A project may load such an asset under a name of its own or not load
-/// it at all, so the file is what the renderer decodes. A material is named by
-/// the guid the listing holds for it.
+/// A texture is named by its file, below the root it comes from, because a
+/// texture is decoded rather than drawn: a project may load such an asset under
+/// a name of its own or not load it at all, and the tile still shows it. A
+/// material is named by the guid the listing holds for it, and a mesh by its
+/// file's path below the root it comes from - the name the store holds it under
+/// - because both are drawn from the store, through the material's own shader
+///   and the chain's geometry pass.
 pub fn preview_asset(
     listing_row: &AssetListing,
     asset_root: &Path,
-) -> Option<pill_renderer_api::PreviewAsset> {
+) -> Option<pill_renderer_api::editor::PreviewAsset> {
     match listing_row.kind.type_leaf() {
-        Some("Texture") => Some(pill_renderer_api::PreviewAsset::Texture {
+        Some("Texture") => Some(pill_renderer_api::editor::PreviewAsset::Texture {
             path: preview_file_path(listing_row, asset_root)?
                 .to_string_lossy()
                 .into_owned(),
         }),
-        Some("Material") => Some(pill_renderer_api::PreviewAsset::Material {
+        Some("Material") => Some(pill_renderer_api::editor::PreviewAsset::Material {
             guid: listing_row.guid.clone()?,
         }),
-        Some("Mesh") => Some(pill_renderer_api::PreviewAsset::Mesh {
-            path: preview_file_path(listing_row, asset_root)?
-                .to_string_lossy()
-                .into_owned(),
+        Some("Mesh") => Some(pill_renderer_api::editor::PreviewAsset::Mesh {
+            path: listing_row.path.clone(),
         }),
         _ => None,
     }
+}
+
+/// The path the store holds a listing row's asset under, when the asset has to
+/// be loaded before it can be drawn, or `None` when the row names nothing
+/// loadable.
+///
+/// A texture's preview names its own file, but a material and a mesh are drawn
+/// from the store, and the importer names an asset after its path below the
+/// root that resolves it. An absolute file would leave the asset nameless and
+/// the import refusing it, so this is the row's own path - the same name the
+/// store holds a mesh under.
+///
+/// A module row's resources do not live in the project at all: a row naming a
+/// module that is not loaded has no path to load from.
+pub fn preview_file<'a>(
+    asset_listings: impl IntoIterator<Item = &'a AssetListing>,
+    listing_key: &str,
+    asset_root: &Path,
+) -> Option<String> {
+    let listing_row = asset_listings
+        .into_iter()
+        .find(|listing_row| listing_row.key() == listing_key)?;
+    preview_file_path(listing_row, asset_root)?;
+    Some(listing_row.path.clone())
 }
 
 /// The file a listing row's preview uses: its path below the project's asset
@@ -107,7 +132,7 @@ pub fn preview_asset_for<'a>(
     asset_listings: impl IntoIterator<Item = &'a AssetListing>,
     listing_key: &str,
     asset_root: &Path,
-) -> Option<pill_renderer_api::PreviewAsset> {
+) -> Option<pill_renderer_api::editor::PreviewAsset> {
     asset_listings
         .into_iter()
         .find(|listing_row| listing_row.key() == listing_key)
@@ -197,7 +222,7 @@ mod tests {
         ];
         assert_eq!(
             preview_asset_for(&asset_listings, "textures/stone.png", asset_root),
-            Some(pill_renderer_api::PreviewAsset::Texture {
+            Some(pill_renderer_api::editor::PreviewAsset::Texture {
                 path: asset_root
                     .join("textures/stone.png")
                     .to_string_lossy()
@@ -206,31 +231,53 @@ mod tests {
         );
         assert_eq!(
             preview_asset_for(&asset_listings, "materials/red.material", asset_root),
-            Some(pill_renderer_api::PreviewAsset::Material {
+            Some(pill_renderer_api::editor::PreviewAsset::Material {
                 guid: "bb".to_string()
             })
         );
         assert_eq!(
             preview_asset_for(&asset_listings, "models/cube.obj", asset_root),
-            Some(pill_renderer_api::PreviewAsset::Mesh {
-                path: asset_root
-                    .join("models/cube.obj")
-                    .to_string_lossy()
-                    .into_owned()
+            Some(pill_renderer_api::editor::PreviewAsset::Mesh {
+                path: "models/cube.obj".to_string()
             })
         );
-        // A mesh needs no `.meta` sidecar. The renderer decodes the file itself.
+        // A mesh is drawn from the store, so its preview names it under the name
+        // the store holds it by, and the editor loads the file for it.
         assert_eq!(
             preview_asset_for(&asset_listings, "models/loose.obj", asset_root),
-            Some(pill_renderer_api::PreviewAsset::Mesh {
-                path: asset_root
-                    .join("models/loose.obj")
-                    .to_string_lossy()
-                    .into_owned()
+            Some(pill_renderer_api::editor::PreviewAsset::Mesh {
+                path: "models/loose.obj".to_string()
             })
         );
         assert!(preview_asset_for(&asset_listings, "scenes/main.scene", asset_root).is_none());
         assert!(preview_asset_for(&asset_listings, "textures/missing.png", asset_root).is_none());
+    }
+
+    /// A preview loads its asset by the row's own path, not by the absolute
+    /// file: the importer names an asset after its path below the root that
+    /// resolves it, so an absolute path would leave the asset nameless and the
+    /// load refusing it.
+    #[test]
+    fn a_preview_loads_its_asset_by_the_rows_own_path() {
+        let asset_root = Path::new("C:/project/res");
+        let asset_listings = vec![
+            listing_row("materials/red.material", "demo::Material", Some("bb")),
+            listing_row("models/cube.obj", "demo::Mesh", Some("cc")),
+        ];
+        assert_eq!(
+            preview_file(&asset_listings, "models/cube.obj", asset_root),
+            Some("models/cube.obj".to_string())
+        );
+        assert_eq!(
+            preview_file(&asset_listings, "materials/red.material", asset_root),
+            Some("materials/red.material".to_string())
+        );
+        // A module row whose module is not loaded has no path to load from,
+        // and one that is loaded is named by its path below that module's root.
+        let mut module_row = listing_row("textures/sky.png", "demo::Texture", Some("aa"));
+        module_row.root = "a-module-that-is-not-loaded".to_owned();
+        let listing_key = module_row.key();
+        assert_eq!(preview_file(&[module_row], &listing_key, asset_root), None);
     }
 
     /// A module row's key starts with the extensions root. A row naming a

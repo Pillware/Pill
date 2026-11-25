@@ -18,8 +18,9 @@ REQUIREMENTS
 DESCRIPTION
     `examples/cube/cube_rt_rust` is Demo 1: a cube over a ground plane, with the
     key light's shadows traced. The suite launches the windowed development
-    host on it with `PILL_RAY_TRACING=1` and `WGPU_VALIDATION=1`, and reads
-    the lines the renderer writes:
+    host on it with `WGPU_VALIDATION=1`, and reads the lines the renderer
+    writes. The project turns the renderer's ray tracing build option on, which
+    is what makes the path exist at all:
 
         ray tracing | state="on" ...
         ray traced shadows | shadowed=<n> pixels=<m> surface=<s>
@@ -197,7 +198,6 @@ def main() -> int:
     environment = dict(
         os.environ,
         PROJECT_PATH=host_project_path(PROJECT_ROOT),
-        PILL_RAY_TRACING="1",
         WGPU_VALIDATION="1",
     )
     process, monitor = launch_process(

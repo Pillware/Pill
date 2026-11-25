@@ -4,8 +4,7 @@
 //!
 //! - Carry a frontend's grid settings ([`SceneGrid`]: whether the grid is on
 //!   and the distance between its lines) beside the surface camera bindings.
-//! - Compute the spacing one frame's grid uses ([`frame_grid`]) and list the
-//!   surfaces the grid is drawn on ([`editor_view_surfaces`]).
+//! - Compute the spacing one frame's grid uses ([`frame_grid`]).
 //!
 //! # Design
 //!
@@ -27,11 +26,11 @@
 //! the editor draws over the scene share one list, and the two can never
 //! disagree.
 
-// Standard library
-use std::collections::BTreeMap;
-
 // Current crate
-use crate::{CameraBinding, SurfaceCameras, SurfaceId};
+use crate::SurfaceCameras;
+
+// Current module
+use super::views::view_bound_surfaces;
 
 // =============================================================================
 // Constants
@@ -77,10 +76,11 @@ impl Default for SceneGrid {
 /// Returns the grid spacing one frame draws, or `None` when it draws no grid.
 ///
 /// A surface draws the grid when the grid is on and the surface is bound to a
-/// view camera. Those surfaces are the ones [`editor_view_surfaces`] returns,
-/// so this function answers only the spacing. It returns `None` when the grid
-/// is off or when no surface is bound to a view camera. A cell size that is
-/// not a positive, finite number falls back to the default.
+/// view camera. Those surfaces are the ones
+/// [`editor_view_surfaces`](super::views::editor_view_surfaces) returns, so
+/// this function answers only the spacing. It returns `None` when the grid is
+/// off or when no surface is bound to a view camera. A cell size that is not a
+/// positive, finite number falls back to the default.
 pub fn frame_grid(surface_cameras: &SurfaceCameras) -> Option<f32> {
     if !surface_cameras.grid.enabled {
         return None;
@@ -96,25 +96,6 @@ pub fn frame_grid(surface_cameras: &SurfaceCameras) -> Option<f32> {
     })
 }
 
-/// Returns every surface bound to a view camera, in ascending id order.
-fn view_bound_surfaces(bindings: &BTreeMap<SurfaceId, CameraBinding>) -> Vec<SurfaceId> {
-    bindings
-        .iter()
-        .filter(|(_, binding)| matches!(binding, CameraBinding::View { .. }))
-        .map(|(surface, _)| *surface)
-        .collect()
-}
-
-/// Returns every surface bound to a view camera, whether or not the grid is on.
-///
-/// These are the surfaces an editor's own viewports draw through. They show
-/// the grid. They also carry what the editor draws over the scene: the gizmo
-/// handles and the selection outlines. Turning the grid off must not remove
-/// them from the list. The frame carries the list once, as its editor views.
-pub fn editor_view_surfaces(surface_cameras: &SurfaceCameras) -> Vec<SurfaceId> {
-    view_bound_surfaces(&surface_cameras.bindings)
-}
-
 // =============================================================================
 // Tests
 // =============================================================================
@@ -125,6 +106,12 @@ mod tests {
 
     // External crates
     use pill_engine::common_components::TransformComponent;
+
+    // Current crate
+    use crate::{CameraBinding, SurfaceId};
+
+    // Current module
+    use crate::editor::views::editor_view_surfaces;
 
     /// Builds a binding to a view camera, the way an editor binds its own
     /// viewport.

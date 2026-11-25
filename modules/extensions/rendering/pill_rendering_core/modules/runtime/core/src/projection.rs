@@ -245,13 +245,13 @@ pub fn expand_polygon(
 /// world anchor projected through the camera into the viewport. `None` for a
 /// world point behind the camera.
 pub fn label_origin(
-    anchor: pill_engine::LabelAnchor,
+    anchor: pill_renderer_api::LabelAnchor,
     view_projection: &pill_core::math::Matrix4f,
     viewport: pill_renderer_api::components::RenderViewport,
 ) -> Option<(f32, f32)> {
     match anchor {
-        pill_engine::LabelAnchor::Screen { x, y } => Some((x, y)),
-        pill_engine::LabelAnchor::World(position) => {
+        pill_renderer_api::LabelAnchor::Screen { x, y } => Some((x, y)),
+        pill_renderer_api::LabelAnchor::World(position) => {
             let clip =
                 *view_projection * glam::Vec4::new(position[0], position[1], position[2], 1.0);
             if clip.w <= f32::EPSILON {
@@ -296,6 +296,23 @@ pub fn to_pixels(clip_position: [f32; 4], viewport_size: (f32, f32)) -> (f32, f3
     )
 }
 
+/// The scene depth a label's anchor sits at, `0` at the near plane and `1` at
+/// the far one, or `None` when the label is anchored to the screen and so has
+/// no place in the scene.
+///
+/// The depth test of a label happens here, at its anchor rather than across its
+/// text, so a label either shows as a whole or not at all.
+pub fn label_depth(
+    anchor: pill_renderer_api::LabelAnchor,
+    view_projection: &pill_core::math::Matrix4f,
+) -> Option<f32> {
+    let pill_renderer_api::LabelAnchor::World(position) = anchor else {
+        return None;
+    };
+    let clip = *view_projection * glam::Vec4::new(position[0], position[1], position[2], 1.0);
+    (clip.w > f32::EPSILON).then(|| (clip.z / clip.w).clamp(0.0, 1.0))
+}
+
 /// The clip-space position a pixel position maps back to at `depth`.
 fn from_pixels(point: (f32, f32), viewport_size: (f32, f32), depth: f32, w: f32) -> [f32; 4] {
     [
@@ -324,8 +341,8 @@ fn unit_direction(direction: [f32; 2]) -> Option<[f32; 2]> {
 mod tests {
     use super::*;
 
-    use pill_engine::LabelAnchor;
     use pill_renderer_api::components::RenderViewport;
+    use pill_renderer_api::LabelAnchor;
 
     /// Looking down `-Z` from the origin, with a 1:1 viewport.
     fn projection() -> pill_core::math::Matrix4f {

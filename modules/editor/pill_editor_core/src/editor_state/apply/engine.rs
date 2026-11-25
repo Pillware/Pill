@@ -19,8 +19,8 @@
 
 // External crates
 use pill_core::telemetry::telemetry_target;
-use pill_engine::gizmos::GizmoRegistry;
 use pill_engine::Engine;
+use pill_renderer_api::gizmos::GizmoRegistry;
 
 // Current crate
 use super::CommandOutcome;

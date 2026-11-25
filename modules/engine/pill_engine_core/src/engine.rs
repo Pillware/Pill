@@ -1447,8 +1447,10 @@ impl Engine {
     ///
     /// This is the registration for a pass the engine runs on behalf of a host -
     /// one that reads the whole world rather than a declared set of columns, so
-    /// no per-component access pattern describes it.
-    pub(crate) fn register_engine_owned_system<F>(
+    /// no per-component access pattern describes it. The renderer contract's
+    /// gizmo pass is one: a host installs it, and the world it walks belongs to
+    /// no artifact.
+    pub fn register_engine_owned_system<F>(
         &mut self,
         name: impl Into<String>,
         options: SystemOptions,

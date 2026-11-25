@@ -20,12 +20,16 @@ struct LineInput {
     @location(0) clip: vec4<f32>,
     @location(1) color: vec4<f32>,
     @location(2) across: f32,
+    // Whether every other pixel of this line is dropped: the mark of the part
+    // of a drawing that scene geometry covers.
+    @location(3) hidden: f32,
 };
 
 struct LineOutput {
     @builtin(position) clip: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) @interpolate(linear) across: f32,
+    @location(2) @interpolate(flat) hidden: f32,
 };
 
 // The half width of a drawn line, in pixels; the renderer widens the quad
@@ -67,6 +71,7 @@ fn line_vertex(input: LineInput) -> LineOutput {
     output.clip = input.clip;
     output.color = input.color;
     output.across = input.across;
+    output.hidden = input.hidden;
     return output;
 }
 
@@ -75,6 +80,26 @@ fn line_fragment(input: LineOutput) -> @location(0) vec4<f32> {
     let coverage = clamp(LINE_HALF_WIDTH + 0.5 - abs(input.across), 0.0, 1.0);
     if coverage <= 0.0 {
         discard;
+    }
+    return vec4<f32>(input.color.rgb, input.color.a * coverage);
+}
+
+// The part of a drawing that scene geometry covers: it is drawn only where the
+// scene is in front of it, and every other pixel is dropped so it reads as
+// being behind the geometry rather than floating in front of it. The position
+// comes from the varyings the vertex stage already carries: a fragment entry
+// point may declare each built-in once.
+@fragment
+fn dimmed_line_fragment(input: LineOutput) -> @location(0) vec4<f32> {
+    let coverage = clamp(LINE_HALF_WIDTH + 0.5 - abs(input.across), 0.0, 1.0);
+    if coverage <= 0.0 {
+        discard;
+    }
+    if input.hidden > 0.5 {
+        let cell = vec2<i32>(floor(input.clip.xy));
+        if ((cell.x + cell.y) & 1) == 1 {
+            discard;
+        }
     }
     return vec4<f32>(input.color.rgb, input.color.a * coverage);
 }

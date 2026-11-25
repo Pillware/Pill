@@ -106,6 +106,7 @@ use std::path::Path;
 // External crates
 use pill_core::telemetry::telemetry_target;
 use pill_engine::{pill_module, AssetManager, Engine, World};
+use pill_renderer_api::editor::PreviewGeneration;
 
 // The contract and the data crates are re-exported here - their items and
 // their module names - so this crate's own paths (`crate::api`,
@@ -171,7 +172,76 @@ pub fn register(engine: &mut Engine) -> u32 {
     {
         install_default_pbr_pipeline(engine.world_mut());
     }
+
+    // Step 3: Install the sphere a material preview draws on and the material a
+    // mesh preview draws with. Both are assets like any other, so the chain
+    // draws them exactly as it draws a game's meshes: one instance, through its
+    // own material's shader.
+    install_preview_sphere(engine.world_mut());
+    install_preview_material(engine.world_mut());
+
+    // Step 4: Say a new generation draws this artifact's previews. An editor
+    // drops the pictures it keeps when the number moves, because they were
+    // drawn by the previous generation's code.
+    note_preview_generation(engine.world_mut());
     0
+}
+
+/// Adds one to the generation an editor keeps its preview pictures by.
+///
+/// Registration runs once per load and once more on every reload, which is
+/// exactly the set of moments the code that draws a preview changes.
+///
+/// The value is the host's: it is inserted before any artifact loads, because a
+/// renderer module may register no data of its own - a failed load of it clears
+/// only its systems, which is sound only while it owns nothing. A world that
+/// arrived without the value (a test, a frontend that draws no previews) is
+/// left alone rather than given one.
+fn note_preview_generation(world: &mut World) {
+    if let Some(generation) = world.get_resource_mut::<PreviewGeneration>() {
+        generation.0 = generation.0.wrapping_add(1);
+    }
+}
+
+/// Adds the sphere a material preview draws on, unless the store holds it.
+///
+/// The name is the renderer's own, so a project never collides with it, and a
+/// second registration - which is what a reload does - finds it and changes
+/// nothing.
+fn install_preview_sphere(world: &mut World) {
+    let Some(assets) = world.get_resource_mut::<AssetManager>() else {
+        return;
+    };
+    if assets
+        .handle_by_name::<crate::assets::Mesh>(crate::preview::SPHERE_MESH_NAME)
+        .is_some()
+    {
+        return;
+    }
+    let _ = assets.add_named(
+        crate::preview::SPHERE_MESH_NAME,
+        crate::preview::sphere_mesh(),
+    );
+}
+
+/// Adds the material a mesh preview draws with, unless the store holds it.
+///
+/// Same reasoning as the sphere: the name is the renderer's own, and a second
+/// registration - which is what a reload does - finds it and changes nothing.
+fn install_preview_material(world: &mut World) {
+    let Some(assets) = world.get_resource_mut::<AssetManager>() else {
+        return;
+    };
+    if assets
+        .handle_by_name::<crate::assets::Material>(crate::preview::MESH_MATERIAL_NAME)
+        .is_some()
+    {
+        return;
+    }
+    let _ = assets.add_named(
+        crate::preview::MESH_MATERIAL_NAME,
+        crate::preview::mesh_preview_material(),
+    );
 }
 
 /// Declares the read-only roots this renderer's content lives under.
@@ -380,6 +450,40 @@ mod tests {
         assert_eq!(register(&mut engine), 0);
 
         assert_eq!(installed_pipeline(&engine), pipeline_before_reload);
+    }
+
+    /// The sphere a material preview draws on and the material a mesh preview
+    /// draws with are installed once, whatever number of registrations a run
+    /// goes through.
+    #[test]
+    fn the_preview_assets_are_installed_once() {
+        let mut engine = engine_with_the_data_registered();
+
+        register(&mut engine);
+        let (sphere, material) = preview_assets(&engine);
+        assert!(sphere.is_some(), "the preview sphere is installed");
+        assert!(material.is_some(), "the preview material is installed");
+
+        register(&mut engine);
+
+        assert_eq!(preview_assets(&engine), (sphere, material));
+    }
+
+    /// The two preview assets as the store holds them.
+    fn preview_assets(
+        engine: &Engine,
+    ) -> (
+        Option<Handle<crate::assets::Mesh>>,
+        Option<Handle<crate::assets::Material>>,
+    ) {
+        let assets = engine
+            .world()
+            .get_resource::<AssetManager>()
+            .expect("the engine inserts the store");
+        (
+            assets.handle_by_name::<crate::assets::Mesh>(crate::preview::SPHERE_MESH_NAME),
+            assets.handle_by_name::<crate::assets::Material>(crate::preview::MESH_MATERIAL_NAME),
+        )
     }
 
     /// A pipeline a project sets survives a later `register`: the default only

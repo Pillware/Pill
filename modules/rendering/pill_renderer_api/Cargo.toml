@@ -40,3 +40,6 @@ miette = { version = "7", features = ["derive"] }
 # this crate and the module's artifact cannot import against the host's
 # (`devops/tests/test_engine_feature_drift.py`).
 raw-window-handle = { version = "0.6", features = ["alloc", "std"] }
+# The gizmo declarations an artifact publishes: collected per artifact, so a
+# reload replaces every pointer of the image that loaded.
+inventory = "0.3.25"

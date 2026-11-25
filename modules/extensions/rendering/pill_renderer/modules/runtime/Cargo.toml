@@ -68,9 +68,9 @@ pill_assets = { path = "../../../../../assets/pill_assets" }
 # The hardware ray tracing path. Off by default: an ordinary build carries no
 # ray tracing code, and the renderer opens the device it always did. It is a
 # build option (`[package.metadata.pill.settings.build]` below), so a project
-# turns it on with `modules.pill_renderer.build.ray_tracing: true`; once the
-# build carries it, `PILL_RAY_TRACING` decides at run time whether the path
-# runs.
+# turns it on with `modules.pill_renderer.build.ray_tracing: true`, and a build
+# that carries it takes the path whenever the adapter supports it. A game turns
+# the shadows it produces on and off with `RayTracedShadows`.
 ray_tracing = ["dep:ash"]
 
 [package.metadata.pill]

@@ -96,7 +96,7 @@ pub struct SurfaceCameras {
     pub bindings: BTreeMap<SurfaceId, CameraBinding>,
     /// The scene grid the view-bound surfaces draw. It is off until a
     /// frontend turns it on.
-    pub grid: crate::SceneGrid,
+    pub grid: crate::editor::SceneGrid,
 }
 
 impl SurfaceCameras {

@@ -2,33 +2,37 @@
 //!
 //! # Responsibilities
 //!
-//! - Draw one [`Spline`] per entity that carries it: the curve, its control
-//!   points and, when the spline stores them, each point's two tangent arms.
+//! - Draw one [`Spline`] per entity that carries it: the curve, a square mark
+//!   on each control point and, when the spline stores them, each point's two
+//!   tangent arms.
 //!
-//! All of it is chrome: no game surface draws it and none of it is pickable.
+//! The curve and the tangent arms are world-space lines; a control point's
+//! mark keeps one size on screen, so a far path reads the same as a near one.
+//! All of it is editor-only and none of it is pickable: a pick passes through
+//! a mark to whatever is behind it.
 //! Interaction belongs to the editor's spline tool, not to this module.
 
 // External crates
 use pill_core::math::Vector3f;
-use pill_engine::*;
+use pill_renderer_api::{GizmoContext, GizmoDraw, GizmoPointShape};
 
 // Current crate
 use crate::component::{Spline, TangentMode};
 
 /// The colour the curve is drawn in.
-const CURVE_COLOR: [f32; 4] = [0.95, 0.75, 0.2, 1.0];
+pub const CURVE_COLOR: [f32; 4] = [0.95, 0.75, 0.2, 1.0];
 
 /// The colour the control points are drawn in.
-const POINT_COLOR: [f32; 4] = [0.95, 0.95, 0.95, 1.0];
+pub const POINT_COLOR: [f32; 4] = [0.95, 0.95, 0.95, 1.0];
 
 /// The colour the stored tangents are drawn in.
-const TANGENT_COLOR: [f32; 4] = [0.35, 0.75, 0.95, 1.0];
+pub const TANGENT_COLOR: [f32; 4] = [0.35, 0.75, 0.95, 1.0];
 
-/// How wide a control point is drawn, in pixels.
-const POINT_SIZE_PIXELS: f32 = 7.0;
+/// How wide a control point's mark is drawn, in pixels.
+pub const POINT_SIZE_PIXELS: f32 = 9.0;
 
 /// How many straight lines one curve segment is drawn with.
-const SEGMENTS_PER_CURVE_SEGMENT: usize = 16;
+pub const SEGMENTS_PER_CURVE_SEGMENT: usize = 16;
 
 /// Draws one spline: the curve, its control points and, when the spline stores
 /// them, the tangents each point leaves and arrives along.
@@ -68,10 +72,16 @@ pub fn draw_spline_gizmo(spline: &Spline, context: &GizmoContext<'_>, draw: &mut
         .collect();
     draw.polyline(&curve, CURVE_COLOR);
 
-    // Step 3: one handle per control point, so a reader sees what the curve
-    // passes through.
+    // Step 3: one square per control point, the same size on screen however
+    // far the path is from the camera, so a reader sees what the curve passes
+    // through.
     for point in spline.control_points() {
-        draw.point(to_world(*point), POINT_SIZE_PIXELS, POINT_COLOR);
+        draw.point(
+            to_world(*point),
+            POINT_SIZE_PIXELS,
+            GizmoPointShape::Square,
+            POINT_COLOR,
+        );
     }
 
     // Step 4: the stored tangents, as the arms a segment leaves and arrives

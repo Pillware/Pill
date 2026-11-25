@@ -409,11 +409,11 @@ impl PillRenderer for ModuleRenderer {
         self.module_backend_mut().set_surface_ready(id, ready);
     }
 
-    fn take_pick_results(&mut self) -> Vec<pill_renderer_api::PickResult> {
+    fn take_pick_results(&mut self) -> Vec<pill_renderer_api::editor::PickResult> {
         self.module_backend_mut().take_pick_results()
     }
 
-    fn take_preview_results(&mut self) -> Vec<pill_renderer_api::PreviewImage> {
+    fn take_preview_results(&mut self) -> Vec<pill_renderer_api::editor::PreviewImage> {
         self.module_backend_mut().take_preview_results()
     }
 

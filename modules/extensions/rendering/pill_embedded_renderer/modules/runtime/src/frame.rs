@@ -52,11 +52,11 @@ static UI_TEXTURES_REQUESTED: AtomicBool = AtomicBool::new(false);
 type RenderingExtras<'w> = (
     Res<'w, pill_engine::Time>,
     Res<'w, SurfaceCameras>,
-    ResMut<'w, pill_engine::DebugDraw>,
-    Res<'w, pill_renderer_api::SelectionOutlines>,
-    ResMut<'w, pill_renderer_api::PickRequests>,
+    ResMut<'w, pill_renderer_api::DebugDraw>,
+    Res<'w, pill_renderer_api::editor::SelectionOutlines>,
+    ResMut<'w, pill_renderer_api::editor::PickRequests>,
     ResMut<'w, pill_ui_frame::UiFrameSlot>,
-    ResMut<'w, pill_renderer_api::PreviewRequests>,
+    ResMut<'w, pill_renderer_api::editor::PreviewRequests>,
 );
 
 // =============================================================================
@@ -108,7 +108,7 @@ pub fn rendering_system(
     let outlines = outlines
         .get()
         .cloned()
-        .unwrap_or_else(pill_renderer_api::SelectionOutlines::default);
+        .unwrap_or_else(pill_renderer_api::editor::SelectionOutlines::default);
     // Pick requests are taken but never answered: a processor renderer has no
     // pick buffer, which is why it reports no pick results.
     let pick_requests = pick_requests
@@ -137,6 +137,7 @@ pub fn rendering_system(
         &mut frame,
         pill_rendering_core::frame::FrameInput {
             assets,
+            append_pipelines: &[],
             pipeline: manager.get().and_then(|manager| manager.pipeline()),
             delta_seconds,
             debug,

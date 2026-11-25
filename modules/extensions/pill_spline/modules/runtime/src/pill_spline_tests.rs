@@ -458,3 +458,32 @@ fn the_segment_math_matches_a_hand_evaluated_catmull_rom() {
     assert!(catmull_rom(before_start, start, end, after_end, 0.5)
         .abs_diff_eq(Vector3f::new(0.5, 0.0, 0.0), EPSILON));
 }
+
+/// The gizmo draws the curve as line segments and marks each control point as
+/// a pixel-sized square, which adds no segments of its own.
+#[test]
+fn the_gizmo_draws_segments_for_the_curve_only() {
+    use pill_engine::World;
+    use pill_renderer_api::{GizmoDraw, GizmoFrame};
+
+    let points: Vec<Vector3f> = (0..4)
+        .map(|index| Vector3f::new(index as f32, 0.0, 0.0))
+        .collect();
+    let spline = Spline::from_points(&points);
+    let mut world = World::new();
+    let entity = world.create_entity().build().expect("the entity builds");
+    let frame = GizmoFrame::default();
+    let context = frame.context(&world, entity);
+
+    let mut draw = GizmoDraw::new();
+    crate::gizmo::draw_spline_gizmo(&spline, &context, &mut draw);
+
+    let expected = spline.segment_count() * crate::gizmo::SEGMENTS_PER_CURVE_SEGMENT;
+    assert_eq!(
+        draw.segment_count(),
+        expected,
+        "only the curve's samples are segments: a point mark is a pixel-sized square, \
+         not three world-sized axes"
+    );
+    assert!(!draw.is_empty());
+}

@@ -622,31 +622,48 @@ pub fn set_surface_camera(world: &mut World, id: SurfaceId, binding: Option<Came
     }
 }
 
-/// Insert the debug-drawing and picking resources into `world`, each only
-/// where it is missing.
+/// Insert the debug-drawing, picking and preview resources into `world`, each
+/// only where it is missing.
 ///
-/// Every build has them: debug drawing on in the development host, and in a
-/// shipping or web build as its project settings say. A system toggles it at
-/// runtime through [`pill_engine::DebugDraw::set_enabled`].
+/// Every build has them. `debug_draw_enabled` says whether anything will draw
+/// them: a run with no renderer has to pass `false`, because nothing drains the
+/// world's debug drawing and every drawing call would pile up until it ends. A
+/// system toggles it at runtime through
+/// [`pill_renderer_api::DebugDraw::set_enabled`].
+///
+/// The preview values are here for the same reason as the picking ones: they
+/// belong to the host, so a renderer module that reloads neither registers nor
+/// loses them. A renderer only counts up
+/// [`pill_renderer_api::editor::PreviewGeneration`], which is how an editor
+/// learns that the pictures it keeps were drawn by older code.
 pub fn insert_debug_resources(world: &mut World, debug_draw_enabled: bool) {
-    if !world.has_resource::<pill_engine::DebugDraw>() {
-        world.insert_resource(pill_engine::DebugDraw::new(debug_draw_enabled));
+    if !world.has_resource::<pill_renderer_api::DebugDraw>() {
+        world.insert_resource(pill_renderer_api::DebugDraw::new(debug_draw_enabled));
     }
-    // The registry the engine's gizmo pass walks. It is inserted here, before
-    // any artifact registers, so it belongs to the host rather than to a
-    // module: a reload never drops it, and the entries a module published keep
-    // their place until that module publishes again.
-    if !world.has_resource::<pill_engine::gizmos::GizmoRegistry>() {
-        world.insert_resource(pill_engine::gizmos::GizmoRegistry::default());
+    // The registry the gizmo pass walks. It is inserted here, before any
+    // artifact registers, so it belongs to the host rather than to a module: a
+    // reload never drops it, and the entries a module published keep their
+    // place until that module publishes again.
+    if !world.has_resource::<pill_renderer_api::GizmoRegistry>() {
+        world.insert_resource(pill_renderer_api::GizmoRegistry::default());
     }
-    if !world.has_resource::<pill_renderer_api::SelectionOutlines>() {
-        world.insert_resource(pill_renderer_api::SelectionOutlines::default());
+    if !world.has_resource::<pill_renderer_api::editor::SelectionOutlines>() {
+        world.insert_resource(pill_renderer_api::editor::SelectionOutlines::default());
     }
-    if !world.has_resource::<pill_renderer_api::PickRequests>() {
-        world.insert_resource(pill_renderer_api::PickRequests::default());
+    if !world.has_resource::<pill_renderer_api::editor::PickRequests>() {
+        world.insert_resource(pill_renderer_api::editor::PickRequests::default());
     }
-    if !world.has_resource::<pill_renderer_api::PickResults>() {
-        world.insert_resource(pill_renderer_api::PickResults::default());
+    if !world.has_resource::<pill_renderer_api::editor::PickResults>() {
+        world.insert_resource(pill_renderer_api::editor::PickResults::default());
+    }
+    if !world.has_resource::<pill_renderer_api::editor::PreviewRequests>() {
+        world.insert_resource(pill_renderer_api::editor::PreviewRequests::default());
+    }
+    if !world.has_resource::<pill_renderer_api::editor::PreviewResults>() {
+        world.insert_resource(pill_renderer_api::editor::PreviewResults::default());
+    }
+    if !world.has_resource::<pill_renderer_api::editor::PreviewGeneration>() {
+        world.insert_resource(pill_renderer_api::editor::PreviewGeneration::default());
     }
 }
 
@@ -744,7 +761,14 @@ pub fn setup_with_asset_database(
     // apply the log levels the bundle was built with, before anything logs on
     // the project's behalf.
     let mut runtime = Runtime::new();
-    insert_debug_resources(runtime.engine_mut().world_mut(), project.debug_draw);
+    // Debug drawing is only on when something can draw it: a build with no
+    // renderer linked would record every drawing call and never drain it, so a
+    // headless build keeps it switched off whatever the bundle asked for.
+    #[cfg(feature = "rendering")]
+    let drawn = project.renderer.is_some() && project.debug_draw;
+    #[cfg(not(feature = "rendering"))]
+    let drawn = false;
+    insert_debug_resources(runtime.engine_mut().world_mut(), drawn);
 
     let logging = project
         .logging
@@ -1265,5 +1289,101 @@ mod tests {
             .expect("the engine inserts Input");
         assert!(input.key_held(KeyCode::Space));
         assert!(!input.key_pressed(KeyCode::Space));
+    }
+
+    /// The preview values belong to the host from the first frame.
+    ///
+    /// A renderer module may register no data: a failed load of it keeps the
+    /// world and clears only its systems, which is sound only while the module
+    /// owns nothing. So the values a renderer touches - the preview requests,
+    /// answers and the generation it counts up - are inserted here, before any
+    /// artifact registers.
+    #[test]
+    fn the_preview_values_are_inserted_before_any_artifact_loads() {
+        let mut runtime = Runtime::new();
+        insert_debug_resources(runtime.engine_mut().world_mut(), false);
+
+        let world = runtime.engine().world();
+        assert!(world.has_resource::<pill_renderer_api::editor::PreviewRequests>());
+        assert!(world.has_resource::<pill_renderer_api::editor::PreviewResults>());
+        assert!(world.has_resource::<pill_renderer_api::editor::PreviewGeneration>());
+    }
+
+    /// A host with no renderer records no debug drawing across many frames.
+    ///
+    /// Nothing drains the world's [`DebugDraw`] but a renderer's frame system,
+    /// so a drawing left switched on would collect every gizmo and collider
+    /// outline a frame made and hold them until the run ended. A host therefore
+    /// creates it switched off and only a renderer's attach turns it on.
+    #[test]
+    fn a_host_without_a_renderer_collects_no_debug_drawing() {
+        use pill_engine::{Component, Entity, RunMode, World};
+        use pill_renderer_api::gizmos::{GizmoDeclaration, GizmoDraw, GizmoFrame, GizmoWhen};
+        use pill_renderer_api::{DebugDraw, GizmoVisibility};
+
+        /// A component whose gizmo draws one line per entity that carries it.
+        #[derive(Debug, Clone, Copy, Default)]
+        struct Marker;
+        impl Component for Marker {}
+
+        fn draw_marker(world: &World, _frame: &GizmoFrame, draw: &mut GizmoDraw) -> usize {
+            let mut drawn = 0;
+            for archetype in world.archetypes_iter() {
+                if !archetype.has_component::<Marker>() {
+                    continue;
+                }
+                for &_entity in &archetype.entities {
+                    draw.line([0.0; 3], [1.0, 0.0, 0.0], [1.0; 4]);
+                    drawn += 1;
+                }
+            }
+            drawn
+        }
+
+        fn spawn_markers(world: &mut World) -> Vec<Entity> {
+            world.register_component::<Marker>();
+            (0..3)
+                .map(|_| {
+                    world
+                        .create_entity()
+                        .with(Marker)
+                        .build()
+                        .expect("the entity builds")
+                })
+                .collect()
+        }
+
+        let mut runtime = Runtime::new();
+        let world = runtime.engine_mut().world_mut();
+        insert_debug_resources(world, false);
+        spawn_markers(world);
+        world.insert_resource(pill_renderer_api::GizmoSelection::default());
+        if let Some(registry) = world.get_resource_mut::<pill_renderer_api::GizmoRegistry>() {
+            registry.publish(&[GizmoDeclaration {
+                type_name: "tests::Marker",
+                owner: "tests",
+                when: GizmoWhen::Always,
+                draw: draw_marker,
+            }]);
+        }
+        pill_renderer_api::gizmos::install(runtime.engine_mut(), GizmoVisibility::EditorOnly);
+
+        let _frame = FRAME_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        runtime.engine_mut().set_run_mode(RunMode::Editing);
+        for _ in 0..3 {
+            FrameDriver::run_frame(&mut runtime).expect("a headless frame cannot fail");
+        }
+        let frame = runtime
+            .engine_mut()
+            .world_mut()
+            .get_resource_mut::<DebugDraw>()
+            .expect("the host inserts the drawing")
+            .collect_frame(0.016);
+        assert!(
+            frame.is_empty(),
+            "three frames of gizmos must not wait for a renderer that never comes"
+        );
     }
 }

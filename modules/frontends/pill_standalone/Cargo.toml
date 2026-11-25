@@ -17,8 +17,10 @@ pill_player = { path = "../../hosting/pill_player" }
 # Development mode only: building, loading and watching modules. A shipping
 # build does not compile it at all.
 pill_development_host = { path = "../../hosting/pill_development_host", default-features = false, optional = true }
-# Windowed runs only: the window, its input and the gamepads.
+# Windowed runs only: the window, its input, the gamepads, and the renderer
+# contract's editor-facing types the pick test reads through the world.
 winit = { version = "0.30", optional = true }
+pill_renderer_api = { path = "../../rendering/pill_renderer_api", optional = true }
 pill_input = { path = "../pill_input", features = [
     "winit",
     "gamepad",
@@ -46,6 +48,7 @@ shipping = ["dep:pill_shipping_bundle"]
 rendering = [
     "dep:winit",
     "dep:pill_input",
+    "dep:pill_renderer_api",
     "pill_player/rendering",
     "pill_development_host?/rendering",
 ]

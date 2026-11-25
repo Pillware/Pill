@@ -152,6 +152,16 @@ def run_component_gizmo_steps(state: StepState) -> None:
         "surface is not one of them".format(drew_before, len(surfaces))
     )
 
+    # Step 2b: the source of the drawing. The project's witness draws its own
+    # declaration; an extension's editor crate that overrides a type would report
+    # `source=override` with its package in `source_owner`.
+    assert witness.group(6) == "declared", (
+        "the witness's drawing came from {} rather than its declaration: {}".format(
+            witness.group(6), witness.group(0)
+        )
+    )
+    print_ok("the witness gizmo reports its own declaration as its source")
+
     # Step 3: the toolbox row switches the whole pass off, which the pass
     # reports by drawing nothing. Each anchor is taken before the click: the
     # click's own line and the switch's land in the same few milliseconds, so

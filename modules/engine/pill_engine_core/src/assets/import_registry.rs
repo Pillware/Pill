@@ -210,6 +210,10 @@ type GuidByPathFunction = fn(&AssetManager, &Path) -> Option<AssetGuid>;
 type LoadedByGuidFunction = fn(&AssetManager, AssetGuid) -> Option<(String, u32, u32)>;
 /// The handle the store holds an asset under a name, as its raw parts.
 type LoadedByNameFunction = fn(&AssetManager, &str) -> Option<(u32, u32)>;
+/// The content version of the asset a guid names, which moves whenever its
+/// value is written. An editor asks for it to know when a tile's picture is out
+/// of date, without naming the asset's type.
+type ContentVersionFunction = fn(&AssetManager, AssetGuid) -> Option<u64>;
 /// Every live asset of the type, as its guid and its name.
 type LoadedFunction = fn(&AssetManager) -> Vec<(Option<AssetGuid>, String)>;
 
@@ -241,6 +245,7 @@ struct ImportFunctions {
     guid_by_path: GuidByPathFunction,
     loaded_by_guid: LoadedByGuidFunction,
     loaded_by_name: LoadedByNameFunction,
+    content_version: ContentVersionFunction,
     loaded: LoadedFunction,
     /// `Some` for a standalone type, whose file is the asset; `None` for a
     /// sourced one.
@@ -265,6 +270,7 @@ impl ImportFunctions {
             guid_by_path: guid_by_path::<T>,
             loaded_by_guid: loaded_by_guid_of::<T>,
             loaded_by_name: handle_by_name_of::<T>,
+            content_version: content_version_of::<T>,
             loaded: loaded_assets_of::<T>,
             default_document: None,
             ensure_metadata: Some(AssetManager::ensure_metadata::<T>),
@@ -286,6 +292,7 @@ impl ImportFunctions {
             guid_by_path: guid_by_path::<T>,
             loaded_by_guid: loaded_by_guid_of::<T>,
             loaded_by_name: handle_by_name_of::<T>,
+            content_version: content_version_of::<T>,
             loaded: loaded_assets_of::<T>,
             default_document: Some(default_standalone_document::<T>),
             ensure_metadata: None,
@@ -390,6 +397,13 @@ where
 }
 
 /// The name a `T` with `guid` is loaded under, with the handle's raw parts.
+fn content_version_of<T>(assets: &AssetManager, guid: AssetGuid) -> Option<u64>
+where
+    T: Asset + TraitAccessible<dyn Asset>,
+{
+    assets.content_version(assets.handle_by_guid::<T>(guid)?)
+}
+
 fn loaded_by_guid_of<T>(assets: &AssetManager, guid: AssetGuid) -> Option<(String, u32, u32)>
 where
     T: Asset + TraitAccessible<dyn Asset>,
@@ -1013,6 +1027,20 @@ impl ImportRegistry {
             let registration = entry.current()?;
             (registration.functions.loaded_by_guid)(assets, guid)
                 .map(|(name, index, generation)| (entry.type_name.clone(), name, index, generation))
+        })
+    }
+
+    /// The content version of the asset `guid` names, whichever type holds it;
+    /// `None` when nothing live holds that guid.
+    ///
+    /// A version moves whenever the asset's value is written, so an editor reads
+    /// it to know when a picture of that asset is out of date - without naming
+    /// the asset's type, which is what lets a frontend that links no data crate
+    /// ask the question.
+    pub fn content_version(&self, assets: &AssetManager, guid: AssetGuid) -> Option<u64> {
+        self.entries.iter().find_map(|entry| {
+            let registration = entry.current()?;
+            (registration.functions.content_version)(assets, guid)
         })
     }
 

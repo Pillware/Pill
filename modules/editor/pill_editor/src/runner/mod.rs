@@ -90,18 +90,20 @@ use pill_editor_core::tools;
 use pill_editor_core::unsaved_work::{QuitAnswer, QuitPromptState, UnsavedWork};
 use pill_editor_core::viewport::EditorViewportState;
 use pill_engine_core::common_components::TRANSFORM_SHARED_NAME;
-use pill_engine_core::debug_draw::{DebugDraw, DebugStyle};
-use pill_engine_core::gizmos::{GizmoRegistry, GizmoSelection};
 use pill_engine_core::input::{ButtonState, KeyCode, Modifiers as EngineModifiers, MouseButton};
 use pill_engine_core::Entity;
 use pill_engine_core::FieldValue;
 use pill_engine_core::InputEvent;
 use pill_input::winit_events::translate_window_event;
 use pill_player::{
-    editor_view_surfaces, CameraBinding, CameraComponent, FrameDriver, PickHit, PickRequests,
-    PickResults, SelectionOutlines, SurfaceCameras, SurfaceId, SurfaceOptions, TransformComponent,
-    WindowedFrameDriver,
+    CameraBinding, CameraComponent, FrameDriver, SurfaceCameras, SurfaceId, SurfaceOptions,
+    TransformComponent, WindowedFrameDriver,
 };
+use pill_renderer_api::debug_draw::{DebugDraw, DebugStyle};
+use pill_renderer_api::editor::{
+    editor_view_surfaces, PickHit, PickRequests, PickResults, SelectionOutlines,
+};
+use pill_renderer_api::gizmos::{GizmoRegistry, GizmoSelection};
 use pill_ui_theme::{load_overrides, ThemeOverrides, ThemePathScope};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
@@ -2624,7 +2626,7 @@ impl EditorWindow {
             .host_mut()
             .engine_mut()
             .world()
-            .get_resource::<pill_engine_core::gizmos::GizmoRegistry>()
+            .get_resource::<pill_renderer_api::gizmos::GizmoRegistry>()
             .map(|registry| {
                 registry
                     .hidden_types()
@@ -4925,10 +4927,11 @@ fn gizmo_plane_name(first: usize, second: usize) -> &'static str {
 ///
 /// They are plain debug lines, not gizmo geometry, so they carry no handle id:
 /// a pick never names them and they cannot be grabbed. They are marked as the
-/// editor's chrome, which keeps them off a game surface, where the viewport
+/// editor's own drawing, which keeps them off a game surface, where the viewport
 /// shows the project's frame rather than the editor's drag. The axis guide uses
 /// the handle's own colour; the displacement line stays neutral so it never
-/// reads as a fourth axis.
+/// reads as a fourth axis. Both are dimmed where geometry hides them, so a drag
+/// behind an object still reads.
 fn draw_gizmo_guides(
     debug: &mut DebugDraw,
     kind: HandleKind,
@@ -4939,8 +4942,10 @@ fn draw_gizmo_guides(
 ) {
     let style = |color: [f32; 4]| DebugStyle {
         color,
-        depth_test: false,
-        chrome: true,
+        depth: pill_renderer_api::DebugDepth::Dimmed {
+            hidden: Default::default(),
+        },
+        editor_only: true,
         ..DebugStyle::default()
     };
     if let Some((_, axis)) = kind.axis() {

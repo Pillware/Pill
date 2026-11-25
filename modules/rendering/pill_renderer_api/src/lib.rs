@@ -14,11 +14,12 @@
 //!   a frontend points a renderer at, and register the components through
 //!   [`register_contract_components`].
 //! - Carry a window ([`RawWindowData`]), a surface set ([`SurfaceId`],
-//!   [`SurfaceCameras`]) and the scene grid ([`SceneGrid`], the frame's cell
-//!   size) as plain data.
-//! - Carry debug drawing, selection outlines, picking and previews between the
-//!   world and any renderer ([`SelectionOutlines`], [`PickRequests`],
-//!   [`PickResults`], [`PreviewRequests`]).
+//!   [`SurfaceCameras`]) and the scene grid ([`editor::SceneGrid`], the frame's
+//!   cell size) as plain data.
+//! - Carry debug drawing between the world and any renderer ([`DebugDraw`]).
+//! - Carry the editor's own inputs - its viewports and grid, the selection it
+//!   outlines, picking and previews - between an editor and any renderer, inside
+//!   [`editor`].
 //!
 //! # Design
 //!
@@ -35,6 +36,14 @@ pub mod api;
 /// [`register_contract_components`].
 pub mod components;
 
+/// Debug drawing: lines, shapes, labels and gizmo handles a system asks a
+/// renderer to draw.
+pub mod debug_draw;
+
+/// What exists because an editor asks for it: its own views and grid, the
+/// selection it outlines, picking and asset previews.
+pub mod editor;
+
 /// Renderer failures, the [`error::Result`] alias and the
 /// [`error::ErrorContext`] helper.
 pub mod error;
@@ -43,21 +52,15 @@ pub mod error;
 /// cameras and the clock.
 pub mod frame;
 
-/// The scene grid of the view-bound surfaces: whether it is on, its line
-/// spacing, and the spacing one frame uses.
-pub mod grid;
+/// Component gizmos: what a component declares about its own drawing, the
+/// registry an editor reads, and the pass that runs them.
+pub mod gizmos;
 
 /// A window's platform handles as plain data, for attaching a renderer to it.
 pub mod raw_window;
 
 /// Several surfaces per renderer: identities, presentation, camera bindings.
 pub mod surface;
-
-/// Selection outlines and picking.
-pub mod picking;
-
-/// Asset previews: off-screen renders the editor asks a renderer for.
-pub mod preview;
 
 /// Whether the frame's shadows are traced with hardware ray tracing.
 pub mod shadows;
@@ -68,19 +71,20 @@ pub use api::{
     RenderMetrics,
 };
 pub use components::*;
+pub use debug_draw::{
+    DebugColor, DebugDepth, DebugDraw, DebugFrame, DebugLabel, DebugLifetime, DebugLine,
+    DebugStyle, GizmoLine, GizmoPoint, GizmoPointShape, GizmoTriangle, HiddenLook, LabelAlign,
+    LabelAnchor,
+};
 pub use error::RendererError;
 pub use frame::{
-    AssetKey, ChainSource, CullMode, MaterialParameter, PassKind, PassSettings, PassTarget,
-    RenderFrame, RenderInstance, ResolvedPass,
+    AppendPass, AssetKey, ChainSource, CullMode, MaterialParameter, PassKind, PassSettings,
+    PassSurfaces, PassTarget, RenderFrame, RenderInstance, ResolvedPass, DEPTH_INPUT,
 };
-pub use grid::{editor_view_surfaces, frame_grid, SceneGrid};
-pub use picking::{
-    decode_pick_value, PickHit, PickRequest, PickRequests, PickResult, PickResults,
-    SelectionOutlines, PICK_HANDLE_BIT,
-};
-pub use preview::{
-    ensure_preview_resources, PreviewAsset, PreviewImage, PreviewRequest, PreviewRequests,
-    PreviewResults,
+pub use gizmos::{
+    GizmoContext, GizmoDeclaration, GizmoDraw, GizmoDrawEntry, GizmoDrawing, GizmoEntry,
+    GizmoFrame, GizmoOverrideDeclaration, GizmoOverrideEntry, GizmoOverrideMode, GizmoRegistry,
+    GizmoSelection, GizmoVisibility, GizmoWhen,
 };
 pub use raw_window::{RawWindowData, RawWindowKind};
 pub use shadows::RayTracedShadows;
@@ -121,24 +125,40 @@ mod tests {
             Some("pill_renderer_api::SurfaceCameras")
         );
         assert_eq!(
-            SelectionOutlines::shared_name(),
+            editor::SelectionOutlines::shared_name(),
             Some("pill_renderer_api::SelectionOutlines")
         );
         assert_eq!(
-            PickRequests::shared_name(),
+            editor::PickRequests::shared_name(),
             Some("pill_renderer_api::PickRequests")
         );
         assert_eq!(
-            PickResults::shared_name(),
+            editor::PickResults::shared_name(),
             Some("pill_renderer_api::PickResults")
         );
         assert_eq!(
-            PreviewRequests::shared_name(),
+            editor::PreviewRequests::shared_name(),
             Some("pill_renderer_api::PreviewRequests")
         );
         assert_eq!(
-            PreviewResults::shared_name(),
+            editor::PreviewResults::shared_name(),
             Some("pill_renderer_api::PreviewResults")
+        );
+        assert_eq!(
+            editor::PreviewGeneration::shared_name(),
+            Some("pill_renderer_api::PreviewGeneration")
+        );
+        assert_eq!(
+            DebugDraw::shared_name(),
+            Some("pill_renderer_api::DebugDraw")
+        );
+        assert_eq!(
+            GizmoRegistry::shared_name(),
+            Some("pill_renderer_api::GizmoRegistry")
+        );
+        assert_eq!(
+            GizmoSelection::shared_name(),
+            Some("pill_renderer_api::GizmoSelection")
         );
     }
 }

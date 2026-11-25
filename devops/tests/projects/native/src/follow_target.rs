@@ -13,7 +13,7 @@
 //! `Entity`, so a picture of the Inspector shows what a reference row draws.
 
 use pill_engine::*;
-use pill_rendering::TransformComponent;
+use pill_rendering::{GizmoContext, GizmoDraw, TransformComponent};
 
 /// The colour the follow line is drawn in.
 const FOLLOW_COLOR: [f32; 4] = [1.0, 0.85, 0.25, 1.0];

@@ -356,6 +356,40 @@ def wait_for_entity_count(session: EditorSession, target: int, label: str) -> No
     )
 
 
+def write_preview_material(
+    path: Path, guid: str, shader, base=(0.871359, 0.057805, 0.057805)
+) -> None:
+    """Writes one material document the preview step compares tiles of.
+
+    `shader` is the guid of a shader to name, or `None` for a material that
+    names no shader at all and so draws through the chain's own. `base` is the
+    base colour, which is what an edit moves.
+    """
+    asset = {
+        "asset_type": "pill_rendering::Material",
+        "guid": guid,
+        "asset": {
+            "textures": {},
+            "parameters": {
+                "pbr_base": {"Color": [round(channel, 6) for channel in base]},
+                "pbr_emissive": {"Color": [0.0, 0.0, 0.0]},
+                "pbr_metallic": {"Scalar": 0.1},
+                "pbr_roughness": {"Scalar": 0.45},
+            },
+            "rendering_order": 255,
+        },
+    }
+    if shader is not None:
+        asset["asset"]["shader"] = shader
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(
+            {"format_version": 1, **asset}, sort_keys=False, default_flow_style=False
+        ),
+        encoding="utf-8",
+    )
+
+
 def write_theme_file(path: Path, guid: str, body) -> None:
     """Writes one standalone `.theme` document, the shape the loader reads."""
     path.parent.mkdir(parents=True, exist_ok=True)

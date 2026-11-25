@@ -91,6 +91,7 @@ from core.editor_log_tokens import (  # noqa: E402
 from editor_step_support import (  # noqa: E402
     StepState,
     read_budget_exceeded,
+    write_preview_material,
 )
 from editor_step_areas import (  # noqa: E402
     StepContext,
@@ -102,6 +103,11 @@ from editor_step_areas import (  # noqa: E402
 
 # The last run's per-area outcome, read back by `--steps failed`.
 LAST_RUN_SUMMARY = Path(__file__).resolve().parents[2] / "local" / "editor-validation" / "egui-last-run.json"
+
+# The guid the material preview step's second shader is staged under. It is the
+# PBR chain's shader copied into the project, so the two materials the step
+# compares are drawn through two shaders that behave the same.
+PREVIEW_SHADER_GUID = "c7f1a2b3d4e5968778695a4b3c2d1e0f"
 
 
 def failed_areas_of_last_run() -> list:
@@ -254,6 +260,29 @@ def main() -> int:
         ),
         encoding="utf-8",
     )
+    # The material preview step compares two materials that differ only in the
+    # shader they name: each tile is drawn through the material's own shader on
+    # the renderer's preview sphere, and the renderer names the shader it drew
+    # through. One names the PBR chain's shader, the other the project's own
+    # second shader, which is that stage under a guid of its own. They get a
+    # folder of their own, so the materials folder other steps browse keeps the
+    # files it had. Staged before the editor starts, so both are in the store
+    # when the grid asks for their tiles.
+    preview_materials = (
+        (
+            "preview_shader_a.material",
+            "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+            "8cedb4197c9f26a86708b1cd14399eab",
+        ),
+        (
+            "preview_shader_b.material",
+            "b1c2d3e4f5061728394a5b6c7d8e9f01",
+            PREVIEW_SHADER_GUID,
+        ),
+    )
+    preview_material_folder = asset_root / "preview_materials"
+    for name, guid, shader in preview_materials:
+        write_preview_material(preview_material_folder / name, guid, shader)
     # The Inspector's settings step writes two `.meta` sidecars through the
     # real apply and undoes them; the engine's normalization reorders their
     # keys, so their original bytes are snapshotted and put back in the
@@ -364,13 +393,18 @@ def main() -> int:
         ):
             for path in asset_root.glob(pattern):
                 path.unlink(missing_ok=True)
-        # The staged material and the folder it needed go together; the
-        # example ships no materials folder, so an empty one is the step's.
+        # The staged materials go, along with any `.meta` the host wrote beside
+        # them; the project's own material stays.
         staged_materials = asset_root / "materials"
-        for path in staged_materials.glob("s16_reference*"):
-            path.unlink(missing_ok=True)
-        if staged_materials.is_dir() and not any(staged_materials.iterdir()):
-            staged_materials.rmdir()
+        for pattern in ("s16_reference*", "preview_shader*"):
+            for path in staged_materials.glob(pattern):
+                path.unlink(missing_ok=True)
+        # The preview step's own folder goes with its files; the project ships
+        # none.
+        if preview_material_folder.is_dir():
+            for path in preview_material_folder.iterdir():
+                path.unlink(missing_ok=True)
+            preview_material_folder.rmdir()
         # The settings step's sidecars return to their recorded bytes: the
         # engine's normalization reorders their keys even when the values
         # come back through undo.

@@ -902,10 +902,17 @@ impl InspectorSession {
 pub struct PreviewStates {
     /// The textures ready to draw, by key.
     ready_textures: BTreeMap<String, TextureHandle>,
+    /// The content version each ready texture was drawn from, by key. None
+    /// when the key's asset has no version to read - a refused tile, or one
+    /// whose asset was never imported.
+    ready_versions: BTreeMap<String, Option<u64>>,
     /// The keys the executable answered without pixels.
     refused_keys: BTreeSet<String>,
     /// The keys the grid drew this pass, in draw order.
     visible_keys: Vec<String>,
+    /// The renderer generation the ready pictures were drawn by, when one has
+    /// drawn any.
+    drawn_by: Option<u64>,
 }
 
 impl PreviewStates {
@@ -940,10 +947,29 @@ impl PreviewStates {
             && !self.refused_keys.contains(key)
     }
 
-    /// Record a rendered texture for `key`.
-    pub fn mark_ready(&mut self, key: &str, texture: TextureHandle) {
+    /// Whether `key`'s picture was drawn from content that has since moved.
+    ///
+    /// A tile redraws when its asset's content version is not the one its
+    /// texture was drawn from, so an edit shows in the browser without the
+    /// person re-opening the folder. A version the caller cannot read leaves the
+    /// picture as it is.
+    #[must_use]
+    pub fn stale(&self, key: &str, version: Option<u64>) -> bool {
+        let Some(version) = version else {
+            return false;
+        };
+        match self.ready_versions.get(key) {
+            Some(recorded) => *recorded != Some(version),
+            None => false,
+        }
+    }
+
+    /// Record a rendered texture for `key`, drawn from content version
+    /// `version`.
+    pub fn mark_ready(&mut self, key: &str, texture: TextureHandle, version: Option<u64>) {
         self.refused_keys.remove(key);
         self.ready_textures.insert(key.to_string(), texture);
+        self.ready_versions.insert(key.to_string(), version);
     }
 
     /// Record that `key` was answered without pixels: an undecodable file or a
@@ -951,6 +977,7 @@ impl PreviewStates {
     /// for the next one instead of waiting on this one forever.
     pub fn mark_refused(&mut self, key: &str) {
         self.ready_textures.remove(key);
+        self.ready_versions.remove(key);
         self.refused_keys.insert(key.to_string());
     }
 
@@ -958,6 +985,7 @@ impl PreviewStates {
     /// rows that did not change, so only their textures survive a refresh.
     pub fn retain_keys(&mut self, kept: &BTreeSet<String>) {
         self.ready_textures.retain(|key, _| kept.contains(key));
+        self.ready_versions.retain(|key, _| kept.contains(key));
         self.refused_keys.retain(|key| kept.contains(key));
     }
 
@@ -966,9 +994,25 @@ impl PreviewStates {
         self.refused_keys.clear();
     }
 
+    /// Drop every picture when a new renderer generation draws the previews.
+    ///
+    /// A reloaded renderer keeps the assets but draws them through new code -
+    /// a new framing, a new chain, a new shader - so a picture that survived
+    /// the swap may show what the old generation drew. The first call records
+    /// the generation; every change after that forgets the pictures, and the
+    /// pass that follows asks for them again.
+    pub fn follow_renderer(&mut self, generation: u64) {
+        if self.drawn_by == Some(generation) {
+            return;
+        }
+        self.drawn_by = Some(generation);
+        self.clear();
+    }
+
     /// Forget every preview.
     pub fn clear(&mut self) {
         self.ready_textures.clear();
+        self.ready_versions.clear();
         self.refused_keys.clear();
     }
 }
@@ -1103,6 +1147,41 @@ fn smooth_sample(current_mean: f64, sample_value: f64, weight: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A tile is asked for once, and a refusal stops the asking - until a new
+    /// renderer generation draws the previews, which asks for every tile again.
+    #[test]
+    fn a_new_renderer_generation_asks_for_the_pictures_again() {
+        let mut previews = PreviewStates::default();
+        previews.begin_pass();
+        previews.push_visible("models/cube.obj");
+        previews.push_visible("materials/cube.material");
+        previews.mark_refused("models/cube.obj");
+        assert!(
+            !previews.wants("models/cube.obj"),
+            "a refused tile is not asked for again in the same generation"
+        );
+        assert!(previews.wants("materials/cube.material"));
+
+        previews.follow_renderer(1);
+        assert!(
+            previews.wants("models/cube.obj"),
+            "a new generation may draw what the last one refused"
+        );
+        previews.mark_refused("models/cube.obj");
+
+        previews.follow_renderer(1);
+        assert!(
+            !previews.wants("models/cube.obj"),
+            "the same generation keeps the answer it already has"
+        );
+
+        previews.follow_renderer(2);
+        assert!(
+            previews.wants("materials/cube.material"),
+            "the next generation asks for every visible tile again"
+        );
+    }
 
     /// A rectangle that repeats logs once, a rectangle that moves logs again,
     /// and a key that stops drawing is dropped, so the cache does not grow with

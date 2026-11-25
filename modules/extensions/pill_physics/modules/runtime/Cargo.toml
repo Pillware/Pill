@@ -25,6 +25,8 @@ pill_hot_scan = { path = "../../../../hosting/pill_hot_scan" }
 [dependencies]
 pill_core = { path = "../../../../engine/pill_core" }
 pill_engine = { path = "../../../../engine/pill_engine" }
+# The gizmo a component declares draws through the renderer contract.
+pill_renderer_api = { path = "../../../../rendering/pill_renderer_api" }
 # `impl_trait_accessible!`, which registers `PhysicsSettingsAsset` with the
 # type-erased asset columns. The engine depends on it too, and both must be the
 # same crate for the trait objects to match.

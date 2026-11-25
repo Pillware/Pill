@@ -35,12 +35,12 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use pill_core::telemetry::telemetry_target;
 use pill_core::{info, warn};
 use pill_engine::{AssetManager, Component, Entity, Handle};
+use pill_renderer_api::editor::{PickRequest, PreviewRequest, SelectionOutlines};
 use pill_renderer_api::frame::{PassTarget, RenderFrame, RenderInstance, ResolvedPass};
-use pill_renderer_api::{
-    AssetKey, ChainSource, PickRequest, PreviewRequest, SelectionOutlines, SurfaceCameras,
-};
+use pill_renderer_api::{AppendPass, AssetKey, ChainSource, SurfaceCameras};
 use pill_rendering::assets::{asset_key, Material, Mesh, RenderingPipeline};
 use pill_rendering::components::{CameraComponent, MeshRendererComponent, TransformComponent};
+use pill_rendering::AppendPipeline;
 
 // =============================================================================
 // Constants
@@ -78,11 +78,14 @@ pub struct FrameInput<'a> {
     pub assets: &'a AssetManager,
     /// The pipeline the game selected, or `None` when it selected none.
     pub pipeline: Option<Handle<RenderingPipeline>>,
+    /// The pipelines owners appended after every surface's chain, in the order
+    /// they run.
+    pub append_pipelines: &'a [AppendPipeline],
     /// This frame's duration in seconds, when the world carries a clock.
     pub delta_seconds: Option<f32>,
     /// What systems debug-drew for this frame, already aged by this frame's
     /// step.
-    pub debug: pill_engine::DebugFrame,
+    pub debug: pill_renderer_api::DebugFrame,
     /// The entities an editor asked to outline.
     pub outlines: SelectionOutlines,
     /// The picks asked for since the last frame.
@@ -234,9 +237,42 @@ pub fn resolve_passes(
     passes
 }
 
-/// Picks the camera the primary surface draws through, out of every enabled
-/// camera in the world.
+/// Returns the passes the frame appends after each surface's chain.
 ///
+/// Every owner's pipeline is resolved the way the chain is, and each of its
+/// passes carries the owner's surface choice. The list keeps the order the
+/// manager hands over - by `order`, then by owner - so the passes run in the
+/// order their owners asked for.
+///
+/// An owner whose pipeline no longer resolves appends nothing: the frame says
+/// so in the log instead of running the built-in pass a second time, which is
+/// what the chain fallback would do.
+pub fn resolve_append_passes(
+    assets: &AssetManager,
+    append_pipelines: &[AppendPipeline],
+) -> Vec<AppendPass> {
+    let mut passes = Vec::new();
+    for append in append_pipelines {
+        if assets.get(append.pipeline).is_none() {
+            warn!(
+                target: telemetry_target::RENDERING,
+                owner = append.owner.as_str(),
+                "an appended pipeline no longer resolves and is left out"
+            );
+            continue;
+        }
+        for pass in resolve_passes(assets, Some(append.pipeline)) {
+            passes.push(AppendPass {
+                pass,
+                surfaces: append.surfaces,
+            });
+        }
+    }
+    passes
+}
+
+/// Picks the camera the primary surface draws through, out of every enabled
+/// camera in the world.///
 /// The highest `priority` wins. Equal priorities go to the lowest entity id, so
 /// the choice stays the same from frame to frame while the same cameras exist,
 /// whatever order the query walks them in. `None` means no camera is enabled;
@@ -349,15 +385,21 @@ pub fn update_frame(
 
     // Read the pipeline every frame, because a game can set one, or switch a
     // pass inside one, at any point between two frames. Resolve the chain again
-    // only when the pipeline key or the asset revision moved: resolution clones
-    // every pass's strings and maps. The generation it bumps tells the renderer
-    // whether the chain it built is still this chain.
+    // only when the pipeline key, the appended pipelines or the asset revision
+    // moved: resolution clones every pass's strings and maps. The generation it
+    // bumps tells the renderer whether the chain it built is still this chain.
     let chain_source = ChainSource {
         revision: assets.revision(),
         pipeline: input.pipeline.map(frame_asset_key),
+        append_pipelines: input
+            .append_pipelines
+            .iter()
+            .map(|append| frame_asset_key(append.pipeline))
+            .collect(),
     };
-    if frame.chain_source != Some(chain_source) {
+    if frame.chain_source.as_ref() != Some(&chain_source) {
         frame.passes = resolve_passes(assets, input.pipeline);
+        frame.append_passes = resolve_append_passes(assets, input.append_pipelines);
         frame.chain_source = Some(chain_source);
         frame.chain_generation = frame.chain_generation.wrapping_add(1);
     }
@@ -427,13 +469,13 @@ pub fn update_frame(
     // a surface drawn through a world camera never does.
     frame.grid_cell_size = input
         .surface_cameras
-        .and_then(pill_renderer_api::frame_grid);
+        .and_then(pill_renderer_api::editor::frame_grid);
     // The surfaces the editor draws its own gizmo handles and selection
     // outlines on. This is the view-bound set whether the grid is on or off, so
     // switching the grid off never moves the gizmo onto the game's surface.
     frame.editor_views = input
         .surface_cameras
-        .map(pill_renderer_api::editor_view_surfaces)
+        .map(pill_renderer_api::editor::editor_view_surfaces)
         .unwrap_or_default();
 
     // The frame's UI comes from the world's only producer. When one published
@@ -849,6 +891,7 @@ mod tests {
             FrameInput {
                 assets: &assets,
                 pipeline: None,
+                append_pipelines: &[],
                 delta_seconds: Some(0.25),
                 debug: Default::default(),
                 outlines: Default::default(),
@@ -870,6 +913,7 @@ mod tests {
             FrameInput {
                 assets: &assets,
                 pipeline: None,
+                append_pipelines: &[],
                 delta_seconds: Some(0.5),
                 debug: Default::default(),
                 outlines: Default::default(),
@@ -898,6 +942,7 @@ mod tests {
             FrameInput {
                 assets,
                 pipeline: None,
+                append_pipelines: &[],
                 delta_seconds: None,
                 debug: Default::default(),
                 outlines: Default::default(),
@@ -934,6 +979,7 @@ mod tests {
             FrameInput {
                 assets: &assets,
                 pipeline: None,
+                append_pipelines: &[],
                 delta_seconds: None,
                 debug: Default::default(),
                 outlines: Default::default(),
@@ -971,6 +1017,7 @@ mod tests {
             FrameInput {
                 assets: &assets,
                 pipeline: None,
+                append_pipelines: &[],
                 delta_seconds: None,
                 debug: Default::default(),
                 outlines: Default::default(),
@@ -1006,6 +1053,7 @@ mod tests {
             FrameInput {
                 assets,
                 pipeline: None,
+                append_pipelines: &[],
                 delta_seconds: None,
                 debug: Default::default(),
                 outlines: Default::default(),

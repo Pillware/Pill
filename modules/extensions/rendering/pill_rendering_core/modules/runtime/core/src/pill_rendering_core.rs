@@ -34,9 +34,11 @@
 
 /// Turning a camera and a transform into the matrices a shader reads.
 pub mod camera;
-
 /// The key a draw queue sorts by, and the slot identity it packs.
 pub mod draw_order;
+
+/// The 5 by 7 bitmap font debug labels are drawn in, shared by every renderer.
+pub mod debug_font;
 
 /// Building a frame from the world.
 pub mod frame;

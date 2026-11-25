@@ -3,28 +3,35 @@
 //! # Responsibilities
 //!
 //! - Render one requested asset into a 128x128 RGBA8 target and copy it to a
-//!   readback buffer ([`PreviewRenderer::record`],
-//!   [`PreviewRenderer::record_mesh`]). At most one request is drawn per
-//!   frame.
+//!   readback buffer ([`PreviewRenderer::record_texture`] for a texture; a
+//!   material or a mesh is drawn by the renderer's own chain into the same
+//!   target). At most one request is drawn per frame.
 //! - Map that buffer after the frame that wrote it was submitted
 //!   ([`PreviewRenderer::after_submit`]). Hand the pixels back once the GPU
 //!   has finished ([`PreviewRenderer::collect`]).
 //! - Decode and upload a texture file the first time a preview names it, and
-//!   again when the file changes ([`PreviewRenderer::texture`]). Mesh files
-//!   work the same way ([`PreviewRenderer::mesh`]).
+//!   again when the file changes ([`PreviewRenderer::texture`]).
+//! - Supply the sphere a material preview draws on ([`sphere_mesh`]) and the
+//!   camera each preview draws through: one framed to a mesh's own bounds
+//!   ([`mesh_framing`]), one framed to that sphere ([`sphere_framing`]).
 //!
 //! # Design
 //!
-//! A texture or material preview is one fullscreen triangle. The fragment
-//! shader samples the asset's texture, or shades a sphere in a material's
-//! colour, so these previews need no vertex buffer, camera or depth target.
-//! A mesh preview uses a second pipeline that draws the decoded triangle list
-//! through a camera fitted to the mesh's bounds. It has a depth target because
-//! a solid seen from a three-quarter angle hides part of itself.
+//! A texture preview is one fullscreen triangle: the fragment shader samples the
+//! decoded file, which is what an editor tile needs for a picture that is only a
+//! file. It needs no vertex buffer, camera or depth target.
 //!
-//! The target and both pipelines are built once and reused. The readback is a
-//! mapped buffer polled without waiting, the same shape the pick buffer uses.
-//! Nothing is written to disk: the pixels reach the editor as data.
+//! A material or a mesh preview is drawn by the renderer's chain instead: the
+//! asset becomes one instance of the frame and the geometry pass draws it
+//! through the pipeline its material's shader carries - a material on the
+//! generated sphere, a mesh with the default material and a camera fitted to its
+//! bounds. A preview therefore shows the asset the way the game draws it, and a
+//! material preview changes when the material or its shader does.
+//!
+//! The target, the texture pipeline and the readback are built once and reused.
+//! The readback is a mapped buffer polled without waiting, the same shape the
+//! pick buffer uses. Nothing is written to disk: the pixels reach the editor as
+//! data.
 
 // Standard library
 use std::collections::{HashMap, VecDeque};
@@ -33,7 +40,8 @@ use std::time::SystemTime;
 
 // External crates
 use pill_core::telemetry::telemetry_target;
-use pill_renderer_api::PreviewImage;
+use pill_engine::common_components::TransformComponent;
+use pill_renderer_api::editor::PreviewImage;
 
 // Current crate
 use crate::readback::{MappedReadback, Readback};
@@ -56,122 +64,196 @@ const PREVIEW_BYTES: u64 = (PREVIEW_SIZE as u64) * (PREVIEW_SIZE as u64) * 4;
 /// few dozen smaller ones.
 const TEXTURE_BUDGET_BYTES: u64 = 64 * 1024 * 1024;
 
-/// How many GPU bytes the decoded mesh files may hold.
+/// The name the renderer installs its preview sphere under.
 ///
-/// A mesh is far smaller than a texture, so the same limit covers a whole
-/// browsing session.
-const MESH_BUDGET_BYTES: u64 = 64 * 1024 * 1024;
+/// The sphere is an asset like any other, so the chain draws a material on it
+/// exactly as it draws a game's meshes: one instance, through its own material.
+pub(super) const SPHERE_MESH_NAME: &str = "pill.preview.sphere";
 
-/// The mesh vertex attributes the mesh pipeline reads: position and normal,
-/// at the offsets the asset crate's vertex struct gives them.
-const MESH_ATTRIBUTES: [wgpu::VertexAttribute; 2] = [
-    wgpu::VertexAttribute {
-        format: wgpu::VertexFormat::Float32x3,
-        offset: 0,
-        shader_location: 0,
-    },
-    wgpu::VertexAttribute {
-        format: wgpu::VertexFormat::Float32x3,
-        offset: 20,
-        shader_location: 1,
-    },
-];
+/// The sphere a material preview draws on: how many segments around it, and how
+/// many rings from pole to pole.
+const SPHERE_SEGMENTS: u32 = 32;
+const SPHERE_RINGS: u32 = 16;
+
+/// How wide the preview camera's field of view is, in radians.
+///
+/// A preview is square, so the vertical and horizontal angles are the same.
+const PREVIEW_FIELD_OF_VIEW: f32 = std::f32::consts::FRAC_PI_4;
 
 // =============================================================================
-// Preview Mode
+// Preview Sphere
 // =============================================================================
 
-/// What the fragment shader draws, as the mode the parameters carry.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum PreviewMode {
-    /// A texture, fitted into the square.
-    Texture = 0,
-    /// A sphere in a material's colour.
-    Material = 1,
+/// Builds the unit sphere a material preview draws on.
+///
+/// The sphere carries positions, normals and texture coordinates, so any shader
+/// that reads those three draws it: a material whose shader samples maps shows
+/// them wrapped around the ball. Its triangles wind the way the chain's culling
+/// expects, so the faces turned away from the camera are the ones dropped.
+pub(super) fn sphere_mesh() -> crate::assets::Mesh {
+    let mut vertices = Vec::with_capacity(((SPHERE_RINGS + 1) * (SPHERE_SEGMENTS + 1)) as usize);
+    for ring in 0..=SPHERE_RINGS {
+        let polar = std::f32::consts::PI * (ring as f32 / SPHERE_RINGS as f32);
+        let (sin_polar, cos_polar) = polar.sin_cos();
+        for segment in 0..=SPHERE_SEGMENTS {
+            let azimuth = std::f32::consts::TAU * (segment as f32 / SPHERE_SEGMENTS as f32);
+            let (sin_azimuth, cos_azimuth) = azimuth.sin_cos();
+            let normal = [sin_polar * cos_azimuth, cos_polar, sin_polar * sin_azimuth];
+            vertices.push(crate::assets::MeshVertex {
+                position: normal,
+                texture_coordinates: [
+                    segment as f32 / SPHERE_SEGMENTS as f32,
+                    ring as f32 / SPHERE_RINGS as f32,
+                ],
+                normal,
+                tangent: [-sin_azimuth, 0.0, cos_azimuth],
+                bitangent: [cos_polar * cos_azimuth, -sin_polar, cos_polar * sin_azimuth],
+            });
+        }
+    }
+    let stride = SPHERE_SEGMENTS + 1;
+    let mut indices = Vec::with_capacity((SPHERE_RINGS * SPHERE_SEGMENTS * 6) as usize);
+    for ring in 0..SPHERE_RINGS {
+        for segment in 0..SPHERE_SEGMENTS {
+            let top = ring * stride + segment;
+            let bottom = top + stride;
+            // Wound so that the face turned toward the camera - the one the
+            // chain keeps when it culls back faces - is the outside of the
+            // ball. Swapping the two corners of a triangle flips which side is
+            // the front, so the order here is the whole of it.
+            indices.extend_from_slice(&[top, top + 1, bottom]);
+            indices.extend_from_slice(&[top + 1, bottom + 1, bottom]);
+        }
+    }
+    crate::assets::Mesh::from_data(SPHERE_MESH_NAME, vertices, indices)
 }
 
 // =============================================================================
-// Preview Parameters
+// Preview Material
 // =============================================================================
 
-/// The uniform a texture or material preview writes.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct PreviewParameters {
-    /// The material's colour. A texture preview leaves it unused.
-    color: [f32; 4],
-    /// The [`PreviewMode`] value the shader compares against, stored in the
-    /// first word of a vec4. The other three words keep the uniform a multiple
-    /// of 16 bytes.
-    mode: [u32; 4],
+/// The name the renderer installs the material a mesh preview draws with under.
+///
+/// A bare mesh has no material of its own, and the chain's default one is a
+/// mirror - metal with nothing behind the camera reads as a flat dark shape -
+/// so a preview of a mesh gets a surface that shows its form instead.
+pub(super) const MESH_MATERIAL_NAME: &str = "pill.preview.material";
+
+/// The base colour of the surface a mesh preview draws.
+const PREVIEW_SURFACE_COLOR: [f32; 3] = [0.8, 0.8, 0.8];
+
+/// How rough that surface is: dull enough to show shading, smooth enough to
+/// keep a highlight that follows the shape.
+const PREVIEW_SURFACE_ROUGHNESS: f32 = 0.55;
+
+/// Builds the material a mesh preview draws with.
+///
+/// It names no shader, so it draws through the shader the chain would draw a
+/// material that names none with - a project with its own chain sees its own
+/// shading, exactly as its scenes do. Its parameters are the slots the shipped
+/// PBR shader reads; a chain whose shader declares others ignores them.
+pub(super) fn mesh_preview_material() -> crate::assets::Material {
+    crate::assets::Material::builder(MESH_MATERIAL_NAME)
+        .color_parameter("pbr_base", PREVIEW_SURFACE_COLOR)
+        .scalar_parameter("pbr_roughness", PREVIEW_SURFACE_ROUGHNESS)
+        .scalar_parameter("pbr_metallic", 0.0)
+        .color_parameter("pbr_emissive", [0.0, 0.0, 0.0])
+        .build()
 }
 
 // =============================================================================
-// Mesh Parameters
+// Mesh Framing
 // =============================================================================
 
-/// The uniform a mesh preview writes. It carries the camera framing and the
-/// colour the mesh is shaded in.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct MeshParameters {
-    /// Projection times view, aimed at the centre of the mesh's bounds.
-    transform: [[f32; 4]; 4],
-    /// The grey a mesh preview shades in.
-    color: [f32; 4],
+/// Where a preview's camera stands and what it draws through.
+///
+/// The camera looks at the centre of the object's bounds from a three-quarter
+/// angle and stands back until the bounding sphere fits the field of view, so
+/// any asset fills the tile and a solid reads as a solid rather than as a flat
+/// outline. A material preview frames the unit sphere the same way.
+pub(super) struct PreviewFraming {
+    /// The camera to draw through.
+    pub(crate) camera: pill_renderer_api::CameraComponent,
+    /// Where it stands and which way it looks - the camera's own transform,
+    /// never the drawn object's.
+    pub(crate) transform: TransformComponent,
 }
 
-// =============================================================================
-// Mesh Source
-// =============================================================================
+/// Frames a sphere of `radius` around `centre`, or returns `None` when the
+/// bounds are unusable: a radius that is zero or not finite, or a centre that
+/// is not finite.
+pub(super) fn framing_for_bounds(centre: glam::Vec3, radius: f32) -> Option<PreviewFraming> {
+    if !centre.is_finite() || !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    let distance = radius / (PREVIEW_FIELD_OF_VIEW * 0.5).tan() * 1.15;
+    let direction = glam::Vec3::new(0.45, 0.35, 1.0).normalize();
+    let eye = centre + direction * distance;
+    // The camera looks down its own -Z, so the rotation that aims it at the
+    // object takes -Z onto the direction from the object to the eye.
+    let rotation = glam::Quat::from_rotation_arc(glam::Vec3::NEG_Z, -direction);
+    let camera = pill_renderer_api::CameraComponent {
+        vertical_fov: PREVIEW_FIELD_OF_VIEW.to_degrees(),
+        near: (distance - radius * 2.0).max(distance * 0.01),
+        far: distance + radius * 4.0,
+        ..Default::default()
+    };
+    Some(PreviewFraming {
+        camera,
+        transform: TransformComponent {
+            translation: [eye.x, eye.y, eye.z],
+            rotation: [rotation.x, rotation.y, rotation.z, rotation.w],
+            scale: [1.0, 1.0, 1.0],
+        },
+    })
+}
 
-/// One decoded mesh on the GPU, with the transform that frames it.
-#[derive(Clone)]
-pub(super) struct MeshSource {
-    /// Interleaved vertices, in the asset crate's `MeshVertex` layout.
-    vertices: wgpu::Buffer,
-    /// Triangle indices into [`Self::vertices`].
-    indices: wgpu::Buffer,
-    /// How many indices to draw.
-    index_count: u32,
-    /// Projection times view, framing the mesh inside the square.
-    transform: [[f32; 4]; 4],
+/// The framing a material preview draws through: the unit sphere at the
+/// origin, whose bounds are known before a single vertex is read.
+pub(super) fn sphere_framing() -> PreviewFraming {
+    framing_for_bounds(glam::Vec3::ZERO, 1.0).expect("a unit sphere has usable bounds")
+}
+
+/// Frames `vertices` with a camera, or returns `None` when the mesh has no
+/// usable bounds: no vertices, all of them at one point, or coordinates that are
+/// not finite.
+pub(super) fn mesh_framing(vertices: &[crate::assets::MeshVertex]) -> Option<PreviewFraming> {
+    let mut min = glam::Vec3::splat(f32::INFINITY);
+    let mut max = glam::Vec3::splat(f32::NEG_INFINITY);
+    for vertex in vertices {
+        let position = glam::Vec3::from_array(vertex.position);
+        min = min.min(position);
+        max = max.max(position);
+    }
+    if !min.is_finite() || !max.is_finite() || min == max {
+        return None;
+    }
+    framing_for_bounds((min + max) * 0.5, ((max - min) * 0.5).length())
 }
 
 // =============================================================================
 // Preview Renderer
 // =============================================================================
 
-/// The GPU state one preview at a time needs: a 128x128 target, the two
-/// pipelines that draw into it, and one readback slot.
+/// The GPU state one preview at a time needs: a 128x128 target, the texture
+/// pipeline that draws into it, a depth buffer for the assets the chain draws,
+/// and one readback slot.
 pub(super) struct PreviewRenderer {
-    /// The flat preview's bind group layout and pipeline: its parameters,
-    /// texture and sampler.
+    /// The texture preview's bind group layout and pipeline: a texture and its
+    /// sampler.
     layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
-    /// The mesh pipeline and its camera uniform: its own vertex layout,
-    /// depth test and framing.
-    mesh_layout: wgpu::BindGroupLayout,
-    mesh_pipeline: wgpu::RenderPipeline,
-    mesh_parameters: wgpu::Buffer,
-    /// The depth target a mesh preview tests against.
-    depth: wgpu::TextureView,
-    /// The 128x128 render target every preview draws into, and its view.
+    /// The 128x128 render target every preview draws into, and the view of it.
     target: wgpu::Texture,
     view: wgpu::TextureView,
+    /// The depth buffer an asset drawn by the chain tests against.
+    depth: wgpu::TextureView,
     /// Where the drawn pixels are copied for mapping.
     readback: MappedReadback,
-    /// The parameters buffer, rewritten per request.
-    parameters: wgpu::Buffer,
     /// The sampler a texture preview reads through.
     sampler: wgpu::Sampler,
-    /// A 1x1 white texture. A material preview binds it in place of the
-    /// asset's texture, so one bind group layout serves both modes.
-    white_texture_view: wgpu::TextureView,
     /// Texture views by path, with the modified time each was decoded from.
     texture_sources: BudgetedCache<wgpu::TextureView>,
-    /// Mesh sources by path, with the modified time each was decoded from.
-    mesh_sources: BudgetedCache<MeshSource>,
     /// The id of the request whose pixels are on their way.
     in_flight_request_id: Option<u64>,
     /// Finished previews waiting for the next [`Self::collect`].
@@ -179,10 +261,11 @@ pub(super) struct PreviewRenderer {
 }
 
 impl PreviewRenderer {
-    /// Builds the target, both pipelines, the readback buffer and the caches.
+    /// Builds the target, the depth buffer, the texture pipeline, the readback
+    /// buffer and the decode cache.
     pub(super) fn new(device: &wgpu::Device) -> Self {
-        // Step 1: The flat pipeline - one fullscreen triangle with a uniform, a
-        // texture and a sampler.
+        // Step 1: The texture pipeline - one fullscreen triangle with a texture
+        // and a sampler.
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("preview_shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("preview.wgsl").into()),
@@ -193,16 +276,6 @@ impl PreviewRenderer {
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
                         view_dimension: wgpu::TextureViewDimension::D2,
@@ -211,7 +284,7 @@ impl PreviewRenderer {
                     count: None,
                 },
                 wgpu::BindGroupLayoutEntry {
-                    binding: 2,
+                    binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
@@ -248,8 +321,9 @@ impl PreviewRenderer {
             multiview_mask: None,
             cache: None,
         });
-        // Step 2: The target every preview draws into, and the buffer its
-        // pixels are copied out to.
+        // Step 2: The target every preview draws into, the depth buffer an
+        // asset drawn by the chain tests against, and the buffer the pixels are
+        // copied out to.
         let target = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("preview_target"),
             size: wgpu::Extent3d {
@@ -265,88 +339,6 @@ impl PreviewRenderer {
             view_formats: &[],
         });
         let view = target.create_view(&wgpu::TextureViewDescriptor::default());
-        let readback = MappedReadback::new(device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("preview_readback"),
-            size: PREVIEW_BYTES,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
-            mapped_at_creation: false,
-        }));
-        let parameters = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("preview_parameters"),
-            size: std::mem::size_of::<PreviewParameters>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        // Step 3: The mesh pipeline and the target it tests against. A mesh
-        // needs its own shader, camera uniform and depth target, because it
-        // needs perspective and occlusion where a quad and a sphere need
-        // neither.
-        let mesh_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("preview_mesh_shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("preview_mesh.wgsl").into()),
-        });
-        let mesh_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("preview_mesh_bind_group_layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        let mesh_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("preview_mesh_pipeline_layout"),
-            bind_group_layouts: &[Some(&mesh_layout)],
-            immediate_size: 0,
-        });
-        let mesh_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("preview_mesh_pipeline"),
-            layout: Some(&mesh_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &mesh_shader,
-                entry_point: Some("preview_mesh_vertex"),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: std::mem::size_of::<crate::assets::MeshVertex>() as u64,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &MESH_ATTRIBUTES,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &mesh_shader,
-                entry_point: Some("preview_mesh_fragment"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                cull_mode: Some(wgpu::Face::Back),
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: crate::resources::RendererTexture::DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
-        let mesh_parameters = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("preview_mesh_parameters"),
-            size: std::mem::size_of::<MeshParameters>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
         let depth = device
             .create_texture(&wgpu::TextureDescriptor {
                 label: Some("preview_depth"),
@@ -363,8 +355,13 @@ impl PreviewRenderer {
                 view_formats: &[],
             })
             .create_view(&wgpu::TextureViewDescriptor::default());
-        // Step 4: The sampler a texture preview reads through, and the white
-        // texture a material binds in its place.
+        let readback = MappedReadback::new(device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("preview_readback"),
+            size: PREVIEW_BYTES,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        }));
+        // Step 3: The sampler a texture preview reads through.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("preview_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -375,37 +372,15 @@ impl PreviewRenderer {
             mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
-        // A 1x1 white texture for the sampler slot a material leaves unused.
-        let white_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("preview_white"),
-            size: wgpu::Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let white = white_texture.create_view(&wgpu::TextureViewDescriptor::default());
         Self {
             layout,
             pipeline,
-            mesh_layout,
-            mesh_pipeline,
-            mesh_parameters,
-            depth,
             target,
             view,
+            depth,
             readback,
-            parameters,
             sampler,
-            white_texture_view: white,
             texture_sources: BudgetedCache::new(TEXTURE_BUDGET_BYTES),
-            mesh_sources: BudgetedCache::new(MESH_BUDGET_BYTES),
             in_flight_request_id: None,
             finished_previews: Vec::new(),
         }
@@ -424,6 +399,16 @@ impl PreviewRenderer {
     /// over, so the caller gets exactly one answer for every request it made.
     pub(super) fn refuse(&mut self, id: u64) {
         self.finished_previews.push(PreviewImage::refused(id));
+    }
+
+    /// The view a preview draws into.
+    pub(super) fn target_view(&self) -> &wgpu::TextureView {
+        &self.view
+    }
+
+    /// The depth buffer an asset drawn by the chain tests against.
+    pub(super) fn depth_view(&self) -> &wgpu::TextureView {
+        &self.depth
     }
 
     /// Returns the view and sampler a texture preview samples.
@@ -480,70 +465,49 @@ impl PreviewRenderer {
         let dropped = self
             .texture_sources
             .insert(path, modified, view.clone(), bytes);
-        self.report_trimmed("source", &dropped);
+        self.report_trimmed(&dropped);
         Some((view, self.sampler.clone()))
     }
 
-    /// Logs a trim of one cache: how many entries were dropped and how many
-    /// bytes the cache holds now.
-    fn report_trimmed(&self, cache_name: &str, dropped: &[String]) {
+    /// Logs a trim of the decode cache: how many entries were dropped and how
+    /// many bytes it holds now.
+    fn report_trimmed(&self, dropped: &[String]) {
         if dropped.is_empty() {
             return;
         }
-        let bytes = match cache_name {
-            "mesh" => self.mesh_sources.bytes,
-            _ => self.texture_sources.bytes,
-        };
         pill_core::info!(
             target: telemetry_target::RENDERING,
             dropped = dropped.len(),
-            bytes,
-            cache = cache_name,
+            bytes = self.texture_sources.bytes,
+            cache = "source",
             "[render] preview cache trimmed"
         );
     }
 
-    /// Records one texture or material preview into `encoder`.
+    /// Records one texture preview into `encoder`.
     ///
-    /// `source` is the texture to sample. When it is `None`, the shader draws a
-    /// sphere in `color` instead. The caller submits the encoder, then calls
-    /// [`Self::after_submit`] to start the readback's mapping, and
-    /// [`Self::collect`] hands the pixels over.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn record(
+    /// The caller submits the encoder, then calls [`Self::after_submit`] to
+    /// start the readback's mapping, and [`Self::collect`] hands the pixels
+    /// over.
+    pub(super) fn record_texture(
         &mut self,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         id: u64,
-        mode: PreviewMode,
-        color: [f32; 4],
-        source: Option<(wgpu::TextureView, wgpu::Sampler)>,
+        source: (wgpu::TextureView, wgpu::Sampler),
     ) {
-        // Step 1: Bind the texture the preview samples and write its uniform.
-        let (texture_view, sampler) = match source {
-            Some((view, sampler)) => (view, sampler),
-            None => (self.white_texture_view.clone(), self.sampler.clone()),
-        };
-        let parameters = PreviewParameters {
-            color,
-            mode: [mode as u32, 0, 0, 0],
-        };
-        queue.write_buffer(&self.parameters, 0, bytemuck::bytes_of(&parameters));
+        // Step 1: Bind the texture the preview samples.
+        let (texture_view, sampler) = source;
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("preview_bind_group"),
             layout: &self.layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: self.parameters.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
                     resource: wgpu::BindingResource::TextureView(&texture_view),
                 },
                 wgpu::BindGroupEntry {
-                    binding: 2,
+                    binding: 1,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
             ],
@@ -575,121 +539,9 @@ impl PreviewRenderer {
         self.in_flight_request_id = Some(id);
     }
 
-    /// Returns the GPU mesh a mesh preview draws.
-    ///
-    /// The file is decoded and uploaded on first use, and again when its
-    /// modified time changes. Returns `None` when the file cannot be read or
-    /// decoded, when it holds no vertices or triangles, or when its bounds
-    /// leave no room to frame it.
-    pub(super) fn mesh(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        path: &str,
-    ) -> Option<MeshSource> {
-        let modified = std::fs::metadata(path)
-            .ok()
-            .and_then(|metadata| metadata.modified().ok());
-        if let Some(mesh) = self.mesh_sources.fresh_value(path, modified) {
-            return Some(mesh);
-        }
-        let file_bytes = std::fs::read(Path::new(path)).ok()?;
-        let decoded = crate::assets::Mesh::from_obj_bytes(path, &file_bytes).ok()?;
-        if decoded.indices.is_empty() || decoded.vertices.is_empty() {
-            return None;
-        }
-        let transform = mesh_framing_transform(&decoded.vertices)?;
-        let vertices = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("preview_mesh_vertices"),
-            size: std::mem::size_of_val(decoded.vertices.as_slice()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&vertices, 0, bytemuck::cast_slice(&decoded.vertices));
-        let indices = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("preview_mesh_indices"),
-            size: std::mem::size_of_val(decoded.indices.as_slice()) as u64,
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        queue.write_buffer(&indices, 0, bytemuck::cast_slice(&decoded.indices));
-        let source = MeshSource {
-            vertices,
-            indices,
-            index_count: decoded.indices.len() as u32,
-            transform,
-        };
-        let gpu_bytes = source.vertices.size() + source.indices.size();
-        let dropped = self
-            .mesh_sources
-            .insert(path, modified, source.clone(), gpu_bytes);
-        self.report_trimmed("mesh", &dropped);
-        Some(source)
-    }
-
-    /// Records one mesh preview into `encoder`, then copies the square out for
-    /// mapping. The caller submits the encoder, as it does for the other modes.
-    pub(super) fn record_mesh(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        encoder: &mut wgpu::CommandEncoder,
-        id: u64,
-        mesh: &MeshSource,
-    ) {
-        // Step 1: Write the camera uniform the mesh is drawn through.
-        let parameters = MeshParameters {
-            transform: mesh.transform,
-            color: [0.72, 0.73, 0.75, 1.0],
-        };
-        queue.write_buffer(&self.mesh_parameters, 0, bytemuck::bytes_of(&parameters));
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("preview_mesh_bind_group"),
-            layout: &self.mesh_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: self.mesh_parameters.as_entire_binding(),
-            }],
-        });
-        // Step 2: Draw the mesh with the depth test on.
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("preview_mesh"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Discard,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&self.mesh_pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
-            pass.set_vertex_buffer(0, mesh.vertices.slice(..));
-            pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(0..mesh.index_count, 0, 0..1);
-        }
-        // Step 3: Copy the square out and remember which request is on its way.
-        self.copy_target_to_readback(encoder);
-        self.in_flight_request_id = Some(id);
-    }
-
-    /// Copies the target's pixels into the readback buffer. Both preview
-    /// paths end with this step.
-    fn copy_target_to_readback(&self, encoder: &mut wgpu::CommandEncoder) {
+    /// Copies the target's pixels into the readback buffer. Every preview path
+    /// ends with this step.
+    pub(super) fn copy_target_to_readback(&self, encoder: &mut wgpu::CommandEncoder) {
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.target,
@@ -714,6 +566,12 @@ impl PreviewRenderer {
                 depth_or_array_layers: 1,
             },
         );
+    }
+
+    /// Remembers that `id` is the request whose pixels the next readback
+    /// carries.
+    pub(super) fn mark_in_flight(&mut self, id: u64) {
+        self.in_flight_request_id = Some(id);
     }
 
     /// Starts mapping the readback buffer, which the last recorded preview
@@ -769,60 +627,16 @@ impl PreviewRenderer {
 }
 
 // =============================================================================
-// Mesh Framing Transform
-// =============================================================================
-
-/// Builds the transform a mesh preview draws through.
-///
-/// The mesh's own bounds decide where the camera sits, so any asset fills the
-/// square.
-///
-/// The camera looks at the bounds' centre and moves back until their
-/// bounding sphere fits the field of view, from a three-quarter angle, so the
-/// preview shows a solid shape instead of a flat outline.
-///
-/// Returns `None` when the vertices have no usable bounds: there are none, all
-/// of them sit at one point, or their coordinates are not finite.
-fn mesh_framing_transform(vertices: &[crate::assets::MeshVertex]) -> Option<[[f32; 4]; 4]> {
-    let mut min = glam::Vec3::splat(f32::INFINITY);
-    let mut max = glam::Vec3::splat(f32::NEG_INFINITY);
-    for vertex in vertices {
-        let position = glam::Vec3::from_array(vertex.position);
-        min = min.min(position);
-        max = max.max(position);
-    }
-    if !min.is_finite() || !max.is_finite() || min == max {
-        return None;
-    }
-    let centre = (min + max) * 0.5;
-    let radius = ((max - min) * 0.5).length();
-    let field_of_view = 45.0_f32.to_radians();
-    let distance = radius / (field_of_view * 0.5).tan() * 1.15;
-    let eye = centre + glam::Vec3::new(0.45, 0.35, 1.0).normalize() * distance;
-    let view = glam::camera::rh::view::look_at_mat4(eye, centre, glam::Vec3::Y);
-    // wgpu's clip space takes depth in 0..1 and Y up, which is the DirectX
-    // convention glam names.
-    let projection = glam::camera::rh::proj::directx::perspective(
-        field_of_view,
-        1.0,
-        (distance - radius * 2.0).max(distance * 0.01),
-        distance + radius * 4.0,
-    );
-    Some((projection * view).to_cols_array_2d())
-}
-
-// =============================================================================
 // Budgeted Cache
 // =============================================================================
 
 /// A cache of GPU data by file path, limited by bytes rather than by a count.
 ///
-/// The preview has two of these, and both hold the same thing: a file's
-/// contents on the GPU, which go stale once the file changes. Using an entry
-/// makes it the newest, so the limit drops what a person scrolled past instead
-/// of what they are looking at. The newest entry is never dropped, even when it
-/// is alone over the limit, so a source bigger than the whole cache still
-/// previews.
+/// It holds a file's contents on the GPU, which go stale once the file changes.
+/// Using an entry makes it the newest, so the limit drops what a person scrolled
+/// past instead of what they are looking at. The newest entry is never dropped,
+/// even when it is alone over the limit, so a source bigger than the whole cache
+/// still previews.
 struct BudgetedCache<V> {
     /// The cached values by path, each with the modified time it was built
     /// from.
@@ -933,11 +747,134 @@ mod tests {
         corners
     }
 
+    /// The sphere a material preview draws on is a closed, unit-sized ball with
+    /// the attributes a material's shader reads.
+    #[test]
+    fn the_preview_sphere_is_a_unit_ball_with_its_normals() {
+        let mesh = sphere_mesh();
+        assert!(!mesh.vertices.is_empty() && !mesh.indices.is_empty());
+        assert_eq!(mesh.indices.len() % 3, 0);
+        for vertex in &mesh.vertices {
+            let length = glam::Vec3::from_array(vertex.position).length();
+            assert!(
+                (length - 1.0).abs() < 1e-4,
+                "a sphere vertex sits {length} from the centre"
+            );
+        }
+        assert!(
+            mesh.indices
+                .iter()
+                .all(|index| (*index as usize) < mesh.vertices.len()),
+            "an index points past the vertices"
+        );
+    }
+
+    /// Every triangle of the preview sphere turns its front toward the outside
+    /// of the ball, so the chain's back-face culling drops the far side and the
+    /// camera sees the near side. Wound the other way round, the sphere's
+    /// visible pixels would be the inside of the far side, lit by nothing.
+    #[test]
+    fn the_preview_spheres_faces_turn_outward() {
+        let mesh = sphere_mesh();
+        let mut checked = 0;
+        for triangle in mesh.indices.chunks_exact(3) {
+            let corner = |index: usize| {
+                glam::Vec3::from_array(mesh.vertices[triangle[index] as usize].position)
+            };
+            let (first, second, third) = (corner(0), corner(1), corner(2));
+            let face_normal = (second - first).cross(third - first);
+            if face_normal.length() < 1e-6 {
+                // The quad touching a pole has one triangle of zero area,
+                // because a pole vertex and the one beside it are the same
+                // point.
+                continue;
+            }
+            let centroid = (first + second + third) / 3.0;
+            assert!(
+                face_normal.dot(centroid) > 0.0,
+                "a face at {centroid} turns away from the ball: {face_normal}"
+            );
+            checked += 1;
+        }
+        assert!(
+            checked >= (SPHERE_RINGS * SPHERE_SEGMENTS * 2 - SPHERE_SEGMENTS * 2) as usize,
+            "only {checked} faces had any surface to check"
+        );
+    }
+
+    /// The material a mesh preview draws with is a mid-grey dielectric, not the
+    /// chain's mirror-like default: metal with no environment behind it takes
+    /// no diffuse light and reads as an unlit blob.
+    #[test]
+    fn the_mesh_preview_material_is_a_neutral_dielectric() {
+        let material = mesh_preview_material();
+        assert_eq!(material.name, MESH_MATERIAL_NAME);
+        assert_eq!(
+            material.shader,
+            pill_engine::Handle::INVALID,
+            "the chain's own shader is what draws it"
+        );
+        assert_eq!(
+            material.parameters.get("pbr_base"),
+            Some(&crate::assets::MaterialParameter::Color(
+                PREVIEW_SURFACE_COLOR
+            ))
+        );
+        assert_eq!(
+            material.parameters.get("pbr_metallic"),
+            Some(&crate::assets::MaterialParameter::Scalar(0.0)),
+            "a dielectric shows shading; a metal shows only the lights"
+        );
+        assert_eq!(
+            material.parameters.get("pbr_emissive"),
+            Some(&crate::assets::MaterialParameter::Color([0.0, 0.0, 0.0])),
+            "a preview surface gives off no light of its own"
+        );
+    }
+
+    /// A material preview frames the unit sphere it draws on, from outside it:
+    /// the eye stands clear of the ball, looks at its centre, and the ball fits
+    /// inside the field of view.
+    #[test]
+    fn the_material_preview_frames_the_unit_sphere_from_outside() {
+        let framing = sphere_framing();
+        let eye = glam::Vec3::from(framing.transform.translation);
+        let distance = eye.length();
+        assert!(
+            distance > 1.5,
+            "the eye must stand clear of the unit sphere, not inside it: {distance}"
+        );
+        let rotation = glam::Quat::from_array(framing.transform.rotation);
+        let forward = rotation * glam::Vec3::NEG_Z;
+        assert!(
+            (eye + forward * distance).length() < 1e-3,
+            "the camera must look at the sphere's centre"
+        );
+        assert!(
+            framing.camera.near < distance - 1.0,
+            "the sphere's near side must be past the near plane"
+        );
+        let half_angle = (framing.camera.vertical_fov * 0.5).to_radians();
+        assert!(
+            (1.0 / distance).asin() < half_angle,
+            "the whole ball must fit inside the field of view"
+        );
+    }
+
+    /// A mesh preview's camera frames the whole mesh inside the square.
     #[test]
     fn a_mesh_preview_frames_the_whole_mesh_inside_the_square() {
-        let matrix = glam::Mat4::from_cols_array_2d(
-            &mesh_framing_transform(&unit_box()).expect("a box has bounds to frame"),
+        let framing = mesh_framing(&unit_box()).expect("a box has bounds to frame");
+        let eye = glam::Vec3::from(framing.transform.translation);
+        let rotation = glam::Quat::from_array(framing.transform.rotation);
+        let view = glam::Mat4::from_rotation_translation(rotation, eye).inverse();
+        let projection = glam::camera::rh::proj::directx::perspective(
+            PREVIEW_FIELD_OF_VIEW,
+            1.0,
+            framing.camera.near,
+            framing.camera.far,
         );
+        let matrix = projection * view;
         let mut widest: f32 = 0.0;
         for corner in unit_box() {
             let clip = matrix
@@ -963,14 +900,14 @@ mod tests {
 
     #[test]
     fn a_mesh_with_no_extent_is_not_drawn() {
-        assert!(mesh_framing_transform(&[]).is_none());
+        assert!(mesh_framing(&[]).is_none());
         let point = vertex([0.5, 0.5, 0.5]);
-        assert!(mesh_framing_transform(&[point, point]).is_none());
+        assert!(mesh_framing(&[point, point]).is_none());
         // A vertex with no usable position gives no bound to frame. The other
         // vertices still do, but a mesh made only of such vertices does not.
-        assert!(mesh_framing_transform(&[vertex([f32::NAN, 0.0, 0.0])]).is_none());
+        assert!(mesh_framing(&[vertex([f32::NAN, 0.0, 0.0])]).is_none());
         let unplaced_then_placed = [vertex([f32::NAN, 0.0, 0.0]), vertex([1.0, 1.0, 1.0])];
-        assert!(mesh_framing_transform(&unplaced_then_placed).is_some());
+        assert!(mesh_framing(&unplaced_then_placed).is_some());
     }
 
     /// A 4K texture is 64 MB, so browsing a folder of them must not keep every
@@ -1014,32 +951,32 @@ mod tests {
         assert_eq!(cache.fresh_value("huge.png", None), Some(1));
     }
 
-    /// The mesh cache drops entries by the same rule. An entry a person is
-    /// looking at survives a browse that would otherwise push it out.
+    /// An entry a person is looking at survives a browse that would otherwise
+    /// push it out.
     #[test]
     fn a_touched_entry_outlives_the_ones_around_it() {
-        let mut cache = BudgetedCache::new(2 * MESH_BUDGET_BYTES);
-        cache.insert("meshes/a.obj", None, 1, MESH_BUDGET_BYTES);
-        cache.insert("meshes/b.obj", None, 2, MESH_BUDGET_BYTES);
+        let mut cache = BudgetedCache::new(2 * TEXTURE_BUDGET_BYTES);
+        cache.insert("textures/a.png", None, 1, TEXTURE_BUDGET_BYTES);
+        cache.insert("textures/b.png", None, 2, TEXTURE_BUDGET_BYTES);
         // Using `a` makes it the newest, so `b` is the one the budget drops.
-        assert_eq!(cache.fresh_value("meshes/a.obj", None), Some(1));
+        assert_eq!(cache.fresh_value("textures/a.png", None), Some(1));
 
-        let dropped = cache.insert("meshes/c.obj", None, 3, MESH_BUDGET_BYTES);
+        let dropped = cache.insert("textures/c.png", None, 3, TEXTURE_BUDGET_BYTES);
 
-        assert_eq!(dropped, vec!["meshes/b.obj".to_owned()]);
-        assert_eq!(cache.fresh_value("meshes/a.obj", None), Some(1));
-        assert_eq!(cache.fresh_value("meshes/b.obj", None), None);
+        assert_eq!(dropped, vec!["textures/b.png".to_owned()]);
+        assert_eq!(cache.fresh_value("textures/a.png", None), Some(1));
+        assert_eq!(cache.fresh_value("textures/b.png", None), None);
     }
 
     /// A file whose modified time moved is not the cached entry: the preview
     /// decodes and uploads it again.
     #[test]
     fn a_file_that_moved_in_time_is_not_fresh() {
-        let mut cache = BudgetedCache::new(MESH_BUDGET_BYTES);
+        let mut cache = BudgetedCache::new(TEXTURE_BUDGET_BYTES);
         let before = Some(SystemTime::UNIX_EPOCH);
-        cache.insert("meshes/a.obj", before, 1, 16);
+        cache.insert("textures/a.png", before, 1, 16);
 
-        assert_eq!(cache.fresh_value("meshes/a.obj", before), Some(1));
-        assert_eq!(cache.fresh_value("meshes/a.obj", None), None);
+        assert_eq!(cache.fresh_value("textures/a.png", before), Some(1));
+        assert_eq!(cache.fresh_value("textures/a.png", None), None);
     }
 }

@@ -27,13 +27,12 @@
 use std::sync::Arc;
 
 // External crates
-use pill_engine::{
-    pill_project, system, DebugDraw, DebugStyle, Engine, Query, ResMut, SystemError, World,
-};
+use pill_engine::{pill_project, system, Engine, Query, ResMut, SystemError, World};
 use pill_rendering::{
     CameraComponent, DirectionalLightComponent, Material, Mesh, MeshRendererComponent, MeshVertex,
     Texture, TextureType, TransformComponent,
 };
+use pill_rendering::{DebugDraw, DebugStyle};
 use pill_ui_frame::{
     Color, DrawCommand, DrawList, Rect, TextureId, UiDraw, UiFrame, UiFrameSlot, UiTextureFilter,
     UiTextureSet, UiVertex,

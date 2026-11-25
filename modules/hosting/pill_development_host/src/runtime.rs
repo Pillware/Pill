@@ -1567,18 +1567,19 @@ pub fn setup(host_config: impl Into<HostConfig>) -> Result<DevHost, HostError> {
     if let Some(startup_scene) = host_config.startup_scene.as_deref() {
         pill_engine::queue_startup_scene(runtime.engine_mut().world_mut(), startup_scene);
     }
-    // Debug drawing is always on in the development host; the settings'
-    // `debug_draw:` key is what a shipping build starts with.
-    pill_player::insert_debug_resources(runtime.engine_mut().world_mut(), true);
+    // Debug drawing starts switched off, because a headless run has no renderer
+    // to drain it: every drawing call would pile up until the run ended. A
+    // windowed start switches it on when the renderer module attaches.
+    pill_player::insert_debug_resources(runtime.engine_mut().world_mut(), false);
     // The pass that draws what a component declares as its own gizmo. An
-    // editor's views show it as chrome, which a game surface never draws; a
-    // game window shows it as plain debug drawing.
-    pill_engine::gizmos::install(
+    // editor's views show it as editor-only, which a game surface never draws;
+    // a game window shows it as plain debug drawing.
+    pill_renderer_api::gizmos::install(
         runtime.engine_mut(),
         if host_config.load_editor_crates {
-            pill_engine::gizmos::GizmoChrome::Editor
+            pill_renderer_api::GizmoVisibility::EditorOnly
         } else {
-            pill_engine::gizmos::GizmoChrome::Game
+            pill_renderer_api::GizmoVisibility::Everywhere
         },
     );
     let engine_api = EngineApi::new(runtime.engine_mut());
@@ -2247,6 +2248,16 @@ fn attach_renderer_module<W: RendererWindow>(
             ),
         )
     })?;
+    // A renderer now drains the world's debug drawing once a frame, so the
+    // drawings a system makes reach the frame instead of piling up.
+    if let Some(debug_draw) = host
+        .runtime
+        .engine_mut()
+        .world_mut()
+        .get_resource_mut::<pill_renderer_api::DebugDraw>()
+    {
+        debug_draw.set_enabled(true);
+    }
     Ok((renderer_module, attached_renderer))
 }
 

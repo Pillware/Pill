@@ -18,6 +18,9 @@ pill_core = { path = "../../../../modules/engine/pill_core" }
 # DLL. `default-features = false` documents that this edge chooses its
 # features explicitly (the crate declares no defaults today).
 pill_rendering = { path = "../../../../modules/extensions/rendering/pill_rendering_core/modules/runtime/data", default-features = false }
+# The component gizmos this project declares draw through the renderer
+# contract.
+pill_renderer_api = { path = "../../../../modules/rendering/pill_renderer_api" }
 # Linked directly so the project can name the `Spline` type. See the note in
 # `init` about why this crate must not also be loaded as a module.
 # `default-features = false` is a defensive no-op: the crate declares no

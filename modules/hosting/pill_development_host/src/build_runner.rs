@@ -1603,6 +1603,29 @@ pub(crate) fn build_project_module(
     // again. See `crate::csharp::fast_compile`.
     let build_command = with_compiler_argument_capture(workspace_root, project_config);
 
+    // A native project builds the generated member that carries its sources, so
+    // the member has to be on disk. While it is missing, cargo reports the
+    // selection as outside the workspace, which names neither the project nor
+    // the cause; its absence is reported here instead.
+    if matches!(
+        &project_config.backend,
+        ProjectModuleBackend::NativeLibrary { .. }
+    ) {
+        let member_directory = workspace_root
+            .join(crate::config::PROJECT_MEMBER_DIRECTORY)
+            .join(format!(
+                "{}{}",
+                crate::config::HOST_PROJECT_MEMBER_PREFIX,
+                project_config.name
+            ));
+        if !member_directory.join("Cargo.toml").is_file() {
+            return Err(BuildError::WrapperMissing {
+                name: project_config.name.clone(),
+                path: member_directory.display().to_string(),
+            });
+        }
+    }
+
     // The startup batch may already have built this project with the same flags
     // (see [`build_extension_batch`]). The token covers that first load only: a
     // later reload always builds. A managed project never joins the batch,
@@ -2330,6 +2353,20 @@ pub(crate) fn build_extension(
     // same profile-driven `RUSTFLAGS` handling the project gets. An optimized
     // build must not inherit `-C prefer-dynamic`.
     //
+    // The generated wrapper is what the build command selects. While it is
+    // missing, cargo reports a feature error naming neither this module nor the
+    // cause (the anchor package it falls back to), so its absence is reported
+    // here instead.
+    let wrapper_manifest = workspace_root
+        .join(&extension_config.wrapper_directory)
+        .join("Cargo.toml");
+    if !wrapper_manifest.is_file() {
+        return Err(BuildError::WrapperMissing {
+            name: extension_config.name.clone(),
+            path: extension_config.wrapper_directory.clone(),
+        });
+    }
+    //
     // One batch invocation may already have built this module with the same
     // flags (see [`build_extension_batch`]). The token covers that one startup
     // load only. A reload finds no token and always builds, and a save newer
@@ -2485,6 +2522,32 @@ mod tests {
             !take_batch_validation("batch_guard_once", &directory),
             "the token belongs to one load only"
         );
+    }
+
+    /// A module build selects its generated wrapper, so an absent wrapper is
+    /// reported as exactly that, by name, instead of as the feature error cargo
+    /// produces once the only package it can still resolve is the host's own.
+    #[test]
+    fn a_missing_wrapper_is_reported_by_name() {
+        let (root, _) = test_workspace();
+        let extension =
+            crate::config::ExtensionConfig::located_workspace_member(&root, "pill_absent");
+
+        let error = build_extension(&root, &extension, None)
+            .expect_err("a module without its generated wrapper cannot be built");
+
+        match error {
+            BuildError::WrapperMissing { name, path } => {
+                assert_eq!(name, "pill_absent");
+                assert!(
+                    path.contains("host_module_pill_absent"),
+                    "the report names the wrapper it looked for: {path}"
+                );
+            }
+            other => panic!("expected the missing-wrapper error, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// An artifact another build wrote after the host's own must not be taken

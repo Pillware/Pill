@@ -951,13 +951,6 @@ name = "pill_asset_format"
 version = "0.1.0"
 
 [[package]]
-name = "pill_assets"
-version = "0.1.0"
-dependencies = [
- "pill_asset_format",
-]
-
-[[package]]
 name = "pill_core"
 version = "0.1.0"
 dependencies = [
@@ -1049,28 +1042,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pill_rendering"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "glam",
- "half",
- "image",
- "indexmap",
- "miette",
- "pill_assets",
- "pill_core",
- "pill_core_macros",
- "pill_engine",
- "pill_renderer_api",
- "serde",
- "serde_json",
- "thiserror",
- "tobj",
- "trait_type_map",
-]
-
-[[package]]
 name = "pill_project_ui"
 version = "0.1.0"
 dependencies = [
@@ -1088,6 +1059,7 @@ dependencies = [
 name = "pill_renderer_api"
 version = "0.1.0"
 dependencies = [
+ "inventory",
  "miette",
  "pill_core",
  "pill_core_macros",
@@ -1096,6 +1068,25 @@ dependencies = [
  "raw-window-handle",
  "serde",
  "thiserror",
+]
+
+[[package]]
+name = "pill_rendering"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "glam",
+ "half",
+ "image",
+ "indexmap",
+ "pill_core",
+ "pill_core_macros",
+ "pill_engine",
+ "pill_renderer_api",
+ "serde",
+ "serde_json",
+ "tobj",
+ "trait_type_map",
 ]
 
 [[package]]
@@ -1313,8 +1304,9 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "pill_engine",
- "pill_rendering",
  "pill_project_ui",
+ "pill_renderer_api",
+ "pill_rendering",
  "serde",
 ]
 

@@ -48,8 +48,17 @@ use std::path::Path;
 // External crates
 pub use pill_engine::AssetLoader;
 use pill_engine::{pill_module, Engine};
+pub use pill_renderer_api::debug_draw::{
+    DebugColor, DebugDepth, DebugDraw, DebugFrame, DebugLabel, DebugLifetime, DebugLine,
+    DebugStyle, GizmoLine, GizmoPoint, GizmoPointShape, GizmoTriangle, HiddenLook, LabelAlign,
+    LabelAnchor,
+};
 pub use pill_renderer_api::frame::{
-    CullMode, MaterialParameter, PassKind, PassTarget, RenderFrame,
+    AppendPass, CullMode, MaterialParameter, PassKind, PassSurfaces, PassTarget, RenderFrame,
+    DEPTH_INPUT,
+};
+pub use pill_renderer_api::gizmos::{
+    GizmoContext, GizmoDraw, GizmoFrame, GizmoRegistry, GizmoSelection, GizmoVisibility, GizmoWhen,
 };
 pub use pill_renderer_api::RayTracedShadows;
 
@@ -63,7 +72,7 @@ pub use assets::{
     DEFAULT_COLOR_TEXTURE, DEFAULT_MATERIAL_PATH, DEFAULT_NORMAL_TEXTURE,
 };
 pub use components::*;
-pub use rendering_manager::RenderingManager;
+pub use rendering_manager::{AppendPipeline, RenderingManager};
 
 // =============================================================================
 // Constants

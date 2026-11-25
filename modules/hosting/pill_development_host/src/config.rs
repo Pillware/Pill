@@ -170,7 +170,7 @@ pub(crate) const RETIRED_EDITOR_FRONTEND: &str = "pill_ui";
 /// Projects live outside the workspace, so the member that builds one as part
 /// of it is generated here. The `projects_generated/*` workspace glob finds
 /// it without any entry in the workspace manifest.
-const PROJECT_MEMBER_DIRECTORY: &str = "projects_generated";
+pub(crate) const PROJECT_MEMBER_DIRECTORY: &str = "projects_generated";
 
 /// Name prefix of the generated workspace member that builds a native project.
 ///
@@ -3055,14 +3055,56 @@ fn write_module_member(
     Ok(())
 }
 
+/// Whether the crate a generated wrapper wraps is still on disk.
+///
+/// Every generated wrapper names the crate it wraps by `path` in its own
+/// manifest, next to an engine dependency that is always there. A wrapper whose
+/// crate is gone is a workspace member the glob still picks up whose dependency
+/// paths no longer resolve, which is why it can be removed. One whose crate is
+/// there belongs to a posture this host does not run - an editor host's wrappers
+/// while a game host loads the same workspace - and removing it under that host
+/// leaves it unable to rebuild a module it already has loaded.
+fn wrapped_crate_exists(workspace_root: &Path, wrapper_directory: &Path) -> bool {
+    let Ok(manifest) = std::fs::read_to_string(wrapper_directory.join("Cargo.toml")) else {
+        return false;
+    };
+    for line in manifest.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        // The engine dependency every generated wrapper carries points at a
+        // crate that always exists, so it says nothing about the wrapped one.
+        if key.trim() == "pill_engine" {
+            continue;
+        }
+        let Some((_, after_keyword)) = value.split_once("path = \"") else {
+            continue;
+        };
+        let Some(crate_path) = after_keyword.split('"').next() else {
+            continue;
+        };
+        let crate_directory = Path::new(crate_path);
+        let crate_directory = if crate_directory.is_absolute() {
+            crate_directory.to_path_buf()
+        } else {
+            workspace_root.join(crate_directory)
+        };
+        if crate_directory.is_dir() {
+            return true;
+        }
+    }
+    false
+}
+
 /// Removes project editor wrappers left behind by earlier runs.
 ///
 /// Every `host_module_*` member under `projects_generated/` was written by
-/// [`materialize_project_editor_wrapper`] for some project. Any one that is
-/// not `kept` belongs to a project the host no longer runs, and the workspace
-/// glob would still pick it up as a member whose dependency paths may no
-/// longer resolve. With `None` - a game posture, which loads no project editor
-/// crate - every one of them is stale.
+/// [`materialize_project_editor_wrapper`] for some project. One that is not
+/// `kept` and whose crate has moved away belongs to a project the host no
+/// longer runs, and the workspace glob would still pick it up as a member whose
+/// dependency paths no longer resolve. One whose crate is still there belongs to
+/// a project another host is running - an editor beside a game host - and stays,
+/// so that host can keep rebuilding its editor crate.
 ///
 /// Failures are ignored rather than returned: a member the host cannot remove
 /// is a housekeeping problem, not a reason to refuse to start.
@@ -3076,24 +3118,28 @@ fn prune_stale_project_editor_wrappers(workspace_root: &Path, kept: Option<&Path
             .file_name()
             .and_then(|name| name.to_str())
             .is_some_and(|name| name.starts_with(HOST_MODULE_MEMBER_PREFIX));
-        if !wraps_a_crate || !path.is_dir() || kept == Some(path.as_path()) {
+        if !wraps_a_crate
+            || !path.is_dir()
+            || kept == Some(path.as_path())
+            || wrapped_crate_exists(workspace_root, &path)
+        {
             continue;
         }
         let _ = std::fs::remove_dir_all(&path);
     }
 }
 
-/// Removes generated module wrappers left behind by earlier runs.
+/// Removes generated module wrappers whose crate is gone.
 ///
 /// Every directory in an extension folder's `generated/`, or in the editor
 /// folder's, whose name carries [`HOST_MODULE_MEMBER_PREFIX`] was written by
-/// [`materialize_host_module_wrapper`]. Any one that is not in
-/// `kept_wrappers` belongs to a crate this run does not load (another
-/// project's module, the editor's modules under a game host), or to a crate
-/// that moved to another folder. The workspace glob would still pick it up as
-/// a member whose dependency paths may not resolve, and Cargo then fails to
-/// load the workspace at all. A wrapper written straight into `extensions/`
-/// (an older layout) is removed too.
+/// [`materialize_host_module_wrapper`]. One whose crate has moved to another
+/// folder, or no longer exists, is left with dependency paths that do not
+/// resolve, and Cargo then fails to load the workspace at all; that one is
+/// removed. One whose crate is still there is kept even when this run does not
+/// load it: an editor host and a game host can share one workspace, and each
+/// keeps the wrappers the other needs to rebuild a module it has loaded. A
+/// wrapper written straight into `extensions/` (an older layout) is removed too.
 ///
 /// A group folder keeps each of its extensions' wrappers in that extension's
 /// own `generated/`, so the group's children are walked as well.
@@ -3148,7 +3194,10 @@ fn prune_stale_host_module_wrappers(workspace_root: &Path, kept_wrappers: &[Path
         };
         for wrapper_entry in wrappers.flatten() {
             let wrapper_path = wrapper_entry.path();
-            if is_wrapper(&wrapper_path) && !kept_wrappers.contains(&wrapper_path) {
+            if is_wrapper(&wrapper_path)
+                && !kept_wrappers.contains(&wrapper_path)
+                && !wrapped_crate_exists(workspace_root, &wrapper_path)
+            {
                 let _ = std::fs::remove_dir_all(&wrapper_path);
             }
         }
@@ -4784,17 +4833,34 @@ mod host_module_wrapper_pruning_tests {
 
     /// Creates `<parent>/generated/<wrapper>/Cargo.toml` under `root` and
     /// returns the wrapper's directory.
+    ///
+    /// The manifest carries the engine dependency every generated wrapper has
+    /// and, when given, the path of the crate it wraps - which may point at a
+    /// directory that does not exist, standing in for a crate that moved away.
     fn seed_wrapper(
         root: &std::path::Path,
         parent: &std::path::Path,
         wrapper_name: &str,
+        wrapped_crate: Option<&std::path::Path>,
     ) -> std::path::PathBuf {
         let directory = root
             .join(parent)
             .join(GENERATED_DIRECTORY)
             .join(wrapper_name);
         std::fs::create_dir_all(&directory).unwrap();
-        std::fs::write(directory.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+        let mut manifest = format!(
+            "[package]\nname = \"{wrapper_name}\"\nversion = \"0.1.0\"\n\n[dependencies]\n\
+             pill_engine = {{ path = \"{}\" }}\n",
+            root.join("engine").join("pill_engine").display()
+        );
+        if let Some(wrapped_crate) = wrapped_crate {
+            let crate_name = wrapper_name.trim_start_matches("host_module_");
+            manifest.push_str(&format!(
+                "{crate_name} = {{ path = \"{}\" }}\n",
+                wrapped_crate.display()
+            ));
+        }
+        std::fs::write(directory.join("Cargo.toml"), manifest).unwrap();
         directory
     }
 
@@ -4804,48 +4870,83 @@ mod host_module_wrapper_pruning_tests {
     }
 
     /// A kept wrapper survives, in an extension folder and in the editor
-    /// folder alike. A wrapper of a crate no longer loaded, one in a folder the
-    /// crate no longer lives in, and one an older host left directly in
-    /// `extensions/` are removed. A grouped extension's wrappers are pruned in
-    /// the extension's own `generated/`. Real crates and the anchor are never
-    /// touched.
+    /// folder alike, and so does a wrapper whose crate is still on disk even
+    /// when this run does not load it - another posture, an editor beside a
+    /// game host, is loading that crate. A wrapper whose crate is gone, one in a
+    /// folder the crate no longer lives in, and one an older host left directly
+    /// in `extensions/` are removed. A grouped extension's wrappers are pruned
+    /// in the extension's own `generated/`. Real crates and the anchor are
+    /// never touched.
     #[test]
-    fn keeps_only_the_wrappers_of_loaded_crates() {
+    fn keeps_the_wrappers_of_crates_that_still_exist() {
         let root = ScratchDirectory::new("prune_wrappers");
+        let spline_crate = root
+            .join(EXTENSION_DIRECTORY)
+            .join("pill_spline")
+            .join("modules")
+            .join("runtime");
+        std::fs::create_dir_all(&spline_crate).unwrap();
+        let kepler_crate = root
+            .join(EXTENSION_DIRECTORY)
+            .join("pill_audio")
+            .join("modules")
+            .join("runtime");
+        std::fs::create_dir_all(&kepler_crate).unwrap();
         let kept_wrapper = seed_wrapper(
             &root,
             &extension_folder("pill_spline"),
             "host_module_pill_spline",
+            Some(&spline_crate),
         );
-        let unloaded_wrapper = seed_wrapper(
+        // Not loaded by this run, but its crate is there: another posture owns
+        // it.
+        let other_posture_wrapper = seed_wrapper(
             &root,
             &extension_folder("pill_audio"),
             "host_module_pill_audio",
+            Some(&kepler_crate),
+        );
+        // Its crate has moved away, so the member it would be cannot resolve.
+        let gone_crate_wrapper = seed_wrapper(
+            &root,
+            &extension_folder("pill_gone"),
+            "host_module_pill_gone",
+            Some(
+                &root
+                    .join(EXTENSION_DIRECTORY)
+                    .join("pill_gone")
+                    .join("modules"),
+            ),
         );
         let moved_wrapper = seed_wrapper(
             &root,
             &extension_folder("pill_old_folder"),
             "host_module_pill_spline",
+            None,
         );
         let kept_group_wrapper = seed_wrapper(
             &root,
             &extension_folder("rendering/pill_renderer"),
             "host_module_pill_renderer",
+            None,
         );
         let unloaded_group_wrapper = seed_wrapper(
             &root,
             &extension_folder("rendering/pill_audio"),
             "host_module_pill_audio",
+            None,
         );
         let kept_editor_wrapper = seed_wrapper(
             &root,
             std::path::Path::new(EDITOR_DIRECTORY),
             "host_module_pill_editor_shell",
+            None,
         );
         let unloaded_editor_wrapper = seed_wrapper(
             &root,
             std::path::Path::new(EDITOR_DIRECTORY),
             "host_module_pill_editor_gadget",
+            None,
         );
         let editor_anchor = root
             .join(EDITOR_DIRECTORY)
@@ -4874,24 +4975,28 @@ mod host_module_wrapper_pruning_tests {
             "the loaded crate's wrapper must survive"
         );
         assert!(
+            other_posture_wrapper.exists(),
+            "a wrapper whose crate still exists must survive an unloaded run: another host is loading it"
+        );
+        assert!(
             kept_group_wrapper.exists(),
             "a grouped crate's wrapper must survive"
         );
         assert!(
             !unloaded_group_wrapper.exists(),
-            "a grouped crate the run does not load must lose its wrapper"
+            "a grouped crate whose wrapper names no live crate must lose it"
         );
         assert!(
             kept_editor_wrapper.exists(),
             "the loaded editor module's wrapper must survive"
         );
         assert!(
-            !unloaded_wrapper.exists(),
-            "a wrapper of an unloaded crate must be gone"
+            !gone_crate_wrapper.exists(),
+            "a wrapper whose crate moved away must be gone"
         );
         assert!(
             !unloaded_editor_wrapper.exists(),
-            "a wrapper of an unloaded editor module must be gone"
+            "a wrapper of an editor module whose wrapper names no live crate must be gone"
         );
         assert!(
             !moved_wrapper.exists(),
@@ -5229,8 +5334,13 @@ mod project_editor_crate_tests {
 
         prune_stale_project_editor_wrappers(&root, None);
         assert!(
-            !kept.exists(),
-            "a game posture prunes every project editor wrapper"
+            kept.join("Cargo.toml").is_file(),
+            "a game posture keeps the wrapper of an editor crate that still exists: \
+             an editor host beside it is still loading that module"
+        );
+        assert!(
+            !stale.exists(),
+            "a wrapper naming no live crate is pruned in either posture"
         );
 
         let _ = std::fs::remove_dir_all(&root);

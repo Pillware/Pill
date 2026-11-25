@@ -293,13 +293,20 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
     let former_names_impl = former_shared_names_impl(&former_shared_names);
 
     // Step 5: a type that declared a gizmo gets a wrapper that walks its own
-    // entities. The walk belongs here, in the declaring artifact, because only
-    // this expansion knows the concrete component type; the engine's pass only
-    // calls the wrapper. Every generation regenerates it, so a reload replaces
-    // the pointer before the old image is unmapped.
+    // entities, and a publication hook that registers the declaring artifact's
+    // gizmos for its owner. The walk belongs here, in the declaring artifact,
+    // because only this expansion knows the concrete component type; the
+    // engine's pass only calls the wrapper. Every generation regenerates it, so
+    // a reload replaces the pointer before the old image is unmapped.
     let (gizmo_wrapper, gizmo_descriptor) = match &gizmo_path {
         Some(gizmo_fn) => {
             let wrapper_fn_name = format_ident!("__pill_gizmo_{}", ident);
+            let publish_fn_name = format_ident!("__pill_publish_gizmos_{}", ident);
+            let when = if gizmo_selected_only {
+                quote! { ::pill_renderer_api::gizmos::GizmoWhen::ForSelected }
+            } else {
+                quote! { ::pill_renderer_api::gizmos::GizmoWhen::Always }
+            };
             let wrapper = quote! {
                 /// Draws this component's gizmo for every entity that carries
                 /// it, generated from the type's `#[pill(gizmo = ...)]`
@@ -307,8 +314,8 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
                 #[allow(non_snake_case)]
                 fn #wrapper_fn_name(
                     world: &::pill_engine::World,
-                    frame: &::pill_engine::gizmos::GizmoFrame,
-                    draw: &mut ::pill_engine::gizmos::GizmoDraw,
+                    frame: &::pill_renderer_api::gizmos::GizmoFrame,
+                    draw: &mut ::pill_renderer_api::gizmos::GizmoDraw,
                 ) -> usize {
                     let mut drawn = 0;
                     for archetype in world.archetypes_iter() {
@@ -333,19 +340,30 @@ pub fn derive_pill_component(input: TokenStream) -> TokenStream {
                     }
                     drawn
                 }
-            };
-            let when = if gizmo_selected_only {
-                quote! { ::pill_engine::gizmos::GizmoWhen::ForSelected }
-            } else {
-                quote! { ::pill_engine::gizmos::GizmoWhen::Always }
+
+                /// Publishes this artifact's gizmos for the crate that declared
+                /// this component, replacing what it published before.
+                #[allow(non_snake_case)]
+                fn #publish_fn_name(world: &mut ::pill_engine::World) {
+                    ::pill_renderer_api::gizmos::publish_owner(
+                        world,
+                        ::core::env!("CARGO_PKG_NAME"),
+                    );
+                }
+
+                ::pill_engine::submit! {
+                    ::pill_renderer_api::gizmos::GizmoDeclaration {
+                        type_name: #type_name,
+                        owner: ::core::env!("CARGO_PKG_NAME"),
+                        when: #when,
+                        draw: #wrapper_fn_name,
+                    }
+                }
             };
             let descriptor = quote! {
-                ::core::option::Option::Some(::pill_engine::gizmos::GizmoDeclaration {
-                    type_name: #type_name,
-                    owner: ::core::env!("CARGO_PKG_NAME"),
-                    when: #when,
-                    draw: #wrapper_fn_name,
-                })
+                ::core::option::Option::Some(
+                    #publish_fn_name as fn(&mut ::pill_engine::World),
+                )
             };
             (wrapper, descriptor)
         }
@@ -4635,6 +4653,129 @@ pub fn pill_module(attribute: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     expanded.into()
+}
+
+// =============================================================================
+// #[gizmo_override]
+// =============================================================================
+
+/// Declares how an editor crate draws one component type's gizmo differently.
+///
+/// The annotated function has the shape of a component's own gizmo draw
+/// function - `fn(&Component, &GizmoContext<'_>, &mut GizmoDraw)` - and this
+/// attribute generates the per-entity walk the registry can keep as a plain
+/// function pointer, plus a `pub fn <name>_override()` that the crate's
+/// `register` hands to `pill_renderer_api::gizmos::override_gizmos`.
+///
+/// Arguments: `type = <component path>` (required), `mode = Replace | Add`
+/// (required), `when = Always | Selected` (default `Always`) and `order = <n>`
+/// (default `0`), which decides between two overrides of one type: the higher
+/// number wins, then the last owner by name.
+#[proc_macro_attribute]
+pub fn gizmo_override(attribute: TokenStream, item: TokenStream) -> TokenStream {
+    let item_fn = parse_macro_input!(item as ItemFn);
+    let fn_ident = item_fn.sig.ident.clone();
+    let declaration_fn = format_ident!("{}_override", fn_ident);
+    let walker_fn = format_ident!("__pill_gizmo_override_{}", fn_ident);
+
+    let mut component_type: Option<syn::Type> = None;
+    let mut mode = quote! { ::pill_renderer_api::gizmos::GizmoOverrideMode::Replace };
+    let mut when = quote! { ::pill_renderer_api::gizmos::GizmoWhen::Always };
+    let mut selected_only = false;
+    let mut order = quote! { 0_i32 };
+
+    let parse_arguments = syn::meta::parser(|meta| {
+        if meta.path.is_ident("type") {
+            component_type = Some(meta.value()?.parse()?);
+            return Ok(());
+        }
+        if meta.path.is_ident("mode") {
+            let ident: syn::Ident = meta.value()?.parse()?;
+            if ident == "Add" {
+                mode = quote! { ::pill_renderer_api::gizmos::GizmoOverrideMode::Add };
+            }
+            return Ok(());
+        }
+        if meta.path.is_ident("when") {
+            let ident: syn::Ident = meta.value()?.parse()?;
+            selected_only = ident == "Selected";
+            if selected_only {
+                when = quote! { ::pill_renderer_api::gizmos::GizmoWhen::ForSelected };
+            }
+            return Ok(());
+        }
+        if meta.path.is_ident("order") {
+            let literal: syn::LitInt = meta.value()?.parse()?;
+            order = quote! { #literal };
+            return Ok(());
+        }
+        Err(meta.error(
+            "unknown `#[gizmo_override]` argument; expected `type`, `mode`, `when` or `order`",
+        ))
+    });
+    parse_macro_input!(attribute with parse_arguments);
+
+    let Some(component_type) = component_type else {
+        return syn::Error::new(
+            item_fn.sig.span(),
+            "`#[gizmo_override]` needs `type = <component>`: the component whose gizmo it draws",
+        )
+        .to_compile_error()
+        .into();
+    };
+
+    quote! {
+        #item_fn
+
+        /// Walks the entities that carry the component and draws the override
+        /// for each, generated from the annotated function.
+        #[allow(non_snake_case)]
+        fn #walker_fn(
+            world: &::pill_engine::World,
+            frame: &::pill_renderer_api::gizmos::GizmoFrame,
+            draw: &mut ::pill_renderer_api::gizmos::GizmoDraw,
+        ) -> usize {
+            let mut drawn = 0;
+            for archetype in world.archetypes_iter() {
+                if !archetype.has_component::<#component_type>() {
+                    continue;
+                }
+                for &entity in &archetype.entities {
+                    let ::core::option::Option::Some(component) =
+                        world.get_component::<#component_type>(entity)
+                    else {
+                        continue;
+                    };
+                    let context = frame.context(world, entity);
+                    if #selected_only && !context.selected {
+                        continue;
+                    }
+                    #fn_ident(component, &context, draw);
+                    drawn += 1;
+                }
+            }
+            drawn
+        }
+
+        /// The declaration an editor crate's `register` publishes on every
+        /// generation.
+        pub fn #declaration_fn() -> ::pill_renderer_api::gizmos::GizmoOverrideDeclaration {
+            ::pill_renderer_api::gizmos::GizmoOverrideDeclaration {
+                type_name: <#component_type as ::pill_engine::Component>::shared_name()
+                    .unwrap_or(::core::concat!(
+                        ::core::env!("CARGO_CRATE_NAME"),
+                        "::",
+                        ::core::stringify!(#component_type),
+                    )),
+                owner: ::core::env!("CARGO_PKG_NAME"),
+                mode: #mode,
+                when: #when,
+                order: #order,
+                draw: #walker_fn,
+            }
+        }
+    }
+    .into()
 }
 
 // =============================================================================

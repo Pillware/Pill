@@ -64,11 +64,11 @@ mod telemetry;
 pub use pill_engine::common_components::TransformComponent;
 
 /// The renderer contract's types that appear in this crate's API: surfaces,
-/// cameras, picking, previews and the scene grid.
+/// cameras and presentation. The editor's own types - picking, previews and the
+/// scene grid - are reached through `pill_renderer_api::editor`, so a frontend
+/// that is not an editor does not see them.
 pub use pill_renderer_api::{
-    editor_view_surfaces, ensure_preview_resources, frame_grid, CameraBinding, CameraComponent,
-    PickHit, PickRequests, PickResults, PresentPreference, PreviewAsset, PreviewImage,
-    PreviewRequests, PreviewResults, RenderViewport, RendererError, SceneGrid, SelectionOutlines,
+    CameraBinding, CameraComponent, PresentPreference, RenderViewport, RendererError,
     SurfaceCameras, SurfaceId, SurfaceOptions,
 };
 

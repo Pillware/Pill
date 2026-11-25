@@ -14,6 +14,9 @@ pill_engine = { path = "../../../../modules/engine/pill_engine" }
 # DLL. `default-features = false`, as for every extension, keeps its module
 # exports out of this project's DLL.
 pill_rendering = { path = "../../../../modules/extensions/rendering/pill_rendering_core/modules/runtime/data", default-features = false }
+# The component gizmos this project declares draw through the renderer
+# contract.
+pill_renderer_api = { path = "../../../../modules/rendering/pill_renderer_api" }
 # The game's UI layer: the egui context, the theme resource and the frame slot
 # the renderer draws through. `install_with_theme` is what logs the theme the
 # UI suites match on.

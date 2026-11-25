@@ -424,6 +424,19 @@ pub enum BuildError {
         source: std::io::Error,
     },
 
+    /// The generated wrapper a module build selects is not on disk.
+    #[message(
+        "the generated wrapper of ",
+        name_style(name),
+        " is missing at ",
+        name_style(path),
+        "; another host of a different posture pruned it, or its folder was deleted"
+    )]
+    #[diagnostic(help(
+        "start the host again: it writes a wrapper for every module it loads into that crate's generated/ folder"
+    ))]
+    WrapperMissing { name: String, path: String },
+
     /// A staged artifact changed after the build that produced it finished.
     #[message(
         "staged artifact ",

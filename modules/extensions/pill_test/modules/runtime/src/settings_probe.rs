@@ -71,7 +71,12 @@ impl Default for FixtureSettings {
 // =============================================================================
 
 /// The probe's manager: three knobs and an applier that reports them.
+///
+/// It is `Clone` because it is game state: Play copies the world's resources and
+/// puts them back at Stop, so a resource that cannot be copied refuses Play by
+/// name. The manager is plain data, so a copy is what Play needs.
 #[resource(shared = "pill_test::FixtureManager")]
+#[derive(Debug, Clone)]
 pub struct FixtureManager {
     /// A flag the project sets.
     pub enabled: bool,

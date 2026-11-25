@@ -39,6 +39,7 @@ use pill_core::telemetry::telemetry_target;
 use pill_input::gamepads::Gamepads;
 use pill_input::winit_events::{translate_device_event, translate_window_event};
 use pill_player::{report_failure, FrameDriver, WindowedFrameDriver};
+use pill_renderer_api::editor::{PickHit, PickRequests, PickResults, SelectionOutlines};
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -105,9 +106,9 @@ struct PickTest {
     /// The center and corner request ids, once asked.
     request_ids: Option<(u64, u64)>,
     /// The answer for the center request, once it arrives.
-    center: Option<pill_player::PickHit>,
+    center: Option<PickHit>,
     /// The answer for the corner request, once it arrives.
-    corner: Option<pill_player::PickHit>,
+    corner: Option<PickHit>,
     /// Whether the test has stopped, after logging both answers or after
     /// giving up.
     finished: bool,
@@ -135,7 +136,7 @@ impl PickTest {
             if self.frame_count < PICK_TEST_WAIT_FRAMES {
                 return;
             }
-            let Some(pick_requests) = world.get_resource_mut::<pill_player::PickRequests>() else {
+            let Some(pick_requests) = world.get_resource_mut::<PickRequests>() else {
                 error!(target: telemetry_target::ENGINE, "[pick test] the world has no PickRequests");
                 self.finished = true;
                 return;
@@ -154,7 +155,7 @@ impl PickTest {
             return;
         };
         // Step 2: Take the answers that have arrived.
-        if let Some(pick_results) = world.get_resource_mut::<pill_player::PickResults>() {
+        if let Some(pick_results) = world.get_resource_mut::<PickResults>() {
             for pick_result in pick_results.take() {
                 if pick_result.request.id == center_id {
                     self.center = Some(pick_result.hit);
@@ -171,10 +172,8 @@ impl PickTest {
         self.finished = true;
         info!(target: telemetry_target::ENGINE, "[pick test] center: {center:?}");
         info!(target: telemetry_target::ENGINE, "[pick test] corner: {corner:?}");
-        if let pill_player::PickHit::Entity(entity) = center {
-            if let Some(selection_outlines) =
-                world.get_resource_mut::<pill_player::SelectionOutlines>()
-            {
+        if let PickHit::Entity(entity) = center {
+            if let Some(selection_outlines) = world.get_resource_mut::<SelectionOutlines>() {
                 selection_outlines.entities = vec![entity];
                 info!(target: telemetry_target::ENGINE, "[pick test] outlined {entity:?}");
             }

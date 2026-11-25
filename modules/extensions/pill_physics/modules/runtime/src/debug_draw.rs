@@ -17,7 +17,8 @@
 //! system, so a build that installs no gizmo pass pays nothing for the module.
 
 // External crates
-use pill_engine::{GizmoContext, GizmoDraw, TransformComponent};
+use pill_engine::TransformComponent;
+use pill_renderer_api::{GizmoContext, GizmoDraw};
 use rapier3d::math::{Rotation, Vector};
 
 // Current crate
@@ -179,7 +180,8 @@ pub fn rotation_of(transform: &TransformComponent) -> Rotation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pill_engine::{GizmoFrame, World};
+    use pill_engine::World;
+    use pill_renderer_api::GizmoFrame;
 
     /// Draws one cuboid's outline in a world whose settings switch is set, and
     /// answers how many segments the gizmo produced.

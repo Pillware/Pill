@@ -775,17 +775,22 @@ mod tests {
         )]);
         frame.ui.textures = white_ui_texture();
         frame.ui.draws.push(red_ui_draw());
-        frame.debug.lines.push(pill_engine::DebugLine {
+        frame.debug.lines.push(pill_renderer_api::DebugLine {
             start: [-0.5, 0.0, 0.0],
             end: [0.5, 0.0, 0.0],
             color: [0.0, 1.0, 0.0, 1.0],
-            depth_test: false,
-            chrome: false,
+            depth: pill_renderer_api::DebugDepth::OnTop,
+            editor_only: false,
         });
-        frame.debug.labels.push(pill_engine::DebugLabel {
-            anchor: pill_engine::LabelAnchor::Screen { x: 200.0, y: 210.0 },
+        frame.debug.labels.push(pill_renderer_api::DebugLabel {
+            anchor: pill_renderer_api::LabelAnchor::Screen { x: 200.0, y: 210.0 },
             text: "OK".to_owned(),
             color: [1.0, 1.0, 1.0, 1.0],
+            depth: pill_renderer_api::DebugDepth::OnTop,
+            editor_only: false,
+            scale: 1.0,
+            align: pill_renderer_api::LabelAlign::Left,
+            background: None,
         });
         frame
     }

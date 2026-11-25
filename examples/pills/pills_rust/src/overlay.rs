@@ -24,9 +24,8 @@
 
 // External crates
 use pill_core::math::Vector2f;
-use pill_engine::{
-    pill_hot, system, DebugDraw, DebugStyle, Input, KeyCode, Res, ResMut, SystemError, Time,
-};
+use pill_engine::{pill_hot, system, Input, KeyCode, Res, ResMut, SystemError, Time};
+use pill_rendering::{DebugDepth, DebugDraw, DebugStyle};
 // The egui this engine uses, reached through the crate that re-exports it: a
 // project never depends on egui directly, so every artifact shares one copy.
 use pill_project_ui::{egui, GameUi, InputFrame, UiFrameSlot, PRIMARY_SURFACE};
@@ -139,7 +138,7 @@ pub(crate) fn debug_overlay_system(
 
     // The axes and labels draw over the scene, so they stay visible in the swarm.
     let on_top_style = |color| DebugStyle {
-        depth_test: false,
+        depth: DebugDepth::OnTop,
         ..DebugStyle::colored(color)
     };
     debug_draw

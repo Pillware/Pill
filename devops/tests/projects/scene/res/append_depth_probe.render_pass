@@ -1,0 +1,22 @@
+asset:
+  blend: true
+  cull: Back
+  depth_write: false
+  enabled: true
+  extra_targets: []
+  inputs:
+    depth: depth
+  kind: Fullscreen
+  material: null
+  order: 0
+  parameters:
+    tint:
+      Color: [0.9, 0.2, 0.6]
+  shader:
+    guid: 4b0f8e2c6d1a4977b3c58a0f92d7e641
+  target: Surface
+  target_scale: 1
+  textures: {}
+asset_type: pill_rendering::RenderPass
+format_version: 1
+guid: 9d47a1c05e2b48f6a03c71b8de5628f4

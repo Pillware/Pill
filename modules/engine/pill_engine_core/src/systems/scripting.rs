@@ -50,7 +50,8 @@ use crate::Resource;
 /// A restricted view of the ECS for script components.
 ///
 /// The context gives a script:
-/// - read-only world queries: a component's value, an entity's existence;
+/// - read-only world queries: a component's value, an entity's existence, and
+///   the first entity that carries a component type;
 /// - a mutable borrow of a component on any entity;
 /// - read-only access to resources;
 /// - deferred structural changes: create or destroy an entity, add or remove
@@ -147,6 +148,22 @@ impl<'a> ScriptContext<'a> {
     /// Returns `None` if the world holds no resource of type `T`.
     pub fn get_resource<T: Resource>(&self) -> Option<&T> {
         self.world.get_resource::<T>()
+    }
+
+    /// Finds the first entity that carries `T`.
+    ///
+    /// This is the one lookup the methods above cannot express: a component on
+    /// an entity the script neither owns nor holds a handle to - the first path
+    /// in the world, say. It walks the archetypes and takes the first entity of
+    /// the first one that carries `T`, so it answers `None` when nothing does
+    /// and the same entity every frame while the world's structure holds. It is
+    /// read-only: nothing it finds can be changed without the queued commands.
+    pub fn find_first<T: Component>(&self) -> Option<Entity> {
+        self.world
+            .archetypes_iter()
+            .filter(|archetype| archetype.has_component::<T>())
+            .flat_map(|archetype| archetype.entities.iter().copied())
+            .next()
     }
 
     // =========================================================================
@@ -525,4 +542,59 @@ pub trait ScriptComponent: Component + ScriptDeclaration {
     /// nothing, because there is no command queue to hand the lifecycle method.
     /// The component is still readable during the call.
     fn on_destroy(&mut self, _script_context: &mut ScriptContext, _destroy_info: &DestroyInfo) {}
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod find_first_tests {
+    use super::*;
+    use crate::world::World;
+
+    /// The component the test looks for, on some entities and not others.
+    #[derive(Debug, Clone, Copy)]
+    struct Marker;
+
+    impl Component for Marker {}
+
+    /// A second type nothing carries, so the empty answer is covered.
+    #[derive(Debug, Clone, Copy)]
+    struct Absent;
+
+    impl Component for Absent {}
+
+    #[test]
+    fn find_first_answers_the_first_entity_that_carries_the_type() {
+        // Step 1: A world with two entities, the first one carrying the marker.
+        let mut world = World::new();
+        world.register_component::<Marker>();
+        world.register_component::<Absent>();
+        let first = world.create_entity().build().expect("the entity builds");
+        world
+            .add_component(first, Marker)
+            .expect("the marker attaches");
+        let second = world.create_entity().build().expect("the entity builds");
+        world
+            .add_component(second, Marker)
+            .expect("the marker attaches");
+        let mut commands = CommandQueue::new();
+
+        // Step 2: The lookup answers the first carrier, nothing for a type
+        // nobody carries, and stays the same when asked again.
+        {
+            let context = ScriptContext::new(&mut world, &mut commands, first);
+            assert_eq!(context.find_first::<Marker>(), Some(first));
+            assert_eq!(context.find_first::<Marker>(), Some(first));
+            assert_eq!(context.find_first::<Absent>(), None);
+        }
+
+        // Step 3: Removing it from the first entity moves the answer on.
+        world
+            .remove_component::<Marker>(first)
+            .expect("the marker detaches");
+        let context = ScriptContext::new(&mut world, &mut commands, second);
+        assert_eq!(context.find_first::<Marker>(), Some(second));
+    }
 }

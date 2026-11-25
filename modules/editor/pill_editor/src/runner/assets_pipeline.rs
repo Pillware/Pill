@@ -17,6 +17,10 @@
 //! split: it walks the tree into the listing and reads an asset's settings
 //! through the import registry, so the shell only draws data it was handed.
 
+// External crates
+use pill_engine_core::World;
+use std::path::Path;
+
 // Current crate
 use super::*;
 
@@ -27,20 +31,36 @@ impl EditorWindow {
     /// Only one request runs at a time: the renderer draws one preview per
     /// frame and reads it back between frames, so a grid of tiles fills in over
     /// frames instead of stalling one. A tile is asked for only once - its
-    /// texture stays in the session until the listing changes - and the tiles
-    /// to ask for come from the grid's own list of what it drew this pass, so
-    /// scrolling only costs work for what is on screen.
+    /// texture stays in the session until the listing changes or a new
+    /// renderer generation takes over - and the tiles to ask for come from the
+    /// grid's own list of what it drew this pass, so scrolling only costs work
+    /// for what is on screen.
     pub(super) fn apply_asset_previews(&mut self) {
+        // Step 0: Follow the renderer that draws the previews. A reloaded one
+        // is a new generation, and every picture it drew before the swap was
+        // drawn by code that is no longer running, so those tiles ask again.
+        {
+            let world = self.host.host_mut().engine_mut().world_mut();
+            let generation = world
+                .get_resource::<pill_renderer_api::editor::PreviewGeneration>()
+                .copied()
+                .unwrap_or_default()
+                .0;
+            if let Some(state) = world.get_resource_mut::<EguiShellState>() {
+                state.previews.follow_renderer(generation);
+            }
+        }
         // Step 1: Move the previews the renderer finished into the shell's
         // textures.
         let images = {
             let world = self.host.host_mut().engine_mut().world_mut();
             world
-                .get_resource_mut::<pill_player::PreviewResults>()
+                .get_resource_mut::<pill_renderer_api::editor::PreviewResults>()
                 .map(|preview_results| preview_results.take())
                 .unwrap_or_default()
         };
         if !images.is_empty() {
+            let versions = self.preview_versions();
             let world = self.host.host_mut().engine_mut().world_mut();
             let Some(state) = world.get_resource_mut::<EguiShellState>() else {
                 return;
@@ -68,7 +88,9 @@ impl EditorWindow {
                     egui::ColorImage::from_rgba_unmultiplied(image_size, &image.rgba),
                     egui::TextureOptions::LINEAR,
                 );
-                state.previews.mark_ready(&path, texture);
+                state
+                    .previews
+                    .mark_ready(&path, texture, versions.get(&path).copied().flatten());
                 info!(
                     target: telemetry_target::EDITOR,
                     path = path.as_str(),
@@ -82,7 +104,9 @@ impl EditorWindow {
             return;
         }
         // Step 2: Name the next tile that still wants an image, from the tiles
-        // the grid drew this pass, in draw order.
+        // the grid drew this pass, in draw order. A tile whose asset was edited
+        // since its picture was drawn wants one again.
+        let versions = self.preview_versions();
         let waiting_keys: Vec<String> = {
             let world = self.host.host_mut().engine_mut().world_mut();
             let Some(state) = world.get_resource::<EguiShellState>() else {
@@ -92,7 +116,10 @@ impl EditorWindow {
                 .previews
                 .visible()
                 .iter()
-                .filter(|key| state.previews.wants(key))
+                .filter(|key| {
+                    let version = versions.get(*key).copied().flatten();
+                    state.previews.wants(key) || state.previews.stale(key, version)
+                })
                 .cloned()
                 .collect()
         };
@@ -143,10 +170,17 @@ impl EditorWindow {
         };
         // Step 3: Ask the renderer to draw it. The id it answers with names the
         // tile while the request is in flight.
+        // A material and a mesh are drawn from the store, so an asset nothing
+        // opened yet is loaded here first: the tree lists files, and for most of
+        // them a tile is the first thing to open the asset.
+        let preview_file = previews::preview_file(self.asset_entries.iter(), &path, &asset_root);
         let id = {
             let world = self.host.host_mut().engine_mut().world_mut();
-            pill_player::ensure_preview_resources(world);
-            let Some(requests) = world.get_resource_mut::<pill_player::PreviewRequests>() else {
+            load_preview_asset(world, &asset, preview_file.as_deref());
+            pill_renderer_api::editor::ensure_preview_resources(world);
+            let Some(requests) =
+                world.get_resource_mut::<pill_renderer_api::editor::PreviewRequests>()
+            else {
                 return;
             };
             requests.request(asset)
@@ -160,10 +194,47 @@ impl EditorWindow {
         );
     }
 
+    /// The content version of every listed asset that has a guid, by listing
+    /// key.
+    ///
+    /// A tile keeps the version it was drawn from, so the browser knows which
+    /// pictures went out of date when an asset is edited. The lookup is the
+    /// import registry's erased one: the editor names no asset type, so it asks
+    /// by guid and gets whatever version the type that holds it reports.
+    fn preview_versions(&self) -> std::collections::BTreeMap<String, Option<u64>> {
+        // Step 1: the guids the listing carries, by the key the tile is named
+        // by.
+        let guids: Vec<(String, pill_engine_core::AssetGuid)> = self
+            .asset_entries
+            .iter()
+            .filter_map(|row| {
+                let guid = row
+                    .guid
+                    .as_deref()
+                    .and_then(pill_engine_core::AssetGuid::parse)?;
+                Some((row.key(), guid))
+            })
+            .collect();
+        if guids.is_empty() {
+            return std::collections::BTreeMap::new();
+        }
+        // Step 2: one lookup per row, against the store the renderer draws from.
+        let world = self.host.host().engine().world();
+        let (Some(registry), Some(assets)) = (
+            world.get_resource::<pill_engine_core::ImportRegistry>(),
+            world.get_resource::<pill_engine_core::AssetManager>(),
+        ) else {
+            return std::collections::BTreeMap::new();
+        };
+        guids
+            .into_iter()
+            .map(|(key, guid)| (key, registry.content_version(assets, guid)))
+            .collect()
+    }
+
     /// Refreshes the asset browser's rows when the cadence is due or a file
     /// command marked them dirty, and picks up the live standalone types the
-    /// create dialog offers.
-    ///
+    /// create dialog offers.    ///
     /// Returns whether the listing changed, so the captured asset detail is
     /// read again only when it may be stale.
     pub(super) fn refresh_asset_listing(&mut self) -> bool {
@@ -667,6 +738,95 @@ impl EditorWindow {
         self.push_toast(
             NoticeLevel::Note,
             format!("importing {} file(s) into {folder}", sources.len()),
+        );
+    }
+}
+
+// =============================================================================
+// Free Functions
+// =============================================================================
+
+/// Loads the asset a preview draws, when the session has not loaded it yet.
+///
+/// A texture preview reads its file directly, so nothing has to be loaded for
+/// it. A material and a mesh are drawn from the store through the renderer's own
+/// chain, so the asset has to be there: the tree lists files, and for most of
+/// them a tile is the first thing to open the asset. The path is the one the
+/// store names the asset under, not the absolute file: the importer derives an
+/// asset's name from its path, and an absolute one leaves it nameless. A failure
+/// is logged rather than reported, because the tile's own refusal already says
+/// the preview could not be drawn.
+fn load_preview_asset(
+    world: &mut World,
+    asset: &pill_renderer_api::editor::PreviewAsset,
+    file: Option<&str>,
+) {
+    // External crates
+    use pill_renderer_api::editor::PreviewAsset;
+
+    let (Some(registry), Some(database)) = (
+        world
+            .get_resource::<pill_engine_core::ImportRegistry>()
+            .cloned(),
+        world
+            .get_resource::<pill_engine_core::AssetDatabase>()
+            .cloned(),
+    ) else {
+        return;
+    };
+    let policy = pill_engine_core::MetadataPolicy::ReadIfPresent;
+    let outcome = match asset {
+        PreviewAsset::Texture { .. } => Ok(()),
+        // A material is loaded from its file when the listing knows one: the
+        // file is what the tree shows, and a document the database has not
+        // indexed yet still imports by path. The guid is the fallback for a
+        // material that only exists as a document in the store.
+        PreviewAsset::Material { guid } => {
+            let by_file = match file {
+                Some(file) => match world.get_resource_mut::<pill_engine_core::AssetManager>() {
+                    Some(assets) => registry
+                        .load_by_path(assets, Path::new(file), policy)
+                        .map(|_| ())
+                        .map_err(|error| error.to_string()),
+                    None => Err("the world has no asset store".to_owned()),
+                },
+                None => Ok(()),
+            };
+            by_file.and_then(|()| {
+                let Some(guid) = pill_engine_core::AssetGuid::parse(guid) else {
+                    return Ok(());
+                };
+                let loaded = world
+                    .get_resource::<pill_engine_core::AssetManager>()
+                    .is_some_and(|assets| registry.loaded_by_guid(assets, guid).is_some());
+                if loaded {
+                    return Ok(());
+                }
+                let assets = world
+                    .get_resource_mut::<pill_engine_core::AssetManager>()
+                    .ok_or_else(|| "the world has no asset store".to_owned())?;
+                registry
+                    .load_by_guid(assets, &database, guid, policy)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            })
+        }
+        PreviewAsset::Mesh { .. } => match file {
+            Some(file) => match world.get_resource_mut::<pill_engine_core::AssetManager>() {
+                Some(assets) => registry
+                    .load_by_path(assets, Path::new(file), policy)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string()),
+                None => Err("the world has no asset store".to_owned()),
+            },
+            None => Ok(()),
+        },
+    };
+    if let Err(error) = outcome {
+        info!(
+            target: telemetry_target::EDITOR,
+            error = error.as_str(),
+            "[editor] preview asset not loaded"
         );
     }
 }

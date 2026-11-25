@@ -35,6 +35,7 @@ from core.editor_log_tokens import (
     PALETTE_QUERY_TOKEN,
     PICK_ENTITY_PATTERN,
     PICK_NOTHING_PATTERN,
+    PREVIEW_DREW_TOKEN,
     PREVIEW_READY_TOKEN,
     PREVIEW_REQUESTED_TOKEN,
     SCENE_BADGE_RECT_TOKEN,
@@ -59,6 +60,7 @@ from editor_step_support import (
     visible_scene_rect,
     wait_applied,
     wait_for_frame_advance,
+    write_preview_material,
 )
 
 
@@ -210,6 +212,72 @@ def run_tiles_inspector_and_input_steps(state: StepState) -> None:
         mesh_begin,
     )
     print_ok("a mesh tile's preview came back rendered")
+    # A material tile is drawn through the material's own shader, not a preview
+    # shader of its own. Two materials that differ only in the shader they name
+    # come back drawn through two different shaders, which the renderer names in
+    # its draw line. The two files are staged in their own folder before the
+    # editor starts, so both are in the store when the grid asks for their tiles
+    # and the materials folder other steps browse keeps what it had.
+    session.send("browser preview_materials")
+    materials_begin = session.length()
+    drawn_shaders = {}
+    for material_name in ("preview_shader_a.material", "preview_shader_b.material"):
+        request_pattern = log_layout.message_then_fields_pattern(
+            re.escape(PREVIEW_REQUESTED_TOKEN),
+            r'\s+path="preview_materials/{0}"\s+id=(\d+)'.format(
+                re.escape(material_name)
+            ),
+        )
+        session.wait(
+            request_pattern,
+            120,
+            f"the {material_name} tile's preview request",
+            materials_begin,
+        )
+        drawn_pattern = log_layout.message_then_fields_pattern(
+            re.escape(PREVIEW_DREW_TOKEN),
+            r'\s+id={0}\s+asset="material"\s+shader="([^"]+)"'.format(
+                session.find(request_pattern, materials_begin).group(1)
+            ),
+        )
+        session.wait(
+            drawn_pattern,
+            120,
+            f"the {material_name} tile's draw",
+            materials_begin,
+        )
+        drawn_shaders[material_name] = session.find(
+            drawn_pattern, materials_begin
+        ).group(1)
+    assert (
+        drawn_shaders["preview_shader_a.material"]
+        != drawn_shaders["preview_shader_b.material"]
+    ), "both material tiles drew through the same shader: {}".format(drawn_shaders)
+    print_ok(
+        "the material tiles drew through their own shaders: {} and {}".format(
+            drawn_shaders["preview_shader_a.material"],
+            drawn_shaders["preview_shader_b.material"],
+        )
+    )
+    # Editing a material redraws its tile: a tile keeps the content version its
+    # picture was drawn from, and a version that moved asks for a new one.
+    edit_begin = session.length()
+    write_preview_material(
+        state.asset_root / "preview_materials" / "preview_shader_a.material",
+        "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+        "8cedb4197c9f26a86708b1cd14399eab",
+        base=(0.21, 0.57, 0.21),
+    )
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(PREVIEW_READY_TOKEN),
+            r'\s+path="preview_materials/preview_shader_a\.material"\s+width=128\s+height=128',
+        ),
+        120,
+        "the edited material tile's redraw",
+        edit_begin,
+    )
+    print_ok("an edited material redrew its tile")
     # Off again, so the rest of the run costs no preview work, and the
     # Inspector goes back on top of the column the grid shared, whose rows
     # the steps below read.
