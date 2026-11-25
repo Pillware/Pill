@@ -18,14 +18,19 @@ and this notice is updated to name it.
 
 ## What data, and why
 
-| Data                                                                                                                                                                                                                                                                      | Why                                                                      | Legal basis (GDPR art. 6(1))                                                                 |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| Individual CLA: full name, email, country, platform account (currently GitHub), agreement version, time of acceptance; a signed copy, if one is requested                                                                                                                 | To document the license you granted and the origin of Pill Engine's code | (b) contract; (f) legitimate interest in proving the origin of the code and defending claims |
-| Corporate CLA: names, positions and signatures of the signatories; names, emails and platform accounts of the CLA Manager and the Authorized Contributors                                                                                                                 | The same, for the organization's agreement                               | (b) contract, with the organization; (f) legitimate interest                                 |
-| Contributions: the name, email and account recorded in commits, pull requests, issues and reviews                                                                                                                                                                         | To develop Pill Engine in public and keep its history                    | (f) legitimate interest                                                                      |
-| Messages to contact@pillengine.org, including Partner License discussions, published-modification notices under section 7.2 of the Community License and trademark permission requests                                                                                     | To answer you, and to apply the licenses and the trademark policy        | (b) contract or steps before one; (f) legitimate interest                                    |
-| Community License records: revenue statements and supporting documents under section 8, an accountant's finding, written answers under section 12.5, and the contact addresses notices are sent to, which may come from public store listings and company registers       | To apply the Community License and defend claims under it                | (b) contract; (f) legitimate interest in enforcing the license                               |
-| Partner License records: names, positions and contact details of the people acting for the partner, and invoicing details                                                                                                                                                 | To conclude and carry out the agreement, and for tax and accounting      | (b) contract; (c) legal obligation                                                           |
+| Data                                                                                                                                                                                                                                                                               | Why                                                                                       | Legal basis (GDPR art. 6(1))                                                                 |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Individual CLA: full name, email, country, whether you contribute on your own behalf or an organization's (and its name), confirmation of your age, platform account (currently GitHub) and its user ID, agreement version, time of acceptance; a signed copy, if one is requested | To document the license you granted and the origin of Pill Engine's code                  | (b) contract; (f) legitimate interest in proving the origin of the code and defending claims |
+| Signing form at cla.pillengine.org: the sign-in token GitHub issues when you log in, the pull requests waiting for your signature, and server logs (IP address, time, pages requested, browser details)                                                                            | To run the signing form, update the status of your pull requests and keep the form secure | (f) legitimate interest in a working and secure signing form                                 |
+| Corporate CLA: names, positions and signatures of the signatories; names, emails and platform accounts of the CLA Manager and the Authorized Contributors                                                                                                                          | The same, for the organization's agreement                                                | (b) contract, with the organization; (f) legitimate interest                                 |
+| Contributions: the name, email and account recorded in commits, pull requests, issues and reviews                                                                                                                                                                                  | To develop Pill Engine in public and keep its history                                     | (f) legitimate interest                                                                      |
+| Messages to contact@pillengine.org, including Partner License discussions, published-modification notices under section 7.2 of the Community License and trademark permission requests                                                                                             | To answer you, and to apply the licenses and the trademark policy                         | (b) contract or steps before one; (f) legitimate interest                                    |
+| Community License records: revenue statements and supporting documents under section 8, an accountant's finding, written answers under section 12.5, and the contact addresses notices are sent to, which may come from public store listings and company registers                | To apply the Community License and defend claims under it                                 | (b) contract; (f) legitimate interest in enforcing the license                               |
+| Partner License records: names, positions and contact details of the people acting for the partner, and invoicing details                                                                                                                                                          | To conclude and carry out the agreement, and for tax and accounting                       | (b) contract; (c) legal obligation                                                           |
+
+The signing form sets only a session cookie, which keeps you logged in for
+up to an hour while you sign. The form needs it to work, and it is not used
+for tracking.
 
 You do not have to provide this data, but contributions are accepted only
 under a CLA, and a Partner License needs the details of its parties.
@@ -36,11 +41,14 @@ under a CLA, and a Partner License needs the details of its parties.
   requests and issues are public, and the CLA Assistant comment on your
   pull request shows whether you signed.
 - **Service providers** that process it for the Licensor:
-  - CLA Assistant (cla-assistant.io, operated by SAP SE, Germany), which
-    records CLA acceptances in a database hosted on Microsoft Azure in
-    Europe;
+  - Hostinger International Ltd. (Cyprus), which hosts the server on
+    which the Licensor runs its own installation of CLA Assistant, the
+    open-source signing tool, at cla.pillengine.org. CLA acceptances are
+    recorded in a database on that server, and SAP SE, which publishes
+    CLA Assistant, receives no data;
   - GitHub, Inc. (USA), which hosts the repository, pull requests, issues
-    and the text of the agreements; and
+    and the text of the agreements, and through which you log in to the
+    signing form; and
   - OVH SAS, which hosts the contact@pillengine.org mailbox.
 - **Advisers and dispute bodies.** An independent accountant checking
   Annual Revenue under section 8 of the Community License, legal advisers,
@@ -52,16 +60,21 @@ under a CLA, and a Partner License needs the details of its parties.
   Partner License records pass to it too, because they prove and enforce
   the rights it receives.
 
-OVH SAS keeps the data in the European Union, and CLA Assistant stores it
-in Europe. GitHub, Inc. is outside the European Economic Area, and transfers
-to it rely on the EU-US Data Privacy Framework. Where SAP SE transfers data
-outside the European Economic Area, it relies on the EU standard contractual
-clauses.
+OVH SAS and Hostinger keep the data in the European Union. GitHub, Inc. is
+outside the European Economic Area, and transfers to it rely on the EU-US
+Data Privacy Framework. Where Hostinger transfers data outside the European
+Economic Area, it relies on the EU standard contractual clauses.
 
 ## How long it is kept
 
 - CLA records: for as long as Pill Engine contains or distributes your
   Contributions, and then until claims about them are time-barred.
+- Your GitHub sign-in token and the pull requests waiting for your
+  signature: for as long as the Pill Engine Project uses the signing form,
+  unless you ask for them to be deleted sooner. You can also revoke the
+  token at any time in your GitHub settings.
+- Server logs of the signing form: up to 30 days, unless they are needed
+  longer to investigate a specific security incident.
 - Commit, issue and review history: permanently, as part of the project's
   history.
 - Messages: for as long as needed to handle them and any resulting claims.
