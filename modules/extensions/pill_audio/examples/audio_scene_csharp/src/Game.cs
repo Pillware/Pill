@@ -20,6 +20,7 @@ using System.Runtime.InteropServices;
 using pill_audio;
 using pill_engine;
 using pill_rendering;
+using pill_master_renderer;
 using TracyLive;
 
 namespace AudioSceneCSharp;

@@ -50,7 +50,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from .paths import MODULES_ROOT, REPOSITORY_ROOT, executable_name
-from .environment import ProcessToolUnavailable, windows_process_commands
+from .environment import ProcessToolUnavailable, process_commands
 from .projects import (
     EXAMPLES_RELATIVE_PATH,
     EXAMPLES_ROOT,
@@ -1035,7 +1035,7 @@ def concurrent_workspace_build_refusal() -> Optional[str]:
     exists to prevent exactly the loader failure a silent pass lets through.
     """
     try:
-        cargo = windows_process_commands("cargo.exe")
+        cargo = process_commands("cargo")
     except ProcessToolUnavailable as error:
         return (
             "the concurrent-build pre-check could not run, so this suite cannot "

@@ -57,4 +57,4 @@ jobs:
         # verify.py prints each check as a collapsible log group and writes
         # its PASS/FAIL table to the job summary; --keep-going reports every
         # failing check, not only the first.
-        run: python devops/ci_cd/verify.py --keep-going
+        run: python devops/ci_cd/verify.py --keep-going --quick

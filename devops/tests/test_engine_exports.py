@@ -115,6 +115,11 @@ def self_test():
 
 
 def main():
+    # Export tables are a PE (Windows DLL) concept; other platforms build ELF or
+    # Mach-O libraries, which have no export count to check.
+    if sys.platform != "win32":
+        print("  SKIP  export counts are only checked for Windows DLLs")
+        return 0
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[1])
     parser.add_argument("--profile", default="debug")
     parser.add_argument("--threshold", type=int, default=DEFAULT_THRESHOLD)

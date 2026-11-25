@@ -138,8 +138,14 @@ impl RawWindowData {
                 ..zeroed_handles(RawWindowKind::Win32)
             }),
             (RawWindowHandle::Xlib(handle), RawDisplayHandle::Xlib(display)) => Ok(Self {
-                window: handle.window,
-                window_aux: handle.visual_id,
+                //#[cfg(target_arch = "wasm32")]
+                //window: handle.window as u64,
+                //#[cfg(not(target_arch = "wasm32"))]
+                window: u64::from(handle.window),
+                //#[cfg(target_arch = "wasm32")]
+                //window_aux: handle.visual_id as u64,
+                //#[cfg(not(target_arch = "wasm32"))]
+                window_aux: u64::from(handle.visual_id),
                 display: pointer_as_integer(display.display),
                 screen: display.screen,
                 ..zeroed_handles(RawWindowKind::Xlib)

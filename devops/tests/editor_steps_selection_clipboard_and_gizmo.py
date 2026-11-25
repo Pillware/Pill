@@ -6,9 +6,16 @@ from `editor_step_support`, the log vocabulary from `editor_log_tokens`.
 
 import re
 import json
+import sys
 
-from core import win_clipboard
 from core import log_layout
+
+# The clipboard helpers bind Win32 and refuse to import elsewhere; the
+# clipboard checks below run only where they exist.
+if sys.platform == "win32":
+    from core import win_clipboard
+else:
+    win_clipboard = None
 from core.paths import REPOSITORY_ROOT
 from core.editor_log_tokens import (
     CLIPBOARD_PASTED_TOKEN,
@@ -211,62 +218,65 @@ def run_selection_clipboard_and_gizmo_steps(state: StepState) -> None:
     # here; a component payload written from outside pastes onto the
     # selection in one undo step; and a second editor instance pastes the
     # entity copy, which is what "across editor instances" means.
-    win_clipboard.clear()
-    begin = session.length()
-    session.send("command editor.copy")
-    session.wait(
-        re.escape(CLIPBOARD_WRITTEN_TOKEN), 30, "the clipboard write", begin
-    )
-    payload = json.loads(win_clipboard.read_payload())
-    assert payload.get("kind") == "entity", (
-        "the registered format does not carry an entity payload: {}".format(payload)
-    )
-    assert payload.get("pill") == 1, "the payload's version is not 1"
-    print_ok("the copy reached the OS clipboard as an entity payload")
+    if win_clipboard is not None:
+        win_clipboard.clear()
+        begin = session.length()
+        session.send("command editor.copy")
+        session.wait(
+            re.escape(CLIPBOARD_WRITTEN_TOKEN), 30, "the clipboard write", begin
+        )
+        payload = json.loads(win_clipboard.read_payload())
+        assert payload.get("kind") == "entity", (
+            "the registered format does not carry an entity payload: {}".format(payload)
+        )
+        assert payload.get("pill") == 1, "the payload's version is not 1"
+        print_ok("the copy reached the OS clipboard as an entity payload")
 
-    component_payload = {
-        "pill": 1,
-        "kind": "component",
-        "component": {"type": SHOWCASE_TYPE_NAME, "fields": [["frame", "7.25f"]]},
-    }
-    win_clipboard.write_payload(json.dumps(component_payload))
-    begin = session.length()
-    applied_before = occurrence_count(session, re.escape(ENGINE_COMMANDS_APPLIED_TOKEN))
-    session.send("command editor.paste")
-    session.wait(
-        log_layout.message_then_fields_pattern(re.escape(CLIPBOARD_PASTED_TOKEN), r'\s+kind="component"'),
-        30,
-        "the component paste",
-        begin,
-    )
-    # The paste is logged when the payload is decoded; its commands cross
-    # the frame boundary after that, so the dump below would otherwise race
-    # the write it is meant to read.
-    wait_applied(session, applied_before, "the component paste applied")
-    begin = session.length()
-    session.send(
-        "dump field {} {} frame".format(prior_entity, SHOWCASE_COMPONENT)
-    )
-    session.wait(re.escape(FIELD_TOKEN), 30, "the pasted field", begin)
-    assert "7.25" in session.read_since(begin), (
-        "the component paste did not apply: {}".format(
-            session.read_since(begin)[-600:]
+        component_payload = {
+            "pill": 1,
+            "kind": "component",
+            "component": {"type": SHOWCASE_TYPE_NAME, "fields": [["frame", "7.25f"]]},
+        }
+        win_clipboard.write_payload(json.dumps(component_payload))
+        begin = session.length()
+        applied_before = occurrence_count(session, re.escape(ENGINE_COMMANDS_APPLIED_TOKEN))
+        session.send("command editor.paste")
+        session.wait(
+            log_layout.message_then_fields_pattern(re.escape(CLIPBOARD_PASTED_TOKEN), r'\s+kind="component"'),
+            30,
+            "the component paste",
+            begin,
         )
-    )
-    begin = session.length()
-    session.send("command editor.undo")
-    session.wait(re.escape(HISTORY_UNDO_TOKEN), 30, "the paste's undo", begin)
-    begin = session.length()
-    session.send(
-        "dump field {} {} frame".format(prior_entity, SHOWCASE_COMPONENT)
-    )
-    session.wait(re.escape(FIELD_TOKEN), 30, "the restored pasted field", begin)
-    assert "7.25" not in session.read_since(begin), (
-        "one undo did not take the whole component paste back: {}".format(
-            session.read_since(begin)[-600:]
+        # The paste is logged when the payload is decoded; its commands cross
+        # the frame boundary after that, so the dump below would otherwise race
+        # the write it is meant to read.
+        wait_applied(session, applied_before, "the component paste applied")
+        begin = session.length()
+        session.send(
+            "dump field {} {} frame".format(prior_entity, SHOWCASE_COMPONENT)
         )
-    )
-    print_ok("a component paste applied and undid in one step")
+        session.wait(re.escape(FIELD_TOKEN), 30, "the pasted field", begin)
+        assert "7.25" in session.read_since(begin), (
+            "the component paste did not apply: {}".format(
+                session.read_since(begin)[-600:]
+            )
+        )
+        begin = session.length()
+        session.send("command editor.undo")
+        session.wait(re.escape(HISTORY_UNDO_TOKEN), 30, "the paste's undo", begin)
+        begin = session.length()
+        session.send(
+            "dump field {} {} frame".format(prior_entity, SHOWCASE_COMPONENT)
+        )
+        session.wait(re.escape(FIELD_TOKEN), 30, "the restored pasted field", begin)
+        assert "7.25" not in session.read_since(begin), (
+            "one undo did not take the whole component paste back: {}".format(
+                session.read_since(begin)[-600:]
+            )
+        )
+        print_ok("a component paste applied and undid in one step")
+    else:
+        print_ok("SKIP the OS clipboard round trip: the clipboard helpers need Windows")
 
     # Step 3a11: an OS drop into Assets. winit's drop
     # events cannot be synthesised from the command file, so the paths go to

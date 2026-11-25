@@ -90,15 +90,18 @@ fn stage_std_dylib_host() {
         .join("lib");
 
     // Step 3: Find the output directory that will hold the executable.
-    // `OUT_DIR` is `<target>/<profile>/build/<package>-<hash>/out`, so three
-    // parents up is the same directory the built executable lands in.
+    // `OUT_DIR` is `<target>/<profile>/build/<package>-<hash>/out`, or
+    // `.../build/<package>/<hash>/out` under cargo's newer build-directory
+    // layout. Either way the executable lands in the directory holding the
+    // nearest `build` folder above `out`.
     let Some(output_directory) =
         std::env::var_os("OUT_DIR")
             .map(PathBuf::from)
             .and_then(|out_directory| {
                 out_directory
-                    .parent()
-                    .and_then(Path::parent)
+                    .ancestors()
+                    .skip(1)
+                    .find(|ancestor| ancestor.file_name().is_some_and(|name| name == "build"))
                     .and_then(Path::parent)
                     .map(PathBuf::from)
             })

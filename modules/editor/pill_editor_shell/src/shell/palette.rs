@@ -17,6 +17,7 @@
 //! test can drive the palette without sending key presses.
 
 // Current crate
+#[allow(unused_imports)]
 use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 

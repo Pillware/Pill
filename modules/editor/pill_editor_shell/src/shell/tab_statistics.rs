@@ -16,6 +16,7 @@
 //! snapshot. This tab only formats these numbers; it records nothing.
 
 // Current crate
+#[allow(unused_imports)]
 use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 
