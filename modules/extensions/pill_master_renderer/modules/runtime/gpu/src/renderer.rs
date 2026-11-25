@@ -478,6 +478,7 @@ impl PillRenderer for Renderer {
 
         let submit_started_at = Instant::now();
         let submit_zone = pill_core::profile_scope!("renderer: submit");
+        let mut any_presented = false;
         for (id, view_camera, view_transform) in surfaces_to_draw {
             let Some(target) = self.surface_targets.get_mut(&id) else {
                 continue;
@@ -518,7 +519,12 @@ impl PillRenderer for Renderer {
                 &render_queue,
             );
             match surface_render {
-                Ok(()) => {
+                Ok(false) => self
+                    .state
+                    .overlay
+                    .answer_surface(&frame.pick_requests, id),
+                Ok(true) => {
+                    any_presented = true;
                     if !target.presented {
                         target.presented = true;
                         info!(
@@ -544,7 +550,11 @@ impl PillRenderer for Renderer {
         // has its own encoder and submission, after the frame's surfaces, so a
         // preview never delays a presented frame.
         record_preview(self, frame, assets_manager);
-        Ok(FrameOutcome::Presented)
+        Ok(if any_presented {
+            FrameOutcome::Presented
+        } else {
+            FrameOutcome::Skipped
+        })
     }
 
     fn invalidate_assets(&mut self) {
@@ -934,9 +944,12 @@ impl State {
         camera: &CameraComponent,
         transform: &TransformComponent,
         render_queue: &[RenderQueueItem],
-    ) -> Result<()> {
+    ) -> Result<bool> {
         // Step 1: Acquire the image and prepare everything the passes read.
-        let draw = self.begin_surface_frame(target, frame, camera, transform, render_queue)?;
+        let Some(draw) = self.begin_surface_frame(target, frame, camera, transform, render_queue)?
+        else {
+            return Ok(false);
+        };
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -952,7 +965,8 @@ impl State {
         self.record_overlay_and_ui(&mut encoder, target, &draw);
         // Step 4: Resolve the profiler's queries, submit the commands and
         // present the image.
-        self.finish_surface_frame(encoder, draw)
+        self.finish_surface_frame(encoder, draw)?;
+        Ok(true)
     }
 
     /// Acquire one surface's image and prepare everything the passes read.
@@ -972,7 +986,7 @@ impl State {
         camera: &CameraComponent,
         transform: &TransformComponent,
         render_queue: &'a [RenderQueueItem],
-    ) -> Result<SurfaceDraw<'a>> {
+    ) -> Result<Option<SurfaceDraw<'a>>> {
         // Step 1: Refuse the frame when the device was lost. A lost device
         // draws nothing and reports nothing, so the loss the callback latched
         // is the frame path's only chance to say so. Returning it here ends
@@ -984,7 +998,9 @@ impl State {
         // The surface and the device are borrowed separately, so the surface
         // can reconfigure itself against the device that created it.
         let acquire_zone = pill_core::profile_scope!("renderer: acquire surface");
-        let image = target.surface.acquire(&self.device)?;
+        let Some(image) = target.surface.acquire(&self.device)? else {
+            return Ok(None);
+        };
         drop(acquire_zone);
         let size = target.surface.size();
         // Through the sRGB view the pipelines were built for, which is not the
@@ -1026,7 +1042,7 @@ impl State {
         if let Some(profiler) = &mut self.gpu_profiler {
             profiler.begin_frame(&self.device, &self.queue);
         }
-        Ok(SurfaceDraw {
+        Ok(Some(SurfaceDraw {
             surface_id: target.id.0,
             image,
             view,
@@ -1035,7 +1051,7 @@ impl State {
             camera: camera_handle,
             frame,
             render_queue,
-        })
+        }))
     }
 
     /// Record one pass of the chain into `encoder`.

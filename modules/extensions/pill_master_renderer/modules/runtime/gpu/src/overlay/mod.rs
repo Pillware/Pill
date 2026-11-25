@@ -893,6 +893,16 @@ impl Overlay {
         }
     }
 
+    /// Answers with nothing every request on `surface`, whose frame was
+    /// skipped after the picks were taken.
+    pub fn answer_surface(&mut self, requests: &[PickRequest], surface: u32) {
+        for request in requests {
+            if request.surface.0 == surface {
+                self.readback.answer(*request, PickHit::Nothing);
+            }
+        }
+    }
+
     /// Returns every pick answer that has arrived since the last call.
     pub fn take_results(&mut self, device: &wgpu::Device) -> Vec<PickResult> {
         self.readback.collect(device)

@@ -470,7 +470,11 @@ pub(crate) fn apply_cargo_host_overrides(command: &mut Command, workspace_root: 
     );
     let anchor_package = host_anchor_package();
     let is_editor_host = anchor_package.as_deref().is_some_and(is_editor_anchor);
-    if crate::config::running_under_dioxus_cli() || is_editor_host {
+    // The windowed standalone links winit and wgpu, whose feature unions also
+    // reach the engine dylibs' symbol hashes.
+    let is_rendering_standalone =
+        cfg!(feature = "rendering") && anchor_package.as_deref() == Some("pill_standalone");
+    if crate::config::running_under_dioxus_cli() || is_editor_host || is_rendering_standalone {
         // An editor host keeps the cargo anchor, and so does a host started by
         // the dioxus CLI. For an editor, the renderer dependencies change the
         // shared engine dylibs even though the project itself depends only on

@@ -114,7 +114,7 @@ use crate::frontend::EditorError;
 /// The overlay's error, which only the floating posture produces: the
 /// composition one reports through the same type on Windows, so the import is
 /// needed where that posture is built.
-#[cfg(not(windows))]
+#[cfg(all(unix, not(target_os = "macos")))]
 use crate::overlay::OverlayError;
 use crate::overlay::OverlayMode;
 use crate::overlay::OverlaySurface;
@@ -132,6 +132,8 @@ mod element_tools;
 mod frame;
 mod scripted_channel;
 mod tool_fixture;
+#[cfg(target_os = "macos")]
+mod macos_child;
 mod transform_gizmo;
 mod windows;
 
@@ -329,7 +331,7 @@ fn choose_display_backend() {
 ///
 /// `event_loop` is what the floating overlay is created from, so Windows - whose
 /// overlay is a composition visual - has nothing to do with it.
-#[cfg_attr(windows, allow(unused_variables))]
+#[cfg_attr(not(all(unix, not(target_os = "macos"))), allow(unused_variables))]
 fn create_overlay(
     event_loop: &ActiveEventLoop,
     no_overlay: bool,
@@ -339,9 +341,6 @@ fn create_overlay(
     window: Arc<Window>,
     size: (u32, u32),
 ) -> Option<OverlaySurface> {
-    // The event loop is what a Unix session builds the floating overlay's
-    // window on; Windows draws the overlay without one.
-    let _ = event_loop;
     if no_overlay {
         warn!(
             target: telemetry_target::EDITOR,
@@ -356,7 +355,9 @@ fn create_overlay(
     // above the editor. Both are transparent where the shell drew nothing, and
     // both take no input of their own, so the two postures read alike from the
     // frontend's side. The line naming the posture is worth keeping on both.
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    return create_window_overlay(instance, adapter, device, window, size);
+    #[cfg(all(unix, not(target_os = "macos")))]
     {
         match create_floating_overlay(event_loop, instance, adapter, device, size) {
             Ok(overlay) => return Some(overlay),
@@ -403,7 +404,7 @@ fn create_overlay(
 /// Returns the reason, which [`create_overlay`] logs before falling back to
 /// the window surface, when the window cannot be created, cannot be made
 /// transparent to the pointer, or has no premultiplied surface to draw into.
-#[cfg(not(windows))]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn create_floating_overlay(
     event_loop: &ActiveEventLoop,
     instance: &wgpu::Instance,
@@ -411,7 +412,6 @@ fn create_floating_overlay(
     device: &wgpu::Device,
     size: (u32, u32),
 ) -> Result<OverlaySurface, OverlayError> {
-    use winit::platform::x11::WindowAttributesExtX11;
     // Step 1: the window. It starts hidden so the first frame can place it
     // before it is ever shown, and it is transparent so the scene shows
     // through wherever the shell drew nothing.
@@ -421,8 +421,11 @@ fn create_floating_overlay(
         .with_decorations(false)
         .with_active(false)
         .with_visible(false)
-        .with_inner_size(LogicalSize::new(size.0 as f64, size.1 as f64))
-        .with_override_redirect(true);
+        .with_inner_size(LogicalSize::new(size.0 as f64, size.1 as f64));
+    let attributes = {
+        use winit::platform::x11::WindowAttributesExtX11;
+        attributes.with_override_redirect(true)
+    };
     let window = Arc::new(
         event_loop
             .create_window(attributes)
@@ -590,6 +593,10 @@ impl ApplicationHandler for EditorApplication {
                             event_loop.exit();
                         } else {
                             match editor.next_wake() {
+                                FrameWake::Immediate if editor.occluded => {
+                                    self.wake_timer
+                                        .schedule(pill_editor_core::cadence::IDLE_POLL);
+                                }
                                 FrameWake::Immediate => {
                                     self.wake_timer.clear();
                                     editor.window.request_redraw();
@@ -635,6 +642,14 @@ impl ApplicationHandler for EditorApplication {
                     editor.scale_factor = editor.window.scale_factor() as f32;
                     let size = editor.window.inner_size();
                     editor.resize(size.width, size.height);
+                }
+            }
+            WindowEvent::Occluded(occluded) => {
+                if is_main {
+                    editor.occluded = occluded;
+                    if !occluded {
+                        editor.window.request_redraw();
+                    }
                 }
             }
             WindowEvent::Focused(focused) => {
@@ -4187,6 +4202,8 @@ struct SurfaceWindow {
     /// reports are relative to it; a resize clears `placed` but never moves
     /// the window, so the origin survives that.
     origin: (i32, i32),
+    #[cfg(target_os = "macos")]
+    parent: Option<objc2::rc::Retained<objc2_app_kit::NSWindow>>,
 }
 
 impl SurfaceWindow {
@@ -4239,6 +4256,8 @@ impl SurfaceWindow {
                         visible: false,
                         placed: None,
                         origin: (0, 0),
+                        #[cfg(target_os = "macos")]
+                        parent: macos_child::ns_window(main),
                     })
                 }
                 Err(error) => {
@@ -4265,6 +4284,8 @@ impl SurfaceWindow {
             visible: false,
             placed: None,
             origin: (0, 0),
+            #[cfg(target_os = "macos")]
+            parent: None,
         })
     }
 
@@ -4278,19 +4299,36 @@ impl SurfaceWindow {
     /// the position when the platform forced it to the detached fallback - it
     /// is its own top-level window then - and a docked child takes its origin
     /// from the rectangle's own corner.
-    fn place(&mut self, x: i32, y: i32, width: u32, height: u32, screen_owned: bool) {
+    fn place(
+        &mut self,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
+        screen_owned: bool,
+        screen_offset: (i32, i32),
+    ) {
         // A placement means the dock shows this window's tab again after a
         // switch or an undock; a hidden window still sits where it was, so
         // only the visibility changes.
         if !self.visible {
-            self.window.set_visible(true);
+            self.set_shown(true);
             self.visible = true;
         }
-        if self.placed == Some((x, y, width, height)) {
+        let screen_rect = (x + screen_offset.0, y + screen_offset.1, width, height);
+        if self.placed == Some(screen_rect) {
             return;
         }
-        if screen_owned || !self.detached {
+        if self.placed.map(|placed| (placed.2, placed.3)) != Some((width, height)) {
+            let _ = self
+                .window
+                .request_inner_size(PhysicalSize::new(width.max(1), height.max(1)));
+        }
+        if screen_owned {
             self.window.set_outer_position(PhysicalPosition::new(x, y));
+        } else if !self.detached {
+            self.window
+                .set_outer_position(PhysicalPosition::new(screen_rect.0, screen_rect.1));
         }
         // The client origin is what a pointer event from this window is
         // relative to: a docked child's is the rectangle's corner, and a
@@ -4304,10 +4342,24 @@ impl SurfaceWindow {
         } else if !self.detached {
             self.origin = (x, y);
         }
-        let _ = self
-            .window
-            .request_inner_size(PhysicalSize::new(width.max(1), height.max(1)));
-        self.placed = Some((x, y, width, height));
+        self.placed = Some(screen_rect);
+    }
+
+    /// Show or hide the window. A macOS child is ordered without becoming
+    /// key and re-attached, because winit's `set_visible` does neither.
+    fn set_shown(&self, shown: bool) {
+        #[cfg(target_os = "macos")]
+        if let (Some(parent), Some(child)) =
+            (&self.parent, macos_child::ns_window(&self.window))
+        {
+            if shown {
+                macos_child::show_child(parent, &child);
+            } else {
+                macos_child::hide_child(parent, &child);
+            }
+            return;
+        }
+        self.window.set_visible(shown);
     }
 
     /// Create a top-level window for a popped-out scene view: decorated, so the
@@ -4334,6 +4386,8 @@ impl SurfaceWindow {
             visible: false,
             placed: None,
             origin: (0, 0),
+            #[cfg(target_os = "macos")]
+            parent: None,
         })
     }
 
@@ -4341,7 +4395,7 @@ impl SurfaceWindow {
     /// paint in its rectangle.
     fn hide(&mut self) {
         if self.visible {
-            self.window.set_visible(false);
+            self.set_shown(false);
             self.visible = false;
         }
     }

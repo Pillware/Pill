@@ -264,6 +264,7 @@ pub(super) struct EditorWindow {
     pub(super) gizmo_hidden_persisted: Option<Vec<String>>,
     /// Whether the main window currently has focus.
     pub(super) focused: bool,
+    pub(super) occluded: bool,
     /// The screen position and size the floating overlay window was last
     /// given, in physical pixels. Only the floating posture has one: it is a
     /// window of its own, so it has to be moved with the editor by hand.
@@ -488,7 +489,9 @@ impl EditorWindow {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             #[cfg(windows)]
             backends: wgpu::Backends::DX12,
-            #[cfg(not(windows))]
+            #[cfg(target_os = "macos")]
+            backends: wgpu::Backends::METAL,
+            #[cfg(all(unix, not(target_os = "macos")))]
             backends: wgpu::Backends::VULKAN | wgpu::Backends::GL,
             ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
@@ -762,6 +765,7 @@ impl EditorWindow {
             gizmo_persisted: None,
             gizmo_hidden_persisted: None,
             focused: true,
+            occluded: false,
             overlay_placement: None,
             size,
             scale_factor,
