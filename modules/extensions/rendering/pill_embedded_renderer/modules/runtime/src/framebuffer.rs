@@ -227,7 +227,7 @@ impl Framebuffer {
         for (pixel, chunk) in self
             .pixels
             .iter()
-            .zip(self.bytes.chunks_exact_mut(BYTES_PER_PIXEL))
+            .zip(self.bytes.as_chunks_mut::<BYTES_PER_PIXEL>().0)
         {
             chunk.copy_from_slice(&pixel.to_le_bytes());
         }

@@ -158,7 +158,7 @@ impl TextureCache {
         entry.texels.clear();
         entry
             .texels
-            .extend(texture.rgba.chunks_exact(4).map(|texel| {
+            .extend(texture.rgba.as_chunks::<4>().0.iter().map(|texel| {
                 let channel = |index: usize| texel[index] as f32 / 255.0;
                 pack_rgb565(channel(0), channel(1), channel(2))
             }));

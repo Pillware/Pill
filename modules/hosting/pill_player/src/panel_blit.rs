@@ -122,6 +122,7 @@ mod platform {
 pub(crate) struct PanelBlit {
     /// The window's platform handle, as the frontend handed it over: an `HWND`
     /// on Windows.
+    #[cfg(windows)]
     window: u64,
     /// The panel frame widened to 32-bit colour, kept between frames.
     #[cfg(windows)]

@@ -34,6 +34,10 @@ use crate::{walk_files, CookError, Rule};
 // Constants
 // =============================================================================
 
+/// The environment variable that names the compiler a cook runs, instead of
+/// searching `PATH`.
+const SLANGC_ENV: &str = "PILL_SLANGC";
+
 /// The SPIR-V version the stages compile against.
 const SPIRV_PROFILE: &str = "spirv_1_5";
 
@@ -71,6 +75,7 @@ pub struct HlslToSpirv {
     source_glob: &'static str,
     /// Directories handed to `slangc -I`, in the order they were added.
     include_directories: Vec<PathBuf>,
+    pinned_slangc: Option<PathBuf>,
 }
 
 impl HlslToSpirv {
@@ -79,6 +84,7 @@ impl HlslToSpirv {
         Self {
             source_glob: "shaders/*.hlsl",
             include_directories: Vec::new(),
+            pinned_slangc: std::env::var_os(SLANGC_ENV).map(PathBuf::from),
         }
     }
 
@@ -88,6 +94,7 @@ impl HlslToSpirv {
         Self {
             source_glob: "*.hlsl",
             include_directories: Vec::new(),
+            pinned_slangc: std::env::var_os(SLANGC_ENV).map(PathBuf::from),
         }
     }
 
@@ -147,11 +154,12 @@ impl Rule for HlslToSpirv {
                 ),
             });
         };
-        let compiler_path = slangc_path().map_err(|detail| CookError::Rule {
-            rule: self.name(),
-            input: input.to_owned(),
-            detail,
-        })?;
+        let compiler_path =
+            slangc_path(self.pinned_slangc.as_deref()).map_err(|detail| CookError::Rule {
+                rule: self.name(),
+                input: input.to_owned(),
+                detail,
+            })?;
 
         // Step 2: Build the command line and run the compiler with the cook's
         // time limit.
