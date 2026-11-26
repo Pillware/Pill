@@ -12,6 +12,8 @@
 //!   egui widgets that the caller applies inside a `ui.scope`.
 //! - [`widgets`]: [`ChunkyButton`], a button whose face sits on a hard shadow
 //!   with no blur.
+//! - [`tooltip`]: the tooltips a UI shows, opened above the widget they belong
+//!   to and below it only when there is no room above.
 //!
 //! # Design
 //!
@@ -24,6 +26,8 @@
 
 /// The theme's style and fonts, and how to install them on a context.
 pub mod style;
+/// The tooltips a UI shows, opened above the widget they belong to.
+pub mod tooltip;
 /// Three looks for stock egui widgets: `primary`, `secondary` and `danger`.
 pub mod variants;
 /// The chunky button: a flat face on a hard shadow with no blur.

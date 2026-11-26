@@ -2019,6 +2019,29 @@ where
     attach_renderer(host, window, width, height)
 }
 
+/// [`setup_rendering`], with a tick the host calls while it waits.
+///
+/// The tick runs on the thread starting the host, once per build poll and
+/// after each module loads, so a frontend can draw a splash from the progress
+/// [`crate::startup_progress::snapshot`] publishes.
+///
+/// # Errors
+///
+/// The same errors [`setup_rendering`] returns.
+#[cfg(feature = "rendering")]
+pub fn setup_rendering_with_tick<W>(
+    project: impl Into<HostConfig>,
+    window: W,
+    width: u32,
+    height: u32,
+    tick: Box<dyn FnMut()>,
+) -> Result<RenderingHost, pill_player::RenderingError>
+where
+    W: RendererWindow + 'static,
+{
+    crate::startup_progress::with_tick(tick, || setup_rendering(project, window, width, height))
+}
+
 /// Whether rendering should be paused after one frame boundary.
 ///
 /// `paused` is the state before it. `data_layout_changed` says whether the

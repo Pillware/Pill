@@ -65,12 +65,14 @@ pub fn project_settings_tab(
                 project_settings::SettingProvenance::Environment,
             ] {
                 ui.label(egui::RichText::new(provenance.icon()).weak());
-                ui.label(
-                    egui::RichText::new(provenance.glyph().glyph().to_string())
-                        .family(egui::FontFamily::Name(icons::FAMILY.into()))
-                        .size(SETTING_ICON_SIZE),
-                )
-                .on_hover_text(provenance.tooltip(pill_engine::ApplyTiming::Startup));
+                kit::tooltip::on_hover_text(
+                    ui.label(
+                        egui::RichText::new(provenance.glyph().glyph().to_string())
+                            .family(egui::FontFamily::Name(icons::FAMILY.into()))
+                            .size(SETTING_ICON_SIZE),
+                    ),
+                    provenance.tooltip(pill_engine::ApplyTiming::Startup),
+                );
             }
         });
         // Step 2: one section per entry, in the view's own order.
@@ -103,12 +105,14 @@ pub fn project_setting_row(
     pending: &mut PendingEditorCommands,
 ) {
     row_in(ui, WIDE_ROW_LABEL_WIDTH, row.label(), None, &mut |ui| {
-        ui.label(
-            egui::RichText::new(row.provenance.glyph().glyph().to_string())
-                .family(egui::FontFamily::Name(icons::FAMILY.into()))
-                .size(SETTING_ICON_SIZE),
-        )
-        .on_hover_text(row.tooltip());
+        kit::tooltip::on_hover_text(
+            ui.label(
+                egui::RichText::new(row.provenance.glyph().glyph().to_string())
+                    .family(egui::FontFamily::Name(icons::FAMILY.into()))
+                    .size(SETTING_ICON_SIZE),
+            ),
+            row.tooltip(),
+        );
     });
     // The buffer survives between frames in egui's temporary memory, keyed by
     // the setting's own path; it starts from the value in effect.
@@ -119,30 +123,31 @@ pub fn project_setting_row(
     });
     row_in(ui, WIDE_ROW_LABEL_WIDTH, "", None, &mut |ui| {
         let field = ui.add(egui::TextEdit::singleline(&mut buffer).desired_width(120.0));
-        field.on_hover_text(row.tooltip());
-        if ui
-            .small_button("set")
-            .on_hover_text("Write this value to project_settings.yaml.")
-            .clicked()
+        kit::tooltip::on_hover_text(field, row.tooltip());
+        if kit::tooltip::on_hover_text(
+            ui.small_button("set"),
+            "Write this value to project_settings.yaml.",
+        )
+        .clicked()
         {
             queue_write(pending, row, directory, buffer.as_str(), false);
         }
-        if ui
-            .small_button("local")
-            .on_hover_text(
-                "Write this value to project_settings.local.yaml, the override that never commits.",
-            )
-            .clicked()
+        if kit::tooltip::on_hover_text(
+            ui.small_button("local"),
+            "Write this value to project_settings.local.yaml, the override that never commits.",
+        )
+        .clicked()
         {
             queue_write(pending, row, directory, buffer.as_str(), true);
         }
-        if ui
-            .add_enabled(
+        if kit::tooltip::on_hover_text(
+            ui.add_enabled(
                 row.project_text.is_some() || row.local_text.is_some(),
                 egui::Button::new("reset").small(),
-            )
-            .on_hover_text("Remove the key from whichever settings file holds it.")
-            .clicked()
+            ),
+            "Remove the key from whichever settings file holds it.",
+        )
+        .clicked()
         {
             pending.push(vec![EditorCommand::ResetProjectSetting {
                 directory: directory.to_string(),

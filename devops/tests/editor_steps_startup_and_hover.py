@@ -18,12 +18,16 @@ from core.editor_log_tokens import (
     PICK_NOTHING_PATTERN,
     PICK_PROBE_TIMEOUT,
     ROWS_PATTERN,
+    SCENE_DEFAULT_PLACEMENT_TOKEN,
     SCENE_RECT_PATTERN,
     SCENE_SURFACE_TOKEN,
     SELECTION_CHANGED_TOKEN,
+    SPLASH_HIDDEN_TOKEN,
+    SPLASH_SHOWN_TOKEN,
 )
 from editor_step_areas import StepArea, StepContext
 from editor_step_support import (
+    occurrence_count,
     print_ok,
     StepState,
     visible_scene_rect,
@@ -37,6 +41,25 @@ def run_startup_and_hover_steps(state: StepState) -> None:
 
     # Step 1: startup, all the way to both tabs reporting rows.
     session.wait_for_match(re.escape(EDITOR_WINDOW_CREATED_TOKEN), 120, "startup")
+    # The splash: the window is dark while the host builds and loads the
+    # project, so the editor draws the splash from inside that wait and takes
+    # it down when the project is up - both before the window is announced.
+    session.wait_for_match(
+        log_layout.message_then_fields_pattern(
+            re.escape(SPLASH_SHOWN_TOKEN), r'\s+posture="loading"\s+modules=\d+'
+        ),
+        120,
+        "startup splash",
+    )
+    session.wait_for_match(re.escape(SPLASH_HIDDEN_TOKEN), 120, "splash hidden")
+    splash_shown = session.find(re.escape(SPLASH_SHOWN_TOKEN)).start()
+    splash_hidden = session.find(re.escape(SPLASH_HIDDEN_TOKEN)).start()
+    window_created = session.find(re.escape(EDITOR_WINDOW_CREATED_TOKEN)).start()
+    assert splash_shown < splash_hidden < window_created, (
+        "the splash's lines came out of order: shown at {}, hidden at {}, window "
+        "created at {}".format(splash_shown, splash_hidden, window_created)
+    )
+    print_ok("the startup splash was shown and hidden")
     session.wait_for_match(log_layout.message_then_fields_pattern(re.escape(SCENE_SURFACE_TOKEN), r"\s+surface=1\s+detached=false"),
         120,
         "scene surface",
@@ -54,6 +77,20 @@ def run_startup_and_hover_steps(state: StepState) -> None:
     match = re.search(r"entities=(\d+)\s+systems=(\d+)", rows)
     assert match and int(match.group(1)) > 0, f"no entities in the rows: {rows}"
     print_ok(f"shell loaded, {rows}")
+
+    # A scene view is placed only where the dock says its tab's body is. The
+    # default layout's rectangle is the fallback posture's placement alone, so
+    # a run with a loaded shell must never reach it: a view put there is a view
+    # that jumps to a guessed position and back, which is what a window resize
+    # looked like before the placements came from the dock's rectangles.
+    default_placements = occurrence_count(session, re.escape(SCENE_DEFAULT_PLACEMENT_TOKEN))
+    assert default_placements == 0, (
+        "a scene view was placed at the default layout's rectangle {} time(s) with the "
+        "shell loaded; its position must come from the dock's rectangles".format(
+            default_placements
+        )
+    )
+    print_ok("no scene view was placed at the default rectangle")
 
     # A misspelled verb must be refused at once: the session raises on the
     # channel's rejection line instead of the suite waiting out its

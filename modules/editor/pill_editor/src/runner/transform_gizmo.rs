@@ -1038,6 +1038,11 @@ impl EditorWindow {
         self.cancel_marquee(reason);
         self.press_pick = None;
         self.left_down.fill(false);
+        // The button's release is going to another window, so a border-band
+        // resize would never be told the press ended.
+        self.left_button_down = false;
+        self.press_pointer = None;
+        self.end_resize_drag(reason);
         self.set_hovered_handle(self.active_view, None);
     }
 

@@ -331,7 +331,8 @@ fn expand_element_menu(engine: &mut Engine, batch: &mut crate::commands::Pending
     batch.commands = expanded;
 }
 
-/// Moves the shared selection with the file a batch moved or deleted.
+/// Moves the shared selection with the file a batch moved, deleted or
+/// created.
 /// The selection follows the disk instead of being recorded as a step, so an
 /// undo never has to replay a selection change to keep the two in agreement.
 /// A command that failed is skipped: a move refused because its destination
@@ -345,6 +346,17 @@ fn follow_selection(
         if failed_command_indices.contains(&index) {
             continue;
         }
+        // Where a create put its file is resolved before the selection is
+        // borrowed, because the registry it reads comes from the same world.
+        let created = match command {
+            EditorCommand::CreateStandaloneAsset {
+                type_name,
+                folder,
+                name,
+                ..
+            } => created_asset_path(engine, type_name, folder, name),
+            _ => None,
+        };
         let world = engine.world_mut();
         let Some(selection) = world.get_resource_mut::<EditorSelection>() else {
             break;
@@ -370,9 +382,39 @@ fn follow_selection(
                     "[editor] selection cleared with the delete"
                 );
             }
+            // A create always takes the selection: the new file is what the
+            // person is about to edit, whatever was selected before.
+            EditorCommand::CreateStandaloneAsset { .. } => {
+                let Some(created) = created else {
+                    continue;
+                };
+                selection.asset = Some(created.clone());
+                pill_core::info!(
+                    target: telemetry_target::EDITOR,
+                    path = created.as_str(),
+                    "[editor] selection followed the create"
+                );
+            }
             _ => {}
         }
     }
+}
+
+/// The path a create wrote, in the form the listing names it.
+///
+/// `None` when the type is not registered or the folder or name is refused:
+/// such a create cannot have applied, so there is nothing to select.
+fn created_asset_path(
+    engine: &Engine,
+    type_name: &str,
+    folder: &str,
+    name: &str,
+) -> Option<String> {
+    let world = engine.world();
+    let registry = world.get_resource::<pill_engine::ImportRegistry>()?;
+    let relative =
+        crate::editor_state::standalone_destination(registry, type_name, folder, name).ok()?;
+    Some(crate::editor_state::asset_slash(&relative))
 }
 
 /// Whether one command changes files on disk.
@@ -591,6 +633,100 @@ mod tests {
         let mut engine = engine();
         let drain_outcome = apply_pending(&mut engine, 0);
         assert_eq!(drain_outcome, DrainOutcome::default());
+    }
+
+    /// A create puts its file in the selection whatever was selected before,
+    /// and a create that could not run leaves the selection alone. Deleting
+    /// the file takes the selection with it, which is also what undoing a
+    /// create does.
+    #[test]
+    fn the_selection_follows_the_create() {
+        let _mount = crate::test_support::asset_mount_lock();
+        let asset_directory = std::env::temp_dir().join(format!(
+            "pill-editor-drain-create-selection-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&asset_directory);
+        std::fs::create_dir_all(&asset_directory).unwrap();
+        pill_engine::asset_store::mount_directory(&asset_directory);
+
+        let mut engine = engine();
+        pill_ui_theme::register(engine.world_mut());
+        let selected_asset = |engine: &Engine| {
+            engine
+                .world()
+                .get_resource::<EditorSelection>()
+                .and_then(|selection| selection.asset.clone())
+        };
+        let queue_batch = |engine: &mut Engine, commands: Vec<EditorCommand>| {
+            let world = engine.world_mut();
+            let pending = world
+                .get_resource_mut::<PendingEditorCommands>()
+                .expect("the test engine carries the queue");
+            pending.push(commands);
+        };
+        queue_batch(
+            &mut engine,
+            vec![EditorCommand::SetSelection {
+                entities: Vec::new(),
+                asset: Some("something_else.theme".to_string()),
+            }],
+        );
+        apply_pending(&mut engine, 0);
+
+        // Refused: the folder is not there, so nothing was written and the
+        // selection stays where it was.
+        queue_batch(
+            &mut engine,
+            vec![EditorCommand::CreateStandaloneAsset {
+                type_name: "pill_ui_theme::ThemeOverrides".to_string(),
+                folder: "missing".to_string(),
+                name: "probe".to_string(),
+                overwrite: None,
+            }],
+        );
+        apply_pending(&mut engine, 0);
+        assert_eq!(
+            selected_asset(&engine).as_deref(),
+            Some("something_else.theme"),
+            "a refused create must not point the selection at a file that is not there"
+        );
+
+        // Applied: the file exists, so the selection is the file.
+        queue_batch(
+            &mut engine,
+            vec![EditorCommand::CreateStandaloneAsset {
+                type_name: "pill_ui_theme::ThemeOverrides".to_string(),
+                folder: String::new(),
+                name: "probe".to_string(),
+                overwrite: None,
+            }],
+        );
+        apply_pending(&mut engine, 0);
+        assert!(
+            asset_directory.join("probe.theme").exists(),
+            "the create writes the file"
+        );
+        assert_eq!(
+            selected_asset(&engine).as_deref(),
+            Some("probe.theme"),
+            "the created asset is what the person is about to edit"
+        );
+
+        queue_batch(
+            &mut engine,
+            vec![EditorCommand::DeleteAssetFile {
+                path: "probe.theme".to_string(),
+            }],
+        );
+        apply_pending(&mut engine, 0);
+        assert_eq!(
+            selected_asset(&engine),
+            None,
+            "the selection cannot stay on a file that is gone"
+        );
+
+        let _ = std::fs::remove_dir_all(&asset_directory);
     }
 
     #[test]

@@ -278,7 +278,7 @@ pub fn draw_placed_command(
         }
         None => {
             let response = ui.add_enabled(enabled, egui::Button::new(label.as_str()));
-            let response = response.on_hover_text(hover_text.as_str());
+            let response = kit::tooltip::on_hover_text(response, hover_text.as_str());
             if response.clicked() && enabled {
                 invocations.push(CommandInvocation {
                     id: command.id.clone(),
@@ -336,7 +336,7 @@ pub fn draw_placed_menu_row(
         enabled,
         icons::IconButton::new(icon, label.as_str()).active(checked),
     );
-    let response = response.on_hover_text(hover_text.as_str());
+    let response = kit::tooltip::on_hover_text(response, hover_text.as_str());
     if response.clicked() && enabled {
         invocations.push(CommandInvocation {
             id: command.id.clone(),
@@ -376,7 +376,7 @@ pub fn hover_with(response: egui::Response, enabled: bool, text: &str) -> egui::
     } else {
         response
     };
-    response.on_hover_text(text)
+    kit::tooltip::on_hover_text(response, text)
 }
 
 /// Logs one placed command's button when it moved, so a suite can click it.

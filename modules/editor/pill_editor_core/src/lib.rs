@@ -165,6 +165,9 @@ pub mod scene_workflow;
 pub mod scripted;
 /// The egui shell's long-lived session state.
 pub mod session;
+/// The start-up and quit splash: spinner, one section per module, and the line
+/// naming the module being worked on.
+pub mod splash;
 /// Polling the editor's state files for changes.
 pub mod state_watch;
 /// The editor's egui theme.
@@ -181,6 +184,8 @@ pub mod tools;
 pub mod unsaved_work;
 /// The viewport state a callback reads.
 pub mod viewport;
+/// The pointer-driven resize of the editor's main window.
+pub mod window_resize;
 
 // =============================================================================
 // Test Support

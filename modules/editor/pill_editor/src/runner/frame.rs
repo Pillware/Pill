@@ -39,6 +39,7 @@ impl EditorWindow {
         self.frame_index += 1;
         let frame_started = Instant::now();
         self.begin_frame(frame_started);
+        self.apply_window_size();
         self.publish_frame_inputs();
         self.service_editor_requests();
         self.publish_frame_resources();
@@ -96,6 +97,9 @@ impl EditorWindow {
     /// record is filled here, before the pass that reads it. The host's notices
     /// and the open scene's title are reported here as well.
     pub(super) fn publish_frame_inputs(&mut self) {
+        // A border-band resize in flight follows this frame's pointer first, so
+        // everything below reads the size it leaves behind.
+        self.step_resize_drag();
         // Step 2: the window events the focus rule routed to the game's window
         // become engine input events. The editor's own windows feed the shell's
         // egui pass instead, so neither side sees the other's keys and clicks.

@@ -359,6 +359,22 @@ pub fn published(rgba: [u8; 4]) -> Color32 {
     Color32::from_rgba_unmultiplied(rgba[0], rgba[1], rgba[2], rgba[3])
 }
 
+/// Two roles mixed, `along` being how far from `from` towards `to` (0..=1).
+///
+/// A gradient between two theme colours is not a token of its own, so the
+/// mixing lives here with the token-to-egui conversion: the one place allowed
+/// to build a colour, and the place a caller looks for the roles it may use.
+pub fn mix(from: Color32, to: Color32, along: f32) -> Color32 {
+    let along = along.clamp(0.0, 1.0);
+    let channel = |a: u8, b: u8| (f32::from(a) * (1.0 - along) + f32::from(b) * along) as u8;
+    Color32::from_rgba_unmultiplied(
+        channel(from.r(), to.r()),
+        channel(from.g(), to.g()),
+        channel(from.b(), to.b()),
+        channel(from.a(), to.a()),
+    )
+}
+
 /// Paints the selected row's tinted background and its left accent bar over
 /// `rect`.
 ///

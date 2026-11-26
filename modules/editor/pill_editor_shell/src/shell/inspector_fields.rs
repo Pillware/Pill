@@ -636,13 +636,14 @@ pub fn inspector_asset_row(
             session.asset_search.clear();
         }
         button_rects = Some((response.rect, response.interact_rect));
-        if ui
-            .add_enabled_ui(!matches!(label, AssetReferenceLabel::Unset), |ui| {
+        if kit::tooltip::on_hover_text(
+            ui.add_enabled_ui(!matches!(label, AssetReferenceLabel::Unset), |ui| {
                 ui.add_sized(side_button_size(), egui::Button::new("x").small())
             })
-            .inner
-            .on_hover_text("Clear the reference")
-            .clicked()
+            .inner,
+            "Clear the reference",
+        )
+        .clicked()
         {
             chosen = Some(None);
         }
@@ -657,94 +658,96 @@ pub fn inspector_asset_row(
     if session.asset_picker.as_deref() == Some(key.as_str()) {
         if let Some((rect, _)) = button_rects {
             let picker_id = egui::Id::new(("pill_editor_shell.asset_picker", key.as_str()));
-            let popup =
-                floating_popup(
-                    ui,
-                    picker_id,
-                    rect,
-                    rect.width().max(180.0),
-                    overlay_regions,
-                    &mut |ui| {
-                        ui.add(
-                            egui::TextEdit::singleline(&mut session.asset_search)
-                                .hint_text("Search assets")
-                                .desired_width(f32::INFINITY),
-                        );
-                        let search = session.asset_search.to_lowercase();
-                        let (files, built) = inspector::picker_candidates(
-                            row_input.assets,
-                            row_input.engine_assets,
-                            row_input.asset_type,
-                        );
-                        egui::ScrollArea::vertical()
-                            .max_height(ASSET_PICKER_HEIGHT)
-                            .show(ui, |ui| {
-                                if ui.selectable_label(false, "None").clicked() {
-                                    chosen = Some(None);
-                                }
-                                for candidate in files.into_iter().filter(|candidate| {
-                                    candidate.path.to_lowercase().contains(&search)
-                                }) {
-                                    let current = matches!(&label, AssetReferenceLabel::Named(name)
+            let popup = floating_popup(
+                ui,
+                picker_id,
+                rect,
+                rect.width().max(180.0),
+                overlay_regions,
+                &mut |ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut session.asset_search)
+                            .hint_text("Search assets")
+                            .desired_width(f32::INFINITY),
+                    );
+                    let search = session.asset_search.to_lowercase();
+                    let (files, built) = inspector::picker_candidates(
+                        row_input.assets,
+                        row_input.engine_assets,
+                        row_input.asset_type,
+                    );
+                    egui::ScrollArea::vertical()
+                        .max_height(ASSET_PICKER_HEIGHT)
+                        .show(ui, |ui| {
+                            if ui.selectable_label(false, "None").clicked() {
+                                chosen = Some(None);
+                            }
+                            for candidate in files
+                                .into_iter()
+                                .filter(|candidate| candidate.path.to_lowercase().contains(&search))
+                            {
+                                let current = matches!(&label, AssetReferenceLabel::Named(name)
                                     if *name == candidate.path);
-                                    ui.horizontal(|ui| {
-                                        // A row under a module root is a file the
-                                        // engine ships, not one of the project's.
-                                        // The badge is the only sign of that: a
-                                        // module's resource path reads like any
-                                        // other path.
-                                        let from_module = !candidate.root.is_empty();
-                                        if from_module {
-                                            engine_badge(ui);
-                                        }
-                                        let mut row = ui.selectable_label(current, &candidate.path);
-                                        if from_module {
-                                            row = row.on_hover_text(format!(
-                                                "Shipped with the {} module",
-                                                candidate.root
-                                            ));
-                                        }
-                                        if row.clicked() {
-                                            chosen = Some(Some(candidate.path.clone()));
-                                        }
-                                        // The same "show in the Assets panel" button
-                                        // the asset-settings picker offers. The
-                                        // picker stays open, so looking an asset up
-                                        // does not throw the edit away.
-                                        if ui
-                                            .small_button("o")
-                                            .on_hover_text("Show this asset in the Assets panel")
-                                            .clicked()
-                                        {
-                                            pending.focus_asset(candidate.key());
-                                        }
-                                    });
-                                }
-                                // The store's own assets, built in code, which no
-                                // folder walk finds. A row is picked by its guid
-                                // when it has one, and otherwise by the name it was
-                                // added under; the field write resolves either one
-                                // through the store.
-                                for candidate in built.into_iter().filter(|candidate| {
-                                    candidate.name.to_lowercase().contains(&search)
-                                }) {
-                                    let current = matches!(&label, AssetReferenceLabel::Named(name)
-                                    if *name == candidate.name);
-                                    ui.horizontal(|ui| {
+                                ui.horizontal(|ui| {
+                                    // A row under a module root is a file the
+                                    // engine ships, not one of the project's.
+                                    // The badge is the only sign of that: a
+                                    // module's resource path reads like any
+                                    // other path.
+                                    let from_module = !candidate.root.is_empty();
+                                    if from_module {
                                         engine_badge(ui);
-                                        if ui.selectable_label(current, &candidate.name).clicked() {
-                                            chosen = Some(Some(
-                                                candidate
-                                                    .guid
-                                                    .clone()
-                                                    .unwrap_or_else(|| candidate.name.clone()),
-                                            ));
-                                        }
-                                    });
-                                }
-                            });
-                    },
-                );
+                                    }
+                                    let mut row = ui.selectable_label(current, &candidate.path);
+                                    if from_module {
+                                        row = kit::tooltip::on_hover_text(
+                                            row,
+                                            format!("Shipped with the {} module", candidate.root),
+                                        );
+                                    }
+                                    if row.clicked() {
+                                        chosen = Some(Some(candidate.path.clone()));
+                                    }
+                                    // The same "show in the Assets panel" button
+                                    // the asset-settings picker offers. The
+                                    // picker stays open, so looking an asset up
+                                    // does not throw the edit away.
+                                    if kit::tooltip::on_hover_text(
+                                        ui.small_button("o"),
+                                        "Show this asset in the Assets panel",
+                                    )
+                                    .clicked()
+                                    {
+                                        pending.focus_asset(candidate.key());
+                                    }
+                                });
+                            }
+                            // The store's own assets, built in code, which no
+                            // folder walk finds. A row is picked by its guid
+                            // when it has one, and otherwise by the name it was
+                            // added under; the field write resolves either one
+                            // through the store.
+                            for candidate in built
+                                .into_iter()
+                                .filter(|candidate| candidate.name.to_lowercase().contains(&search))
+                            {
+                                let current = matches!(&label, AssetReferenceLabel::Named(name)
+                                    if *name == candidate.name);
+                                ui.horizontal(|ui| {
+                                    engine_badge(ui);
+                                    if ui.selectable_label(current, &candidate.name).clicked() {
+                                        chosen = Some(Some(
+                                            candidate
+                                                .guid
+                                                .clone()
+                                                .unwrap_or_else(|| candidate.name.clone()),
+                                        ));
+                                    }
+                                });
+                            }
+                        });
+                },
+            );
             // A press outside the picker closes it, a rule the popup helper
             // applies to every picker. The press that opened this one landed on
             // the row, so it does not close it again.
@@ -856,20 +859,22 @@ pub fn inspector_entity_row(
             session.entity_search.clear();
         }
         button_rects = Some((response.rect, response.interact_rect));
-        if ui
-            .add_sized(side_button_size(), egui::Button::new("+").small())
-            .on_hover_text("Pick the reference by clicking it in the scene")
-            .clicked()
+        if kit::tooltip::on_hover_text(
+            ui.add_sized(side_button_size(), egui::Button::new("+").small()),
+            "Pick the reference by clicking it in the scene",
+        )
+        .clicked()
         {
             scene_pick_armed = true;
         }
-        if ui
-            .add_enabled_ui(!matches!(label, EntityReferenceLabel::Unset), |ui| {
+        if kit::tooltip::on_hover_text(
+            ui.add_enabled_ui(!matches!(label, EntityReferenceLabel::Unset), |ui| {
                 ui.add_sized(side_button_size(), egui::Button::new("x").small())
             })
-            .inner
-            .on_hover_text("Clear the reference")
-            .clicked()
+            .inner,
+            "Clear the reference",
+        )
+        .clicked()
         {
             chosen = Some(None);
         }

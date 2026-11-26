@@ -65,6 +65,10 @@ pill_editor_core = { path = "../pill_editor_core" }
 pill_ui_theme = { path = "../../ui/pill_ui_theme" }
 # The asset settings documents the Inspector's asset rows edit are JSON.
 serde_json = "1"
+# The window icon, decoded from the PNG this executable embeds. The workspace
+# lock already resolves `png` for the renderer's preview textures, so this adds
+# no download to a build and keeps `--offline` builds working.
+png = "0.18"
 
 [target.'cfg(windows)'.dependencies]
 # The composition overlay and the popup placement (Stage 21, D23/D24): the

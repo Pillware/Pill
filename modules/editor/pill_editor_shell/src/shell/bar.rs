@@ -286,9 +286,11 @@ pub fn play_toolbar(
 /// The label is the action's word (`Play`, `Stop`, `Pause`, `Resume`, `Step`)
 /// and the tooltip carries the chord, because the bar has no room for one.
 pub fn play_button(ui: &mut egui::Ui, label: &str, shortcut: &str) -> bool {
-    ui.add(egui::Button::new(label))
-        .on_hover_text(format!("{label} ({shortcut})"))
-        .clicked()
+    kit::tooltip::on_hover_text(
+        ui.add(egui::Button::new(label)),
+        format!("{label} ({shortcut})"),
+    )
+    .clicked()
 }
 
 /// Queues one play control's command, unrecorded, and logs the press.

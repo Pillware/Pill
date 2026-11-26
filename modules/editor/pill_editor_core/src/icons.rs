@@ -149,11 +149,13 @@ pub enum Icon {
     Sphere,
     /// Angle brackets: a shader or another source file.
     Code,
+    /// A plain ring: the entity the Inspector describes.
+    Circle,
 }
 
 impl Icon {
     /// Every icon, in declaration order.
-    pub const ALL: [Icon; 37] = [
+    pub const ALL: [Icon; 38] = [
         Icon::Cube,
         Icon::CubeTransparent,
         Icon::MonitorPlay,
@@ -191,6 +193,7 @@ impl Icon {
         Icon::Image,
         Icon::Sphere,
         Icon::Code,
+        Icon::Circle,
     ];
 
     /// The icon's codepoint in the vendored fonts: the regular font draws
@@ -234,6 +237,7 @@ impl Icon {
             Icon::Image => 0xe2ca,
             Icon::Sphere => 0xee66,
             Icon::Code => 0xe1bc,
+            Icon::Circle => 0xe18a,
         }
     }
 
@@ -277,6 +281,7 @@ impl Icon {
             Icon::Image => "image",
             Icon::Sphere => "sphere",
             Icon::Code => "code",
+            Icon::Circle => "circle",
         }
     }
 
@@ -557,6 +562,17 @@ mod tests {
                 icon.codepoint() + 1
             );
         }
+    }
+
+    /// The plain ring the Inspector's header draws, pinned to the number and
+    /// the package name the Phosphor stylesheets give it: an edit to either is
+    /// a deliberate one, and `every_icon_is_in_the_vendored_fonts` proves both
+    /// faces carry the pair.
+    #[test]
+    fn the_circle_is_the_packages_circle() {
+        assert_eq!(Icon::Circle.name(), "circle");
+        assert_eq!(Icon::Circle.codepoint(), 0xe18a);
+        assert_eq!(Icon::Circle.duotone(), ('\u{e18a}', '\u{e18b}'));
     }
 
     /// Checks that the inline form starts with the icon's line art and ends

@@ -16,8 +16,16 @@
 //! concern. The fields are `pub(super)` so those modules can read them; a
 //! getter for each field would only wrap plain data.
 
+// Standard library
+use std::cell::RefCell;
+use std::rc::Rc;
+
 // Current crate
 use super::*;
+
+use super::splash_window::{
+    SplashWindow, CLOSING_SPLASH_DELAY_SECONDS, STARTUP_SPLASH_DELAY_SECONDS,
+};
 
 // =============================================================================
 // Types
@@ -273,6 +281,18 @@ pub(super) struct EditorWindow {
     pub(super) overlay_placement: Option<(i32, i32, u32, u32)>,
     /// The main window's client size in physical pixels.
     pub(super) size: (u32, u32),
+    /// The size the surfaces are configured for, last applied. A size the
+    /// window reports reaches them once, on the frame that draws at it, so a
+    /// burst of size events costs one reconfiguration.
+    pub(super) applied_size: Option<(u32, u32)>,
+    /// The border-band resize the pointer is driving, while the button is held.
+    pub(super) resize_drag: Option<pill_editor_core::window_resize::ResizeDrag>,
+    /// Where the left button went down, in the client area's physical pixels.
+    /// A border-band resize anchors here: the shell reports the band's drag only
+    /// after the pointer has moved, and the window has to follow from the press.
+    pub(super) press_pointer: Option<pill_core::math::Vector2f>,
+    /// Whether the left button is held down.
+    pub(super) left_button_down: bool,
     /// The window's scale factor: how many physical pixels one logical point
     /// covers.
     pub(super) scale_factor: f32,
@@ -481,7 +501,8 @@ impl EditorWindow {
             .with_inner_size(INITIAL_WINDOW_SIZE)
             .with_min_inner_size(MINIMUM_WINDOW_SIZE)
             .with_decorations(false)
-            .with_resizable(true);
+            .with_resizable(true)
+            .with_window_icon(window_icon::window_icon());
         let window = Arc::new(
             event_loop
                 .create_window(window_attributes)
@@ -586,12 +607,43 @@ impl EditorWindow {
         window.set_title(&format!("Pill - {}", host_configuration.name));
         let project_name: std::sync::Arc<str> =
             std::sync::Arc::from(host_configuration.name.as_str());
-        let mut host = pill_development_host::setup_rendering(
-            host_configuration,
-            primary_window,
-            primary_size.0,
-            primary_size.1,
-        )?;
+        let (mut host, overlay, egui_renderer) = {
+            // Step 4c: the splash. The host's start blocks in a cargo wait, so
+            // it draws from inside it: the tick must outlive the call, which
+            // makes it own the overlay and the egui renderer until the host
+            // returns them for the editor's own frame.
+            let splash = Rc::new(RefCell::new(SplashWindow::new(
+                size,
+                scale_factor,
+                overlay,
+                device.clone(),
+                queue.clone(),
+                egui_renderer,
+                STARTUP_SPLASH_DELAY_SECONDS,
+            )));
+            let drawing = Rc::clone(&splash);
+            let tick = Box::new(move || drawing.borrow_mut().draw());
+            let host = pill_development_host::setup_rendering_with_tick(
+                host_configuration,
+                primary_window,
+                primary_size.0,
+                primary_size.1,
+                tick,
+            )?;
+            let splash = Rc::into_inner(splash)
+                .expect("the splash tick is dropped with the start")
+                .into_inner();
+            let showed = splash.showed();
+            let (overlay, egui_renderer) = splash.into_ui_parts();
+            if showed {
+                info!(
+                    target: telemetry_target::EDITOR,
+                    modules = pill_development_host::startup_progress::snapshot().modules.len(),
+                    "[editor] splash hidden"
+                );
+            }
+            (host, overlay, egui_renderer)
+        };
         info!(
             target: telemetry_target::EDITOR,
             detached = game_surface.as_ref().is_some_and(|game| game.detached),
@@ -787,6 +839,10 @@ impl EditorWindow {
             focused: true,
             overlay_placement: None,
             size,
+            applied_size: Some(size),
+            resize_drag: None,
+            press_pointer: None,
+            left_button_down: false,
             scale_factor,
             frame_index: 0,
             last_frame_time: None,
@@ -828,7 +884,6 @@ impl EditorWindow {
             module_markers: std::collections::HashMap::new(),
             panel_requests: Vec::new(),
         };
-        editor.place_views();
         // A scripted run also gets the fixture tool the element framework's
         // suites drive. It is registered like any other tool, through the
         // registry, and a person's editor never sees it in the toolbox.
@@ -843,5 +898,54 @@ impl EditorWindow {
             "[editor] window created"
         );
         Ok(editor)
+    }
+
+    /// End the session, drawing the closing splash while the host releases
+    /// its modules.
+    ///
+    /// The release is what dropping the host does, so the window drops inside
+    /// the tick: each module reports itself in its destructor, and every
+    /// report draws one frame of the bar with that module's line. A release
+    /// quicker than the splash's threshold draws nothing, so a quit that has
+    /// nothing to do still looks like a quit.
+    ///
+    /// The window outlives the overlay and the egui renderer here: the splash
+    /// owns both while the modules go, and drops them before the last handle
+    /// to the window is released.
+    pub(super) fn close(mut self) {
+        let window = Arc::clone(&self.window);
+        let renderer = std::mem::replace(
+            &mut self.egui_renderer,
+            egui_wgpu::Renderer::new(
+                &self.device,
+                EDITOR_FORMAT,
+                egui_wgpu::RendererOptions::default(),
+            ),
+        );
+        let splash = Rc::new(RefCell::new(SplashWindow::new(
+            self.size,
+            self.scale_factor,
+            self.overlay.take(),
+            self.device.clone(),
+            self.queue.clone(),
+            renderer,
+            CLOSING_SPLASH_DELAY_SECONDS,
+        )));
+        let drawing = Rc::clone(&splash);
+        let tick = Box::new(move || drawing.borrow_mut().draw());
+        pill_development_host::startup_progress::with_tick(tick, move || drop(self));
+        let splash = Rc::into_inner(splash)
+            .expect("the closing splash tick is dropped with the host")
+            .into_inner();
+        let showed = splash.showed();
+        drop(splash.into_ui_parts());
+        if showed {
+            info!(
+                target: telemetry_target::EDITOR,
+                modules = pill_development_host::startup_progress::snapshot().modules.len(),
+                "[editor] splash hidden"
+            );
+        }
+        drop(window);
     }
 }

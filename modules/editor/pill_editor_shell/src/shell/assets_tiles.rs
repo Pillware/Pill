@@ -203,9 +203,10 @@ pub fn asset_tile(
         );
         ui.painter()
             .circle_filled(dot_center, ASSETS_TILE_UNSAVED_DOT_RADIUS, style::warning());
-        response
-            .clone()
-            .on_hover_text("Unsaved changes in memory (not written to the file yet)");
+        kit::tooltip::on_hover_text(
+            response.clone(),
+            "Unsaved changes in memory (not written to the file yet)",
+        );
     }
     // Step 2: draw the preview image, or the type icon alone, then the name
     // under it.
@@ -348,7 +349,7 @@ pub fn asset_tile(
             );
         }
     }
-    response.on_hover_text(key.as_str());
+    kit::tooltip::on_hover_text(response, key.as_str());
 }
 
 /// Returns the icon a row's tile draws: a folder icon, an asset type's icon by
@@ -611,12 +612,11 @@ pub fn asset_dialog_window(
                         if overwrite.is_none() {
                             *overwrite = Some(keep);
                         }
-                        if ui
-                            .checkbox(&mut keep, "Keep the existing guid")
-                            .on_hover_text(
-                                "Other assets that reference this one stay valid. Untick to write a fresh guid.",
-                            )
-                            .changed()
+                        if kit::tooltip::on_hover_text(
+                            ui.checkbox(&mut keep, "Keep the existing guid"),
+                            "Other assets that reference this one stay valid. Untick to write a fresh guid.",
+                        )
+                        .changed()
                         {
                             *overwrite = Some(keep);
                         }

@@ -787,6 +787,9 @@ pub struct InspectorSession {
     pub command_rects: LoggedRects<String>,
     /// The Add Component button's last logged rectangle.
     pub add_rect: Option<Rect>,
+    /// The header row's last logged geometry: the circle and the entity's
+    /// name, with the sizes that drew them.
+    pub header_row: Option<(Rect, f32, f32)>,
     /// Whether the Add Component popup is open.
     pub add_open: bool,
     /// The addable entries' last logged rectangles, keyed by type name.

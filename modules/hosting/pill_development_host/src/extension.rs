@@ -225,6 +225,7 @@ mod slot {
                 }
             }
 
+            crate::startup_progress::mark_loaded(extension_config.name.as_str());
             info!(
                 target: telemetry_target::HOT_RELOAD,
                 module = extension_config.name.as_str(),
@@ -589,6 +590,7 @@ mod slot {
         /// That is the riskiest moment in a host's life, so each module names
         /// itself in the log before its images go.
         fn drop(&mut self) {
+            crate::startup_progress::mark_unloading(self.extension_config.name.as_str());
             info!(
                 target: telemetry_target::HOT_RELOAD,
                 module = %self.extension_config.name,

@@ -437,8 +437,7 @@ pub fn enum_edit(
 /// tooltip, so it never pushes the row wider.
 pub fn read_only_row(ui: &mut egui::Ui, label: &str, value: &str) {
     row(ui, label, Some(label), &mut |ui| {
-        ui.add(egui::Label::new(value).truncate())
-            .on_hover_text(value);
+        kit::tooltip::on_hover_text(ui.add(egui::Label::new(value).truncate()), value);
     });
 }
 

@@ -1400,6 +1400,10 @@ pub(crate) fn run_build_command(
                 seconds: timeout.as_secs(),
             });
         }
+        // A frontend that asked to draw while it waits gets one frame per
+        // poll: the splash's spinner turns and its bar fills from the progress
+        // the build reports.
+        crate::startup_progress::tick();
         std::thread::sleep(WATCHDOG_POLL_INTERVAL);
     };
 

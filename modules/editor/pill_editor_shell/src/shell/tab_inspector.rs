@@ -195,9 +195,14 @@ pub fn inspector_tab(
     }
 }
 
-/// Draws the Inspector's top row: the selected entity's name, and the Add
-/// Component button aligned to the right. The button opens and closes the
+/// Draws the Inspector's top row: the entity's circle icon and name, and the
+/// Add Component button aligned to the right. The button opens and closes the
 /// popup that lists the components it can attach.
+///
+/// The row is the panel's subject rather than one more row, so the name takes
+/// the theme's heading style - a project's `.theme` decides its size - and the
+/// circle is drawn at that size beside it, in the same duotone form the
+/// component sections use.
 pub fn inspector_header(
     ui: &mut egui::Ui,
     snapshot: &EditorSnapshot,
@@ -206,16 +211,36 @@ pub fn inspector_header(
     overlay_regions: &mut Vec<ShellRect>,
     session: &mut InspectorSession,
 ) {
+    let mut row_geometry = None;
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(format!("entity {}", detail.entity)).strong());
+        // Step 1: the entity's mark, sized to the heading so the two line up
+        // when a theme changes the heading.
+        let heading = egui::TextStyle::Heading.resolve(ui.style());
+        let (icon_rect, _) =
+            ui.allocate_exact_size(egui::vec2(heading.size, heading.size), egui::Sense::hover());
+        icons::paint_duotone(
+            ui.painter(),
+            icon_rect,
+            icons::Icon::Circle,
+            ui.visuals().text_color(),
+        );
+        // Step 2: the name, in the heading style and strong enough to read as
+        // the panel's title.
+        let name = ui.label(
+            egui::RichText::new(format!("entity {}", detail.entity))
+                .text_style(egui::TextStyle::Heading)
+                .strong(),
+        );
+        row_geometry = Some((icon_rect.union(name.rect), icon_rect.width(), heading.size));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let button = ui
-                .add(
+            let button = kit::tooltip::on_hover_text(
+                ui.add(
                     icons::IconButton::new(icons::Icon::Plus, "")
                         .fixed_size(egui::vec2(24.0, 18.0))
                         .active(session.add_open),
-                )
-                .on_hover_text("Add Component");
+                ),
+                "Add Component",
+            );
             if session
                 .add_rect
                 .is_none_or(|logged| !LoggedRects::<String>::same_placement(logged, button.rect))
@@ -241,6 +266,30 @@ pub fn inspector_header(
             }
         });
     });
+    // Step 3: report the row once per placement, so a suite can prove the
+    // heading drew the circle at its own size without reading pixels.
+    if let Some((rect, icon_width, font_size)) = row_geometry {
+        if session
+            .header_row
+            .is_none_or(|(logged, logged_icon, logged_font)| {
+                !LoggedRects::<String>::same_placement(logged, rect)
+                    || logged_icon != icon_width
+                    || logged_font != font_size
+            })
+        {
+            session.header_row = Some((rect, icon_width, font_size));
+            pill_core::debug!(
+                target: telemetry_target::EDITOR,
+                x = rect.min.x,
+                y = rect.min.y,
+                width = rect.width(),
+                height = rect.height(),
+                icon = icon_width,
+                font = font_size,
+                "[editor] inspector header"
+            );
+        }
+    }
     if session.add_open {
         inspector_add_popup(ui, snapshot, detail, pending, overlay_regions, session);
     }

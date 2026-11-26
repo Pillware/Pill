@@ -47,10 +47,11 @@ pub fn console_tab(
         ui.label("Level");
         for (level, name) in CONSOLE_LEVELS {
             let selected = filters.minimum_level == level;
-            if ui
-                .add(egui::Button::selectable(selected, name))
-                .on_hover_text(format!("show {name} and above"))
-                .clicked()
+            if kit::tooltip::on_hover_text(
+                ui.add(egui::Button::selectable(selected, name)),
+                format!("show {name} and above"),
+            )
+            .clicked()
             {
                 filters.minimum_level = level;
             }

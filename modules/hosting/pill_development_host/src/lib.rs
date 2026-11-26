@@ -71,6 +71,9 @@ mod project_module;
 mod project_settings;
 /// The steps every reload runs once its replacement image is loaded.
 mod reload;
+/// The start-up and quit progress a frontend polls: one entry per module and
+/// how far its build, load or release has got.
+pub mod startup_progress;
 /// What this run's watchers are allowed to do, read from the `PILL_*` switches.
 mod switches;
 
@@ -160,4 +163,4 @@ pub use pill_renderer_api::{RenderViewport, RendererError};
 /// Rendering-only entry points: the windowed host, and attaching the renderer
 /// to a frontend's window.
 #[cfg(feature = "rendering")]
-pub use runtime::{attach_renderer, setup_rendering, RenderingHost};
+pub use runtime::{attach_renderer, setup_rendering, setup_rendering_with_tick, RenderingHost};

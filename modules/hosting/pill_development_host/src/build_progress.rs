@@ -62,6 +62,12 @@ struct BuildPlan {
 /// `project_name` is the project's display name. Any earlier plan is replaced.
 pub(crate) fn announce_plan(project_name: &str, builds: Vec<PlannedBuild>) {
     info!(target: telemetry_target::HOT_RELOAD, "{}", render_plan(project_name, &builds));
+    // The same plan is what a frontend's splash draws: one section per module.
+    let planned: Vec<(String, &'static str)> = builds
+        .iter()
+        .map(|build| (build.module.clone(), build.kind))
+        .collect();
+    crate::startup_progress::publish_plan(&planned);
     // A panic while the lock was held poisons it. Ignore that: the plan holds
     // only counts and names, and dropping it would cost the rest of the start
     // its progress, so the poisoned value is used as it is.
@@ -96,6 +102,7 @@ pub(crate) fn announce_build(module: &str) -> bool {
     };
     current.pending_builds.remove(pending_build_index);
     current.started_build_count += 1;
+    crate::startup_progress::mark_building(module);
     info!(
         target: telemetry_target::HOT_RELOAD,
         step = current.started_build_count,

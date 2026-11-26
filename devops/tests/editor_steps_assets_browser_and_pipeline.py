@@ -30,6 +30,8 @@ from core.editor_log_tokens import (
     HISTORY_REDO_TOKEN,
     HISTORY_UNDO_TOKEN,
     SELECTION_CLEARED_TOKEN,
+    SELECTION_DUMP_TOKEN,
+    SELECTION_FOLLOWED_CREATE_TOKEN,
     SELECTION_FOLLOWED_TOKEN,
     STANDALONE_TYPE_TOKEN,
 )
@@ -295,6 +297,30 @@ def run_assets_browser_and_pipeline_steps(state: StepState) -> None:
     )
     wait_applied(session, applied_before, "create applied")
     wait_for_path(session, created_path, True, 30, f"created {created}")
+    # The created file is the selection, without a click: a create carries it
+    # the way a move does, so the tile is current and the Inspector already
+    # shows the new document.
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(SELECTION_FOLLOWED_CREATE_TOKEN), r'\s+path="'
+        )
+        + re.escape(created)
+        + r'"',
+        30,
+        "the selection followed the create",
+        begin,
+    )
+    session.send("dump selection")
+    session.wait(
+        log_layout.message_then_fields_pattern(
+            re.escape(SELECTION_DUMP_TOKEN), r'\s+count=\d+\s+asset="'
+        )
+        + re.escape(created)
+        + r'"',
+        30,
+        "the created asset is the selection",
+    )
+    print_ok(f"the created {created} is the selection")
     before = listed
     session.wait_until(
         lambda _text: True if listing_count() >= before + 1 else None,
@@ -330,19 +356,10 @@ def run_assets_browser_and_pipeline_steps(state: StepState) -> None:
 
     # Rename through the dialog: the field arrives with the stem in it,
     # the typed name keeps the extension, and the selection follows the
-    # move.
+    # move. Nothing selects the created file first: the create and its redo
+    # both left it selected.
     renamed = f"textures/s16_renamed.{extension}"
     renamed_path = state.asset_root / "textures" / f"s16_renamed.{extension}"
-    begin = session.length()
-    session.send(f"select asset {created}")
-    session.wait(
-        log_layout.message_then_fields_pattern(re.escape(ASSET_SELECTED_TOKEN), r'\s+path="')
-        + re.escape(created)
-        + r'"',
-        30,
-        "the created row selected",
-        begin,
-    )
     begin = session.length()
     session.send("toolbar rename")
     session.wait(

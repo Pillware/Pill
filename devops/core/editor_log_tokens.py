@@ -24,6 +24,11 @@ from core.paths import executable_name
 # applied, a shortcut ran (or had no action yet), and a scripted line the editor
 # refused.
 EDITOR_WINDOW_CREATED_TOKEN = "[editor] window created"
+# The start-up and quit splash: drawn while the host builds and loads the
+# project, and again while it releases the modules on the way out. The first
+# line carries the posture (`loading` or `closing`) and the bar's section count.
+SPLASH_SHOWN_TOKEN = "[editor] splash shown"
+SPLASH_HIDDEN_TOKEN = "[editor] splash hidden"
 # The command registry's report after a keybindings file lands: the preset it
 # activated, how many overrides it resolved, and one line per chord two
 # commands answer to.
@@ -54,6 +59,9 @@ SCENE_SURFACE_TOKEN = "[editor] scene surface attached"
 SCENE_VIEW_ADDED_TOKEN = "[editor] scene view added"
 SCENE_VIEW_OPENED_TOKEN = "[editor] scene view opened"
 SCENE_SURFACE_RESIZED_TOKEN = "[editor] scene surface resized"
+SCENE_DEFAULT_PLACEMENT_TOKEN = "[editor] scene view placed at the default rectangle"
+WINDOW_RESIZE_STARTED_TOKEN = "[editor] window resize drag started"
+WINDOW_RESIZE_ENDED_TOKEN = "[editor] window resize drag ended"
 FRAME_HEARTBEAT_TOKEN = "[editor] frame heartbeat"
 FRAME_IDLE_TOKEN = "[editor] frame idle"
 CURSOR_ICON_TOKEN = "[editor] cursor icon"
@@ -269,6 +277,9 @@ INSPECTOR_SECTION_RECT_TOKEN = "[editor] inspector section rect"
 INSPECTOR_ADD_RECT_TOKEN = "[editor] inspector add rect"
 INSPECTOR_ADD_OPENED_TOKEN = "[editor] inspector add opened"
 INSPECTOR_ADD_ENTRY_TOKEN = "[editor] inspector add entry"
+# The Inspector's top row: the circle icon and the entity's name, with the
+# font size the theme's heading style gave the name.
+INSPECTOR_HEADER_TOKEN = "[editor] inspector header"
 INSPECTOR_ROW_TOKEN = "[editor] inspector row"
 ACTIVE_VIEWPORT_TOKEN = "[editor] active viewport"
 CAMERA_GESTURE_TOKEN = "[editor] camera gesture applied"
@@ -327,6 +338,7 @@ CONTEXT_MENU_TOKEN = "[editor] context menu"
 NEW_ENTITY_TOKEN = "[editor] new entity queued"
 DELETE_ENTITY_TOKEN = "[editor] delete entity queued"
 SELECTION_FOLLOWED_TOKEN = "[editor] selection followed the move"
+SELECTION_FOLLOWED_CREATE_TOKEN = "[editor] selection followed the create"
 SELECTION_CLEARED_TOKEN = "[editor] selection cleared with the delete"
 COMMAND_FAILED_TOKEN = "[editor] command failed"
 PREFERENCES_DUMP_TOKEN = "[test] preferences"

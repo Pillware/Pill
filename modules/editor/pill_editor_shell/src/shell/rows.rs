@@ -129,7 +129,7 @@ pub fn label_cell_in(
         )
         .add(egui::Label::new(egui::RichText::new(label).color(style::text_muted())).truncate());
     if let Some(tooltip) = tooltip {
-        label_response = label_response.on_hover_text(tooltip);
+        label_response = kit::tooltip::on_hover_text(label_response, tooltip);
     }
     label_response
 }

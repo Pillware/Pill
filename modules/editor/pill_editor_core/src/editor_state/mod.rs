@@ -1682,8 +1682,37 @@ fn refuse_module_resource(command: &EditorCommand, relative_path: &Path) -> Resu
 }
 
 /// Returns `path` as a `/`-separated string, the form asset commands carry.
-fn asset_slash(path: &Path) -> String {
+pub(crate) fn asset_slash(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
+}
+
+/// Resolves the path a standalone create writes, relative to the asset
+/// directory.
+///
+/// The type's registered extension decides the file's name, and `folder` is
+/// the `/`-separated folder below the asset directory, empty for its root.
+/// The apply places the file by this path and the drain selects what was
+/// created by it, so the two cannot disagree about what a create is called.
+pub(crate) fn standalone_destination(
+    registry: &pill_engine::ImportRegistry,
+    type_name: &str,
+    folder: &str,
+    name: &str,
+) -> Result<PathBuf, String> {
+    let extension = registry
+        .standalone_types()
+        .into_iter()
+        .find(|(registered, _)| registered == type_name)
+        .map(|(_, extension)| extension)
+        .ok_or_else(|| format!("`{type_name}` is not a standalone asset type"))?;
+    let folder = folder.trim().trim_matches('/');
+    let relative_folder = if folder.is_empty() {
+        PathBuf::new()
+    } else {
+        pill_engine::asset_metadata::checked_relative(folder)?
+    };
+    let file_name = pill_engine::asset_metadata::standalone_file_name(name, &extension)?;
+    Ok(relative_folder.join(&file_name))
 }
 
 /// Returns the guid a standalone asset's own header holds, when its bytes are a

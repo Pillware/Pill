@@ -1163,6 +1163,15 @@ impl EditorWindow {
             // next frame carries must match what the shell just saw.
             self.shell_cursor = Some(position);
         }
+        if let InputEvent::MouseButton {
+            button: MouseButton::Left,
+            state,
+        } = &event
+        {
+            // A scripted press anchors a caption-strip resize the same way a
+            // real one does.
+            self.track_left_button(*state);
+        }
         self.host
             .host_mut()
             .engine_mut()

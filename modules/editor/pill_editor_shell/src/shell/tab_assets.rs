@@ -171,11 +171,14 @@ pub fn assets_tree(
                         }
                     }
                 }
-                root_row.on_hover_text(if root.read_only {
-                    "The extensions' resources: listed and inspected, never written"
-                } else {
-                    "The project's asset root"
-                });
+                kit::tooltip::on_hover_text(
+                    root_row,
+                    if root.read_only {
+                        "The extensions' resources: listed and inspected, never written"
+                    } else {
+                        "The project's asset root"
+                    },
+                );
                 folder_tree_rows(
                     ui,
                     &snapshot.assets,
@@ -271,7 +274,7 @@ pub fn folder_tree_rows(
                 }
             }
             let row_rect = label.rect;
-            label.on_hover_text(path);
+            kit::tooltip::on_hover_text(label, path);
             remember_tree_row_rect(browser, path, row_rect);
         });
         if caret_clicked {
@@ -330,11 +333,13 @@ pub fn assets_zoom_bar(ui: &mut egui::Ui, assets: &[AssetListing], browser: &mut
         let item_count = browser::children(assets, &browser.folder).len();
         ui.label(egui::RichText::new(format!("{item_count} items")).weak());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add(
-                egui::Slider::new(&mut browser.tile_size, browser::TILE_SIZE_RANGE)
-                    .show_value(false),
-            )
-            .on_hover_text("Tile size");
+            kit::tooltip::on_hover_text(
+                ui.add(
+                    egui::Slider::new(&mut browser.tile_size, browser::TILE_SIZE_RANGE)
+                        .show_value(false),
+                ),
+                "Tile size",
+            );
         });
     });
 }

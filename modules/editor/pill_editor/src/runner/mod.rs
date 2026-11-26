@@ -110,7 +110,7 @@ use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::raw_window_handle::HasWindowHandle;
-use winit::window::{ResizeDirection, Window, WindowId};
+use winit::window::{Window, WindowId};
 
 // Current crate
 use crate::frontend::EditorError;
@@ -134,9 +134,11 @@ mod editor_window;
 mod element_tools;
 mod frame;
 mod scripted_channel;
+mod splash_window;
 mod tool_fixture;
 mod transform_gizmo;
 mod window_frame;
+mod window_icon;
 mod windows;
 
 // What this file's methods use from the module that owns the element half.
@@ -487,9 +489,16 @@ pub fn run(log_buffer: pill_core::telemetry::capture::LogBuffer) -> Result<(), E
         log_buffer,
         wake_timer: WakeTimer::new(),
     };
-    event_loop
+    let outcome = event_loop
         .run_app(&mut application)
-        .map_err(|source| EditorError::EventLoopRun { source })
+        .map_err(|source| EditorError::EventLoopRun { source });
+    // Step 3: the quit. The host releases its modules as it drops, and the
+    // closing splash draws that release, so the window goes through its own
+    // shutdown rather than simply being dropped with the application.
+    if let Some(editor) = application.editor_window.take() {
+        editor.close();
+    }
+    outcome
 }
 
 /// The `winit` application: one editor window, created on resume.
@@ -742,6 +751,13 @@ impl ApplicationHandler for EditorApplication {
                             editor.shell_cursor = Some(*position);
                         }
                         InputEvent::CursorLeft => editor.shell_cursor = None,
+                        // The main window's left button is what a caption-strip
+                        // resize anchors on; a press in a scene or game window
+                        // belongs to that viewport's own gestures.
+                        InputEvent::MouseButton {
+                            button: MouseButton::Left,
+                            state,
+                        } if is_main => editor.track_left_button(*state),
                         _ => {}
                     }
                     // A pointer over the shell's own drawing belongs to the
@@ -3853,16 +3869,18 @@ impl EditorWindow {
     /// Applies the window controls the caption strip asked for.
     ///
     /// The shell draws the title strip, but the window is this executable's, so
-    /// each press arrives here: a drag or a resize starts the platform's own
-    /// loop, which follows the pointer until the button is released, and the
-    /// three buttons minimize, maximize or restore, and close.
+    /// each press arrives here: a drag starts the platform's own move loop,
+    /// which follows the pointer until the button is released; a resize starts
+    /// a drag the frame loop steps instead, so the UI keeps drawing while the
+    /// window changes size; and the three buttons minimize, maximize or
+    /// restore, and close.
     ///
     /// Close takes the same path as File > Quit Editor: unsaved module work
     /// opens the quit prompt instead of ending the session.
     fn apply_window_controls(&mut self, controls: &[WindowControl]) {
-        // The platform's drag and resize loops swallow the pointer until it is
-        // released, so only the first one of a frame can be applied; a second
-        // would start a second loop in the same press.
+        // The platform's move loop swallows the pointer until it is released,
+        // so only the first drag of a frame can be applied; a second would
+        // start a second loop in the same press.
         let mut pointer_handed_over = false;
         for control in controls {
             match *control {
@@ -3883,28 +3901,7 @@ impl EditorWindow {
                         );
                     }
                 }
-                WindowControl::Resize(edge) => {
-                    if pointer_handed_over {
-                        continue;
-                    }
-                    pointer_handed_over = true;
-                    debug!(
-                        target: telemetry_target::EDITOR,
-                        edge = edge.name(),
-                        "[editor] window resize"
-                    );
-                    if let Err(error) = self
-                        .window
-                        .drag_resize_window(windows::resize_direction(edge))
-                    {
-                        warn!(
-                            target: telemetry_target::EDITOR,
-                            edge = edge.name(),
-                            error = %error,
-                            "[editor] the window resize was refused"
-                        );
-                    }
-                }
+                WindowControl::Resize(edge) => self.begin_resize_drag(edge),
                 WindowControl::Minimize => {
                     info!(
                         target: telemetry_target::EDITOR,

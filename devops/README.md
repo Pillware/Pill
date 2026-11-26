@@ -142,6 +142,40 @@ is described in `AGENTS.md` ("The theme pipeline"), and
 channel: Play, an edit that Stop discards, the restore epoch, the Game tab focus,
 the history's depth and the pause/step controls.
 
+### The editor's application icon
+
+The icon is the Pill mark - the white pill the menu bar draws - on a black
+disc. `tools/generate_app_icons.py` renders it from
+`modules/editor/pill_editor_core/assets/pill_mark.svg` into
+`modules/editor/pill_editor/res/`, four files per colourway: a multi-size
+`.ico`, an `.icns`, a 256-pixel PNG for Linux and the 64-pixel PNG the window
+embeds. Each colourway is named after its disc: the `_black` set
+(`pill_editor_black.ico`, ..., `pill_editor_window_icon_black.png`) is the one
+the editor ships, and the `_white` set is its inverse - a black pill on a white
+disc. The generator is standard-library only and its PNG writer is its own, so
+a re-run is byte-identical; `tests/test_app_icons.py` regenerates both sets,
+compares them byte for byte, checks every format's structure and each small
+icon's pixels, and - with `--check-exe` - asks Windows what icons a built
+`pill_editor.exe` carries.
+
+Each platform reads its picture from somewhere else, so each is carried
+separately:
+
+- **Windows** takes the taskbar icon from the executable's own resource. The
+  editor's build script writes the `.res` from the `.ico` and links it
+  (`modules/editor/pill_editor/build.rs`), and the window is created with the
+  same mark as its icon.
+- **Linux** takes it from a desktop entry, matched to the window's app id.
+- **macOS** takes it from the bundle: a bare executable gets no Dock icon.
+
+`tools/package_editor_app.py --platform linux|macos --output <dir> [--binary
+<path>]` writes those trees: `pill_editor.desktop` (named for the app id winit
+derives from the process name) beside the installed PNG under
+`share/icons/hicolor/256x256/apps`, or `Pill.app/Contents` with the `.icns` and
+an `Info.plist` naming it. `tests/test_app_packaging.py` reads both back:
+the entry's keys and file name, the plist's keys, and that every file they name
+is in the tree and is the generated one.
+
 ## core/
 
 Shared code, imported by everything above. Nothing here executes a measurement

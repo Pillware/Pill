@@ -146,21 +146,9 @@ pub(super) fn apply(
                 .world_mut()
                 .get_resource_mut::<pill_engine::AssetManager>()
                 .ok_or_else(|| format!("{command:?}: the engine has no AssetManager"))?;
-            let extension = registry
-                .standalone_types()
-                .into_iter()
-                .find(|(registered, _)| registered == type_name)
-                .map(|(_, extension)| extension)
-                .ok_or_else(|| {
-                    format!("{command:?}: `{type_name}` is not a standalone asset type")
-                })?;
-            let folder = folder.trim().trim_matches('/');
-            let relative_folder = if folder.is_empty() {
-                PathBuf::new()
-            } else {
-                pill_engine::asset_metadata::checked_relative(folder)
-                    .map_err(|message| format!("{command:?}: {message}"))?
-            };
+            let relative = standalone_destination(&registry, type_name, folder, name)
+                .map_err(|message| format!("{command:?}: {message}"))?;
+            let relative_folder = relative.parent().map(Path::to_path_buf).unwrap_or_default();
             let directory = root.join(&relative_folder);
             if !directory.is_dir() {
                 // The asset root is created when the project has none yet.
@@ -176,9 +164,6 @@ pub(super) fn apply(
                     ));
                 }
             }
-            let file_name = pill_engine::asset_metadata::standalone_file_name(name, &extension)
-                .map_err(|message| format!("{command:?}: {message}"))?;
-            let relative = relative_folder.join(&file_name);
             refuse_module_resource(command, &relative)?;
             let destination = root.join(&relative);
             // An existing file is replaced only when the dialog said so,

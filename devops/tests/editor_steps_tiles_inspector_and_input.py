@@ -27,6 +27,7 @@ from core.editor_log_tokens import (
     HISTORY_PUSH_TOKEN,
     HISTORY_REDO_TOKEN,
     HISTORY_UNDO_TOKEN,
+    INSPECTOR_HEADER_TOKEN,
     KEY_INJECTED_TOKEN,
     MENU_ACTION_TOKEN,
     OUTLINE_CLEARED_TOKEN,
@@ -62,6 +63,11 @@ from editor_step_support import (
     wait_for_frame_advance,
     write_preview_material,
 )
+
+# The default theme's body text size. The Inspector's header has to draw its
+# name larger than a body row - that is the change this area proves - so the
+# comparison is against the size every other row uses.
+BODY_TEXT_SIZE = 13.0
 
 
 def run_tiles_inspector_and_input_steps(state: StepState) -> None:
@@ -298,6 +304,31 @@ def run_tiles_inspector_and_input_steps(state: StepState) -> None:
         "the inspector saw no components: {}".format(match.group(0))
     )
     print_ok(f"inspector detail {state.picked_entity} components={match.group(1)}")
+
+    # The Inspector's top row is its subject: a circle icon at the heading's
+    # size beside the entity's name, which is drawn larger than a body row.
+    # The shell reports the row's geometry and both sizes once per placement.
+    header_pattern = (
+        log_layout.message_then_fields_pattern(
+            re.escape(INSPECTOR_HEADER_TOKEN),
+            r"\s+x=(-?[0-9.]+)\s+y=(-?[0-9.]+)\s+width=([0-9.]+)\s+height=([0-9.]+)"
+            r"\s+icon=([0-9.]+)\s+font=([0-9.]+)",
+        )
+    )
+    # The header reports once per placement, so it may already be in the log
+    # from an earlier frame: search the whole log rather than from `begin`.
+    header_line = session.wait(header_pattern, 60, "the inspector header")
+    header = session.find(header_pattern, 0)
+    icon_size = float(header.group(5))
+    font_size = float(header.group(6))
+    assert icon_size > 0.0, f"the header drew no circle: {header.group(0)}"
+    assert icon_size == font_size, (
+        "the circle is not the heading's size: {}".format(header.group(0))
+    )
+    assert font_size > BODY_TEXT_SIZE, (
+        "the entity's name is not larger than a body row: {}".format(header.group(0))
+    )
+    print_ok(f"inspector header circle={icon_size} name={font_size}")
 
     # The Inspector's rows are editable: a scripted `edit
     # array` mirrors a DragValue edit on the entity's component fields.

@@ -62,19 +62,155 @@ impl EditorWindow {
     }
 
     /// Handles a resize of the main window, in physical pixels.
+    ///
+    /// The new size is only recorded here. [`Self::apply_window_size`] gives it
+    /// to the surfaces on the frame that draws at it, so a burst of size events
+    /// costs one reconfiguration and the frame that follows places the scene
+    /// views from the shell's own rectangles.
     pub(super) fn resize(&mut self, width: u32, height: u32) {
         self.size = (width.max(1), height.max(1));
-        // The primary surface lives on the game view's window when one
-        // exists, so only the fallback posture sizes the primary from the
-        // main window.
+    }
+
+    /// Applies the size the window reported to the surfaces that follow it.
+    ///
+    /// The primary surface lives on the game view's window when one exists, so
+    /// only the fallback posture sizes the primary from the main window. The
+    /// overlay is a surface of its own and always follows the main window; its
+    /// own `resize` ignores a size it already carries.
+    pub(super) fn apply_window_size(&mut self) {
+        let size = self.size;
+        if self.applied_size == Some(size) {
+            return;
+        }
+        self.applied_size = Some(size);
         if self.game_surface.is_none() {
-            self.host
-                .resize_surface(SurfaceId::PRIMARY, width.max(1), height.max(1));
+            self.host.resize_surface(SurfaceId::PRIMARY, size.0, size.1);
         }
         if let Some(overlay) = &mut self.overlay {
-            overlay.resize(&self.device, self.size);
+            overlay.resize(&self.device, size);
         }
-        self.place_views();
+    }
+
+    /// Starts a resize the pointer drives, for the band the shell reported.
+    ///
+    /// The drag anchors on the point the button went down at, not on where the
+    /// pointer has already moved to: the shell reports a band's drag only once
+    /// the pointer has travelled, and the window must follow from the press.
+    /// The whole window rectangle is taken as its client area, because the
+    /// main window has no system frame.
+    pub(super) fn begin_resize_drag(&mut self, edge: WindowEdge) {
+        if self.resize_drag.is_some() {
+            return;
+        }
+        let Some(press) = self.press_pointer else {
+            return;
+        };
+        let Ok(position) = self.window.outer_position() else {
+            return;
+        };
+        let size = self.window.outer_size();
+        let press_pointer = (
+            position.x + press.x.round() as i32,
+            position.y + press.y.round() as i32,
+        );
+        let rect = pill_editor_core::window_resize::WindowRect {
+            x: position.x,
+            y: position.y,
+            width: size.width,
+            height: size.height,
+        };
+        self.resize_drag = Some(pill_editor_core::window_resize::ResizeDrag::new(
+            edge,
+            rect,
+            press_pointer,
+            min_window_size(self.scale_factor),
+        ));
+        info!(
+            target: telemetry_target::EDITOR,
+            edge = edge.name(),
+            "[editor] window resize drag started"
+        );
+    }
+
+    /// Moves the window with the pointer while a border-band drag is held.
+    ///
+    /// The pointer arrives in the client area's pixels, so the screen point is
+    /// rebuilt from the window's own origin every frame: a west or north drag
+    /// moves that origin, and a point carried over from the previous frame
+    /// would make the dragged edge run away from the pointer. A drag whose
+    /// button is no longer held ends here, because the release can arrive
+    /// between two frames.
+    pub(super) fn step_resize_drag(&mut self) {
+        if self.resize_drag.is_none() {
+            return;
+        }
+        if !self.left_button_down {
+            self.end_resize_drag("released");
+            return;
+        }
+        let Some(drag) = self.resize_drag else {
+            return;
+        };
+        let Some(cursor) = self.shell_cursor else {
+            return;
+        };
+        let Ok(position) = self.window.outer_position() else {
+            return;
+        };
+        let pointer = (
+            position.x + cursor.x.round() as i32,
+            position.y + cursor.y.round() as i32,
+        );
+        let target = drag.rect_at(pointer);
+        // Step 1: the position, for the edges that move the window. It goes
+        // first so the size request lands on the rectangle meant here.
+        if position.x != target.x || position.y != target.y {
+            self.window
+                .set_outer_position(PhysicalPosition::new(target.x, target.y));
+        }
+        // Step 2: the size. Asking for the size the window already has would
+        // only wake it for a change that is not one.
+        let current = self.window.outer_size();
+        if current.width != target.width || current.height != target.height {
+            let _ = self
+                .window
+                .request_inner_size(PhysicalSize::new(target.width, target.height));
+        }
+    }
+
+    /// Ends the resize drag in flight, if there is one.
+    pub(super) fn end_resize_drag(&mut self, reason: &str) {
+        let Some(drag) = self.resize_drag.take() else {
+            return;
+        };
+        let size = self.window.inner_size();
+        info!(
+            target: telemetry_target::EDITOR,
+            edge = drag.edge().name(),
+            reason,
+            width = size.width,
+            height = size.height,
+            "[editor] window resize drag ended"
+        );
+    }
+
+    /// Records where the left button went down, and whether it is still held.
+    ///
+    /// A border-band resize anchors on the press point: the shell reports the
+    /// band's drag only once the pointer has travelled past its own drag
+    /// threshold, so the window has to follow from where the button went down
+    /// rather than from where the pointer already is.
+    pub(super) fn track_left_button(&mut self, state: ButtonState) {
+        match state {
+            ButtonState::Pressed => {
+                self.left_button_down = true;
+                self.press_pointer = self.shell_cursor;
+            }
+            ButtonState::Released => {
+                self.left_button_down = false;
+                self.press_pointer = None;
+            }
+        }
     }
 
     /// Returns one scene view's client-area origin, in the main window's
@@ -184,10 +320,14 @@ impl EditorWindow {
     /// Places the first scene view at the dock's default layout's center
     /// inside the client area.
     ///
-    /// It runs at startup and on a resize, before the shell's own scene
-    /// rectangles are applied. The other views stay hidden until their tabs
-    /// show.
-    pub(super) fn place_views(&mut self) {
+    /// This is the fallback posture's placement, used while no shell module is
+    /// loaded: nothing reports the dock's rectangles then, and the scene has to
+    /// show somewhere behind the safe-mode panel. A loaded shell always reports
+    /// them, and its rectangles are the only other placement this editor makes,
+    /// so a view is never put at a guessed rectangle and then moved off it on
+    /// the next frame - which is what made a resize look like the view jumping.
+    /// The other views stay hidden until their tabs show.
+    fn place_default_view(&mut self) {
         let Some(Some(scene)) = self.views.first_mut() else {
             return;
         };
@@ -199,6 +339,18 @@ impl EditorWindow {
         let left = side + margin;
         let width = (width - 2 * side - 2 * margin).max(1) as u32;
         let height = (height - top - bottom - margin).max(1) as u32;
+        // Logged when it moves, not per frame: the fallback posture places the
+        // view on every frame it draws.
+        if scene.window.placed != Some((left, top, width, height)) {
+            debug!(
+                target: telemetry_target::EDITOR,
+                x = left,
+                y = top,
+                width,
+                height,
+                "[editor] scene view placed at the default rectangle"
+            );
+        }
         scene.window.place(left, top, width, height, false);
     }
 
@@ -750,12 +902,14 @@ impl EditorWindow {
         // frame about to be drawn is where it must already be.
         self.sync_floating_overlay();
         // Step 1: take the shell's frame, or build the runner's own minimal
-        // one while no shell module is loaded.
-        let frame = {
+        // one while no shell module is loaded. Only the shell reports the
+        // dock's rectangles, so which one this is decides whether a scene view
+        // may be placed at all.
+        let (frame, dock_reported_rects) = {
             let world = self.host.host_mut().engine_mut().world_mut();
             match world.get_resource_mut::<EguiShellFrame>() {
-                Some(resource) => std::mem::take(&mut *resource),
-                None => self.fallback_frame(),
+                Some(resource) => (std::mem::take(&mut *resource), true),
+                None => (self.fallback_frame(), false),
             }
         };
         let EguiShellFrame {
@@ -792,17 +946,28 @@ impl EditorWindow {
         // holds, so a view the person just added opens here, on the frame its
         // tab first drew. A view whose tab was closed keeps its window hidden
         // instead of losing it.
+        //
+        // Without a dock - the fallback UI of a shell that never loaded - no
+        // rectangle is reported, and the first view keeps the default layout's
+        // centre so the scene still shows behind the panel. That placement is
+        // only for this posture: any other placement comes from the rectangle
+        // the dock reported, so a view is never put at a guessed position and
+        // then moved off it on the next frame.
         self.ensure_scene_views(scene_rects.len(), event_loop);
-        for view in 0..self.views.len() {
-            match scene_rects.get(view).copied().flatten() {
-                Some(rect) => {
-                    // A view whose tab is back in the dock needs its child
-                    // window again.
-                    self.ensure_view_docked(event_loop, view);
-                    self.place_view_rect(view, rect);
+        if dock_reported_rects {
+            for view in 0..self.views.len() {
+                match scene_rects.get(view).copied().flatten() {
+                    Some(rect) => {
+                        // A view whose tab is back in the dock needs its child
+                        // window again.
+                        self.ensure_view_docked(event_loop, view);
+                        self.place_view_rect(view, rect);
+                    }
+                    None => self.hide_view(view),
                 }
-                None => self.hide_view(view),
             }
+        } else {
+            self.place_default_view();
         }
         // The game viewport follows its own rectangle the same way: the
         // primary surface's window sits where the Game tab's body is, and it
@@ -968,10 +1133,11 @@ impl EditorWindow {
                         });
                 }
                 ui.separator();
-                if ui
-                    .add(egui::Button::new("Retry"))
-                    .on_hover_text("rebuild and load the shell module")
-                    .clicked()
+                if pill_editor_core::kit::tooltip::on_hover_text(
+                    ui.add(egui::Button::new("Retry")),
+                    "rebuild and load the shell module",
+                )
+                .clicked()
                 {
                     retry_requested = true;
                 }
@@ -1143,17 +1309,18 @@ impl EditorWindow {
 // Free Functions
 // =============================================================================
 
-/// Returns the platform's resize direction for one edge or corner of the
-/// caption strip's resize bands.
-pub(super) fn resize_direction(edge: WindowEdge) -> ResizeDirection {
-    match edge {
-        WindowEdge::West => ResizeDirection::West,
-        WindowEdge::East => ResizeDirection::East,
-        WindowEdge::North => ResizeDirection::North,
-        WindowEdge::South => ResizeDirection::South,
-        WindowEdge::NorthWest => ResizeDirection::NorthWest,
-        WindowEdge::NorthEast => ResizeDirection::NorthEast,
-        WindowEdge::SouthWest => ResizeDirection::SouthWest,
-        WindowEdge::SouthEast => ResizeDirection::SouthEast,
-    }
+/// The smallest window a border-band drag may leave, in logical points.
+///
+/// A pointer-driven drag can otherwise shrink the window below the four-point
+/// band that grabs it, and a window that narrow cannot be pulled back out.
+const MIN_WINDOW_POINTS: (f32, f32) = (320.0, 240.0);
+
+/// Returns the smallest window a border-band drag may leave, in physical
+/// pixels at `scale_factor`.
+fn min_window_size(scale_factor: f32) -> (u32, u32) {
+    let scale = scale_factor.max(1.0);
+    (
+        (MIN_WINDOW_POINTS.0 * scale) as u32,
+        (MIN_WINDOW_POINTS.1 * scale) as u32,
+    )
 }

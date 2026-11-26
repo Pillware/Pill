@@ -128,8 +128,10 @@ pub fn settings_row_label(key: &str) -> String {
 /// The caller draws the container's children one level in, under the heading.
 pub fn settings_heading(ui: &mut egui::Ui, key: &str) {
     let name = settings_row_label(key);
-    ui.label(egui::RichText::new(name).color(style::text_muted()))
-        .on_hover_text(key);
+    kit::tooltip::on_hover_text(
+        ui.label(egui::RichText::new(name).color(style::text_muted())),
+        key,
+    );
 }
 
 /// Draw `add_contents` one settings level in.
@@ -229,11 +231,13 @@ pub fn reference_list_rows(
         let block = ui
             .scope(|ui| {
                 ui.separator();
-                ui.label(
-                    egui::RichText::new(format!("{family} ({})", entries.len()))
-                        .color(style::text_muted()),
-                )
-                .on_hover_text("Drag a row to reorder the list");
+                kit::tooltip::on_hover_text(
+                    ui.label(
+                        egui::RichText::new(format!("{family} ({})", entries.len()))
+                            .color(style::text_muted()),
+                    ),
+                    "Drag a row to reorder the list",
+                );
                 for (index, entry) in entries.iter().enumerate() {
                     let field = list_entry_field(references, &family, index, entry, &target);
                     rows.push(reference_list_entry_row(
@@ -344,7 +348,7 @@ pub fn reference_list_entry_row(
                     )
                     .interact(egui::Sense::drag());
                 handle.dnd_set_drag_payload(drag.clone());
-                handle.on_hover_text("Drag to reorder the list");
+                kit::tooltip::on_hover_text(handle, "Drag to reorder the list");
                 label_gap(ui);
                 let button = ui.add_sized(
                     egui::vec2(picker_width, ROW_HEIGHT),
@@ -375,13 +379,14 @@ pub fn reference_list_entry_row(
                     );
                 }
                 button_rect = Some(button.rect);
-                if ui
-                    .add_sized(
+                if kit::tooltip::on_hover_text(
+                    ui.add_sized(
                         egui::vec2(LIST_REMOVE_WIDTH, ROW_HEIGHT),
                         egui::Button::new("x").small(),
-                    )
-                    .on_hover_text("Remove this entry")
-                    .clicked()
+                    ),
+                    "Remove this entry",
+                )
+                .clicked()
                 {
                     remove_clicked = true;
                 }
@@ -1011,15 +1016,16 @@ pub fn reference_row(
             );
         }
         button_rect = Some(response.rect);
-        let clear = ui
-            .add_enabled_ui(field.guid.is_some(), |ui| {
+        let clear = kit::tooltip::on_hover_text(
+            ui.add_enabled_ui(field.guid.is_some(), |ui| {
                 ui.add_sized(
                     egui::vec2(clear_width, ROW_HEIGHT),
                     egui::Button::new("x").small(),
                 )
             })
-            .inner
-            .on_hover_text("Clear the reference");
+            .inner,
+            "Clear the reference",
+        );
         if clear.clicked() {
             chosen = Some(None);
         }
@@ -1103,7 +1109,8 @@ pub fn reference_picker(
                                 chosen = candidate.guid.clone().map(Some);
                             }
                             if !pickable {
-                                row.response.on_hover_text(
+                                kit::tooltip::on_hover_text(
+                                    row.response,
                                     "Shipped with the engine, so its settings are read-only",
                                 );
                             }
@@ -1113,9 +1120,10 @@ pub fn reference_picker(
                             // stays open, so browsing does not throw the edit
                             // away. A double click also makes the asset the
                             // Inspector's subject and closes the picker.
-                            let focus = ui
-                                .small_button("o")
-                                .on_hover_text("Show this asset in the Assets panel");
+                            let focus = kit::tooltip::on_hover_text(
+                                ui.small_button("o"),
+                                "Show this asset in the Assets panel",
+                            );
                             if focus.double_clicked() {
                                 walk.pending.focus_asset(candidate.key());
                                 walk.session.settings_picker = None;
