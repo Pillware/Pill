@@ -16,12 +16,13 @@ pill_core = { path = "../../engine/pill_core" }
 pill_player = { path = "../../hosting/pill_player", features = ["rendering"] }
 # The engine types the editor runner reads directly (`Engine`, `InputEvent`).
 pill_engine_core = { path = "../../engine/pill_engine_core" }
-# The egui editor's model and boundary types, and egui's own wgpu renderer.
+# The egui editor's model and boundary types.
 pill_editor_core = { path = "../pill_editor_core" }
 # The game frontend's start-up and canvas helpers, shared so the two browser
 # frontends cannot diverge.
 pill_web = { path = "../../frontends/pill_web" }
-egui-wgpu = "0.36.2"
+# Without its defaults: they enable wgpu's WebGL backend, which links wgpu-core, naga and glow.
+egui-wgpu = { version = "0.36.2", default-features = false, features = ["fragile-send-sync-non-atomic-wasm"] }
 # The device the editor's UI canvas is drawn through.
 wgpu = "30.0.0"
 # The canvases' windows and the browser's event loop.
