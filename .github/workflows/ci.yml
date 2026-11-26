@@ -27,7 +27,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  fast:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,7 +52,21 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-about
-      - name: verify.py (every step)
+
+      - name: Install slangc (Linux x86_64)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$SLANG_VERSION" \
+            --repo shader-slang/slang \
+            --dir /tmp/slang
+          unzip -q /tmp/slang/*.zip -d "$RUNNER_TOOL_CACHE/slang"
+          echo "$RUNNER_TOOL_CACHE/slang/bin" >> "$GITHUB_PATH"
+
+      - name: Verify slangc
+        run: slangc -v
+
+      - name: verify.py (quick)
         # One step runs the whole gate, so CI cannot drift from the list.
         # verify.py prints each check as a collapsible log group and writes
         # its PASS/FAIL table to the job summary; --keep-going reports every
