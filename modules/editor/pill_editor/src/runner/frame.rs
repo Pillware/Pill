@@ -157,6 +157,14 @@ impl EditorWindow {
                 ),
                 scale_factor: self.scale_factor,
                 focused: self.focused,
+                // The strip draws the maximize or the restore glyph from this,
+                // and a maximized window registers no resize bands.
+                maximized: self.window.is_maximized(),
+                // This window has no system frame, so the shell draws the
+                // window buttons, the drag zones and the resize bands.
+                has_caption: true,
+                // The strip names the project where a system title bar would.
+                project_name: std::sync::Arc::clone(&self.project_name),
                 time: self.started.elapsed().as_secs_f64(),
                 frames_per_second: self.fps,
                 events,

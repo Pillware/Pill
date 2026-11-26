@@ -76,7 +76,7 @@ use pill_editor_core::preferences::{self, PreferencesView};
 use pill_editor_core::previews;
 use pill_editor_core::problems::{self as problem_parser, Severity};
 use pill_editor_core::project_settings::{ProjectSettingsView, SettingProvenance};
-use pill_editor_core::requests::HistoryRequest;
+use pill_editor_core::requests::{HistoryRequest, WindowControl, WindowEdge};
 use pill_editor_core::scripted::{
     AssetEdit, Dump, KeyChord, PaletteRequest, ScriptedCommand, ScriptedTarget, ToolbarAction,
 };
@@ -110,7 +110,7 @@ use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::raw_window_handle::HasWindowHandle;
-use winit::window::{Window, WindowId};
+use winit::window::{ResizeDirection, Window, WindowId};
 
 // Current crate
 use crate::frontend::EditorError;
@@ -127,8 +127,8 @@ use crate::test_channel::{self, TestChannel};
 use editor_window::{EditorWindow, FontSource, MarqueeDrag, ScriptedDrag, ScriptedDragStage};
 
 // One module per concern: the asset pipeline, the window's state, the frame,
-// the scripted channel, the transform gizmo and the windows. The window's
-// state itself stays in this file.
+// the scripted channel, the transform gizmo, the windows and the window's own
+// frame. The window's state itself stays in this file.
 mod assets_pipeline;
 mod editor_window;
 mod element_tools;
@@ -136,6 +136,7 @@ mod frame;
 mod scripted_channel;
 mod tool_fixture;
 mod transform_gizmo;
+mod window_frame;
 mod windows;
 
 // What this file's methods use from the module that owns the element half.
@@ -3097,6 +3098,10 @@ impl EditorWindow {
         self.theme_layers = merge.layers;
         self.theme_fonts = self.theme_watch.fonts.clone();
         self.theme_generation = self.theme_generation.wrapping_add(1);
+        // The window's own border is part of the look: it takes the new
+        // theme's line colour with every other edge.
+        let border = window_frame::border_for(&pill_editor_core::style::palette_of(&self.theme));
+        window_frame::apply(&self.window, border);
         info!(
             target: telemetry_target::EDITOR,
             layers = %layers_text(&self.theme_layers),
@@ -3828,6 +3833,12 @@ impl EditorWindow {
         for invocation in requests.invocations {
             self.invoke_command(invocation);
         }
+        // The caption strip's window controls. A drag or a resize hands the
+        // pointer to the platform's own loop, so it is applied last, after
+        // every other ask of the frame is in.
+        if !requests.window.is_empty() {
+            self.apply_window_controls(&requests.window);
+        }
         if quit_requested {
             info!(
                 target: telemetry_target::EDITOR,
@@ -3835,6 +3846,93 @@ impl EditorWindow {
             );
             if !self.hold_quit_for_unsaved_work() {
                 self.request_quit();
+            }
+        }
+    }
+
+    /// Applies the window controls the caption strip asked for.
+    ///
+    /// The shell draws the title strip, but the window is this executable's, so
+    /// each press arrives here: a drag or a resize starts the platform's own
+    /// loop, which follows the pointer until the button is released, and the
+    /// three buttons minimize, maximize or restore, and close.
+    ///
+    /// Close takes the same path as File > Quit Editor: unsaved module work
+    /// opens the quit prompt instead of ending the session.
+    fn apply_window_controls(&mut self, controls: &[WindowControl]) {
+        // The platform's drag and resize loops swallow the pointer until it is
+        // released, so only the first one of a frame can be applied; a second
+        // would start a second loop in the same press.
+        let mut pointer_handed_over = false;
+        for control in controls {
+            match *control {
+                WindowControl::Drag => {
+                    if pointer_handed_over {
+                        continue;
+                    }
+                    pointer_handed_over = true;
+                    debug!(
+                        target: telemetry_target::EDITOR,
+                        "[editor] window drag"
+                    );
+                    if let Err(error) = self.window.drag_window() {
+                        warn!(
+                            target: telemetry_target::EDITOR,
+                            error = %error,
+                            "[editor] the window drag was refused"
+                        );
+                    }
+                }
+                WindowControl::Resize(edge) => {
+                    if pointer_handed_over {
+                        continue;
+                    }
+                    pointer_handed_over = true;
+                    debug!(
+                        target: telemetry_target::EDITOR,
+                        edge = edge.name(),
+                        "[editor] window resize"
+                    );
+                    if let Err(error) = self
+                        .window
+                        .drag_resize_window(windows::resize_direction(edge))
+                    {
+                        warn!(
+                            target: telemetry_target::EDITOR,
+                            edge = edge.name(),
+                            error = %error,
+                            "[editor] the window resize was refused"
+                        );
+                    }
+                }
+                WindowControl::Minimize => {
+                    info!(
+                        target: telemetry_target::EDITOR,
+                        control = "minimize",
+                        "[editor] window control"
+                    );
+                    self.window.set_minimized(true);
+                }
+                WindowControl::ToggleMaximize => {
+                    let maximized = self.window.is_maximized();
+                    info!(
+                        target: telemetry_target::EDITOR,
+                        control = "maximize",
+                        maximized = !maximized,
+                        "[editor] window control"
+                    );
+                    self.window.set_maximized(!maximized);
+                }
+                WindowControl::Close => {
+                    info!(
+                        target: telemetry_target::EDITOR,
+                        control = "close",
+                        "[editor] window control"
+                    );
+                    if !self.hold_quit_for_unsaved_work() {
+                        self.request_quit();
+                    }
+                }
             }
         }
     }

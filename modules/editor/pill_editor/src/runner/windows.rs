@@ -1138,3 +1138,22 @@ impl EditorWindow {
         }
     }
 }
+
+// =============================================================================
+// Free Functions
+// =============================================================================
+
+/// Returns the platform's resize direction for one edge or corner of the
+/// caption strip's resize bands.
+pub(super) fn resize_direction(edge: WindowEdge) -> ResizeDirection {
+    match edge {
+        WindowEdge::West => ResizeDirection::West,
+        WindowEdge::East => ResizeDirection::East,
+        WindowEdge::North => ResizeDirection::North,
+        WindowEdge::South => ResizeDirection::South,
+        WindowEdge::NorthWest => ResizeDirection::NorthWest,
+        WindowEdge::NorthEast => ResizeDirection::NorthEast,
+        WindowEdge::SouthWest => ResizeDirection::SouthWest,
+        WindowEdge::SouthEast => ResizeDirection::SouthEast,
+    }
+}

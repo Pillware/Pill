@@ -254,6 +254,9 @@ pub(super) struct EditorWindow {
     pub(super) fallback_theme_generation: u64,
     /// The project directory name the per-project preferences are keyed by.
     pub(super) gizmo_project: Option<String>,
+    /// The project's own name, as its settings file spells it. The window's
+    /// title and the caption strip's right end both name it.
+    pub(super) project_name: std::sync::Arc<str>,
     /// The gizmo settings last written to the preferences file, so an
     /// unchanged tool writes nothing.
     pub(super) gizmo_persisted: Option<GizmoSettings>,
@@ -467,10 +470,18 @@ impl EditorWindow {
     ) -> Result<EditorWindow, EditorError> {
         // Step 1: the main window. A minimum size keeps an accidental drag of
         // the window's own edge from squeezing the dock unusable.
+        //
+        // The window has no system frame: the shell draws the title strip in
+        // the space the frame would take, and the strip's buttons and edges ask
+        // for the move, the resize, the maximize and the close. The window
+        // stays resizable, because the platform's own resize loop is what an
+        // edge drag starts.
         let window_attributes = Window::default_attributes()
             .with_title(pill_editor_core::brand::PILL_EDITOR_WINDOW_TITLE)
             .with_inner_size(INITIAL_WINDOW_SIZE)
-            .with_min_inner_size(MINIMUM_WINDOW_SIZE);
+            .with_min_inner_size(MINIMUM_WINDOW_SIZE)
+            .with_decorations(false)
+            .with_resizable(true);
         let window = Arc::new(
             event_loop
                 .create_window(window_attributes)
@@ -479,6 +490,13 @@ impl EditorWindow {
         let size = window.inner_size();
         let size = (size.width.max(1), size.height.max(1));
         let scale_factor = window.scale_factor() as f32;
+        // Step 1b: the window's own frame. The compositor rounds the corners
+        // and draws the one-pixel border, in the theme's line colour; it runs
+        // again whenever the theme resolves to something new.
+        window_frame::apply(
+            &window,
+            window_frame::border_for(&pill_editor_core::style::palette()),
+        );
         // Step 2: the editor's own instance, adapter and device. The UI is
         // drawn through the overlay surface - composition, or the window
         // surface when composition is refused. Composition is DirectComposition
@@ -566,6 +584,8 @@ impl EditorWindow {
         // spells it; the open scene is the document's state and is reported
         // through the scene-title log instead.
         window.set_title(&format!("Pill - {}", host_configuration.name));
+        let project_name: std::sync::Arc<str> =
+            std::sync::Arc::from(host_configuration.name.as_str());
         let mut host = pill_development_host::setup_rendering(
             host_configuration,
             primary_window,
@@ -761,6 +781,7 @@ impl EditorWindow {
             theme_watch: ThemeWatch::default(),
             fallback_theme_generation: 1,
             gizmo_project,
+            project_name,
             gizmo_persisted: None,
             gizmo_hidden_persisted: None,
             focused: true,

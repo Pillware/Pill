@@ -93,6 +93,11 @@ pub struct PaletteOverrides {
     pub frame: Option<String>,
     /// See [`Palette::panel`](crate::theme::Palette::panel).
     pub panel: Option<String>,
+    /// See [`Palette::caption_accent`](crate::theme::Palette::caption_accent).
+    ///
+    /// This is the line along the caption strip's bottom edge, which a UI shows
+    /// only while something live runs.
+    pub caption_accent: Option<String>,
     /// See [`Palette::panel_raised`](crate::theme::Palette::panel_raised).
     pub panel_raised: Option<String>,
     /// See [`Palette::control`](crate::theme::Palette::control).
@@ -133,10 +138,6 @@ pub struct PaletteOverrides {
     pub log_warn: Option<String>,
     /// See [`Palette::log_error`](crate::theme::Palette::log_error).
     pub log_error: Option<String>,
-    /// See [`Palette::play_tint`](crate::theme::Palette::play_tint).
-    pub play_tint: Option<String>,
-    /// See [`Palette::play_tint_paused`](crate::theme::Palette::play_tint_paused).
-    pub play_tint_paused: Option<String>,
 }
 
 // =============================================================================

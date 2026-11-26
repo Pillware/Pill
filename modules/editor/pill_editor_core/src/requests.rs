@@ -49,6 +49,82 @@ pub struct ShellRequests {
     /// The commands a click asked the owning modules to run, in click order.
     /// The executable moves them into [`crate::commands::CommandInbox`].
     pub invocations: Vec<CommandInvocation>,
+    /// The window controls the caption strip asked for, in the order they were
+    /// pressed. Only the executable owns the window, so a drag of the strip or
+    /// a press of one of its buttons crosses as one of these.
+    pub window: Vec<WindowControl>,
+}
+
+/// One window control the shell's caption strip asked the executable to run.
+///
+/// The shell draws the title strip itself - the editor has no system frame, so
+/// the menu bar sits where the icon and the title used to be - and the window
+/// is the executable's, so each press becomes one of these.
+///
+/// A drag or a resize is handed over while the pointer is still held: the
+/// executable starts the platform's own move or resize loop, which then
+/// follows the pointer without another frame from here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindowControl {
+    /// Move the window while the pointer is held: the strip was dragged.
+    Drag,
+    /// Resize from one edge or corner while the pointer is held.
+    Resize(WindowEdge),
+    /// Minimize the window.
+    Minimize,
+    /// Maximize a restored window, or restore a maximized one.
+    ToggleMaximize,
+    /// Close the window, which is the editor's own quit.
+    Close,
+}
+
+/// The edge or corner a resize starts from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindowEdge {
+    /// The left edge.
+    West,
+    /// The right edge.
+    East,
+    /// The top edge.
+    North,
+    /// The bottom edge.
+    South,
+    /// The top-left corner.
+    NorthWest,
+    /// The top-right corner.
+    NorthEast,
+    /// The bottom-left corner.
+    SouthWest,
+    /// The bottom-right corner.
+    SouthEast,
+}
+
+impl WindowEdge {
+    /// Every edge and corner, in the order a pass draws their strips.
+    pub const ALL: [Self; 8] = [
+        Self::North,
+        Self::South,
+        Self::West,
+        Self::East,
+        Self::NorthWest,
+        Self::NorthEast,
+        Self::SouthWest,
+        Self::SouthEast,
+    ];
+
+    /// Returns the wire name of this edge, for log lines and widget ids.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::West => "west",
+            Self::East => "east",
+            Self::North => "north",
+            Self::South => "south",
+            Self::NorthWest => "north_west",
+            Self::NorthEast => "north_east",
+            Self::SouthWest => "south_west",
+            Self::SouthEast => "south_east",
+        }
+    }
 }
 
 impl ShellRequests {
@@ -74,6 +150,12 @@ impl ShellRequests {
             && self.history.is_empty()
             && self.pending_tab.is_none()
             && self.invocations.is_empty()
+            && self.window.is_empty()
+    }
+
+    /// Queues one window control for the executable.
+    pub fn window_control(&mut self, control: WindowControl) {
+        self.window.push(control);
     }
 }
 
@@ -97,6 +179,7 @@ mod tests {
             history: vec![HistoryRequest::Undo, HistoryRequest::Redo],
             pending_tab: Some(EditorTab::Assets),
             invocations: vec![CommandInvocation::plain("test.run")],
+            window: vec![WindowControl::Close],
         };
         let drained = requests.drain();
         assert_eq!(drained.problem_open, Some(3));
@@ -109,8 +192,21 @@ mod tests {
             drained.invocations,
             vec![CommandInvocation::plain("test.run")]
         );
+        assert_eq!(drained.window, vec![WindowControl::Close]);
         assert!(requests.is_empty());
         assert_eq!(requests, ShellRequests::default());
+    }
+
+    #[test]
+    fn a_window_control_alone_keeps_the_requests_from_reading_empty() {
+        let mut requests = ShellRequests::default();
+        assert!(requests.is_empty());
+        requests.window_control(WindowControl::Resize(WindowEdge::SouthEast));
+        assert!(!requests.is_empty());
+        assert_eq!(
+            requests.window,
+            vec![WindowControl::Resize(WindowEdge::SouthEast)]
+        );
     }
 
     #[test]

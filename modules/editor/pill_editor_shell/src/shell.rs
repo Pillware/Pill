@@ -66,13 +66,44 @@ pub mod bar;
 pub use bar::about_window;
 pub use bar::menu_bar;
 pub use bar::menu_body;
+pub use bar::play_band;
+pub use bar::play_band_corners;
+pub use bar::play_band_rect;
 pub use bar::play_button;
 pub use bar::play_toolbar;
 pub use bar::run_menu_action;
 pub use bar::run_play_control;
 pub use bar::MENU_TITLE_GAP;
+pub use bar::PLAY_BAND_PADDING;
 pub use bar::PLAY_BUTTON_GAP;
 pub use bar::PLAY_TOOLBAR_TOP;
+
+/// The [`caption`] module: the title strip's window buttons, drag zones and
+/// resize bands.
+pub mod caption;
+
+pub use caption::button_cells;
+pub use caption::caption_accent_line;
+pub use caption::caption_accent_rect;
+pub use caption::caption_bar;
+pub use caption::caption_edges;
+pub use caption::caption_strip;
+pub use caption::caption_title;
+pub use caption::caption_title_rect;
+pub use caption::drag_zones;
+pub use caption::edge_cursor;
+pub use caption::edge_strip;
+pub use caption::paint_glyph;
+pub use caption::window_button;
+pub use caption::CaptionButton;
+pub use caption::CAPTION_ACCENT_HEIGHT;
+pub use caption::CAPTION_BUTTON_WIDTH;
+pub use caption::CAPTION_CLOSE_HOVER;
+pub use caption::CAPTION_DRAG_ZONE_MIN;
+pub use caption::CAPTION_GLYPH_SIDE;
+pub use caption::CAPTION_RESIZE_BORDER;
+pub use caption::CAPTION_RESTORE_OFFSET;
+pub use caption::CAPTION_TITLE_GAP;
 
 /// The [`palette`] module: the searchable command popup.
 pub mod palette;
@@ -688,11 +719,6 @@ pub fn run_frame(
             );
         }
     }
-    // The tint the bar and the dock take while a session runs: nothing while
-    // editing, the theme's play colour while playing, and the stronger one
-    // while paused.
-    let play_tint =
-        pill_editor_core::style::play_tint(&snapshot.theme, snapshot.run_mode, snapshot.paused);
     // What the pass could not do while the dock and its tabs were borrowed.
     // Each tab and menu writes its request into this value where it is raised,
     // and `settle_pass` applies it after the pass.
@@ -790,20 +816,20 @@ pub fn run_frame(
             // The menu strip comes first, so the dock and every viewport rectangle
             // it reports start below it.
             menu_bar(ui, menubar, &mark, &mut viewer);
+            // The window has no system frame, so the strip is also its title
+            // bar: the window buttons and the drag zones sit over it. A
+            // frontend whose window somebody else owns draws neither.
+            if shell_input.has_caption {
+                caption_bar(ui.ctx(), menubar, shell_input, &mut viewer);
+            }
             // Tab bars carry the tabs and their close buttons only. With no
             // collapse chevron and no panel-level close-all button, a panel closes
             // exactly when its last tab closes.
             DockArea::new(dock.state_mut())
-                .style({
-                    let mut dock_style =
-                        style::dock_style(ui.ctx().global_style().as_ref(), &style::palette());
-                    // While a session runs the tab strips carry the play tint, so
-                    // the whole frame reads as the game's.
-                    if let Some(tint) = play_tint {
-                        dock_style.tab_bar.bg_fill = tint;
-                    }
-                    dock_style
-                })
+                .style(style::dock_style(
+                    ui.ctx().global_style().as_ref(),
+                    &style::palette(),
+                ))
                 .show_leaf_collapse_buttons(false)
                 .show_leaf_close_all_buttons(false)
                 .show_inside(ui, &mut viewer);
@@ -874,6 +900,11 @@ pub fn run_frame(
             // The quit prompt sits above everything while the executable holds
             // a quit back for unsaved work.
             pill_editor_shell::shell::quit_prompt_window(ui.ctx(), unsaved_work);
+            // The window's own edge: a drag there resizes it, last in the pass
+            // so the bands sit above everything the window's contents draw.
+            if shell_input.has_caption {
+                caption_edges(ui.ctx(), shell_input, &mut viewer);
+            }
         })
     };
     let mut shell_frame = frame_from_output(&context, output);

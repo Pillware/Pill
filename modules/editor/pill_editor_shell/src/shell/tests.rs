@@ -2395,3 +2395,163 @@ fn each_place_offers_only_the_commands_placed_there() {
         "the same command stays on another view"
     );
 }
+
+// =============================================================================
+// Caption strip
+// =============================================================================
+
+/// The three window buttons take the right end of the strip at full height,
+/// close first, so the close button lands where the platform's own sits.
+#[test]
+fn the_window_buttons_take_the_right_end_of_the_strip() {
+    let strip = caption_strip(egui::Rect::from_min_size(
+        egui::pos2(0.0, 0.0),
+        egui::vec2(800.0, 600.0),
+    ));
+    assert_eq!(strip.height(), menubar::MENU_BAR_HEIGHT);
+    let cells = button_cells(strip);
+    let names: Vec<&str> = cells.iter().map(|(button, _)| button.name()).collect();
+    assert_eq!(names, ["close", "maximize", "minimize"]);
+    assert_eq!(cells[0].1.right(), strip.right(), "close ends the strip");
+    for (_, cell) in cells {
+        assert_eq!(cell.width(), CAPTION_BUTTON_WIDTH);
+        assert_eq!(cell.top(), strip.top());
+        assert_eq!(cell.bottom(), strip.bottom());
+    }
+}
+
+/// The strip's drag zones are the gaps between what the bar already draws, so
+/// a press on a title or a play control is never a window drag.
+#[test]
+fn the_drag_zones_are_the_gaps_between_the_menus_and_the_play_controls() {
+    let strip = caption_strip(egui::Rect::from_min_size(
+        egui::pos2(0.0, 0.0),
+        egui::vec2(800.0, 600.0),
+    ));
+    let buttons_left = button_cells(strip)[2].1.min.x;
+    let mut session = MenubarSession::default();
+    // The six titles, butted together as the bar places them, and the play
+    // controls centred over the strip.
+    for index in 0..menubar::MENU_TITLE_COUNT {
+        let left = 36.0 + index as f32 * 44.0;
+        session.geometry.remember_exact(
+            MenubarSlot::Title(index),
+            egui::Rect::from_min_max(egui::pos2(left, 4.0), egui::pos2(left + 44.0, 26.0)),
+        );
+    }
+    session.geometry.remember_exact(
+        MenubarSlot::Toolbar,
+        egui::Rect::from_min_max(egui::pos2(360.0, 4.0), egui::pos2(440.0, 26.0)),
+    );
+    let zones = drag_zones(&session, strip, buttons_left);
+    let spans: Vec<(f32, f32)> = zones
+        .iter()
+        .map(|zone| (zone.left(), zone.right()))
+        .collect();
+    assert_eq!(
+        spans,
+        vec![(0.0, 36.0), (300.0, 360.0), (440.0, buttons_left)],
+        "the strip's left end, the gap after the titles, and the gap after the controls"
+    );
+    assert!(zones
+        .iter()
+        .all(|zone| zone.top() == strip.top() && zone.bottom() == strip.bottom()));
+}
+
+/// A strip with no menu geometry recorded yet is one drag zone up to the
+/// buttons: the first frame still moves the window.
+#[test]
+fn a_strip_with_nothing_drawn_yet_is_one_drag_zone() {
+    let strip = caption_strip(egui::Rect::from_min_size(
+        egui::pos2(0.0, 0.0),
+        egui::vec2(800.0, 600.0),
+    ));
+    let buttons_left = button_cells(strip)[2].1.min.x;
+    let zones = drag_zones(&MenubarSession::default(), strip, buttons_left);
+    assert_eq!(zones.len(), 1);
+    assert_eq!(zones[0].left(), strip.left());
+    assert_eq!(zones[0].right(), buttons_left);
+}
+
+/// The top resize band stops at the window buttons and the top-right corner
+/// takes no band, so a press on the close button is never a resize.
+#[test]
+fn the_top_resize_band_stops_at_the_window_buttons() {
+    let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0));
+    let buttons_left = button_cells(caption_strip(screen))[2].1.min.x;
+    let north = edge_strip(WindowEdge::North, screen, buttons_left);
+    assert_eq!((north.left(), north.right()), (0.0, buttons_left));
+    assert_eq!(north.height(), CAPTION_RESIZE_BORDER);
+    let corner = edge_strip(WindowEdge::NorthEast, screen, buttons_left);
+    assert_eq!(corner.width(), 0.0, "the close button owns the corner");
+    let south_east = edge_strip(WindowEdge::SouthEast, screen, buttons_left);
+    assert_eq!(south_east.right(), screen.right());
+    assert_eq!(south_east.bottom(), screen.bottom());
+    assert_eq!(south_east.width(), CAPTION_RESIZE_BORDER);
+}
+
+/// The accent line is the strip's whole width and its bottom five points, so
+/// a theme can colour the title bar's edge without colouring the bar.
+#[test]
+fn the_caption_accent_line_takes_the_strips_bottom_edge() {
+    let strip = caption_strip(egui::Rect::from_min_size(
+        egui::pos2(0.0, 0.0),
+        egui::vec2(800.0, 600.0),
+    ));
+    let line = caption_accent_rect(strip);
+    assert_eq!(line.left(), strip.left());
+    assert_eq!(line.right(), strip.right());
+    assert_eq!(line.bottom(), strip.bottom());
+    assert_eq!(line.height(), CAPTION_ACCENT_HEIGHT);
+}
+
+/// The play band is the strip's full height and the controls' own width plus
+/// the padding on each side, so the buttons sit in a block of the bar.
+#[test]
+fn the_play_band_wraps_the_controls_at_the_strips_height() {
+    let strip = caption_strip(egui::Rect::from_min_size(
+        egui::pos2(0.0, 0.0),
+        egui::vec2(800.0, 600.0),
+    ));
+    let toolbar = egui::Rect::from_min_max(egui::pos2(360.0, 4.0), egui::pos2(440.0, 26.0));
+    let band = play_band_rect(strip, toolbar);
+    assert_eq!(band.left(), 360.0 - PLAY_BAND_PADDING);
+    assert_eq!(band.right(), 440.0 + PLAY_BAND_PADDING);
+    assert_eq!(band.top(), strip.top());
+    assert_eq!(band.bottom(), strip.bottom());
+}
+
+/// The band is rounded on its top two corners only, so it meets the line along
+/// the strip's edge without a seam.
+#[test]
+fn the_play_band_rounds_its_top_corners_alone() {
+    let corners = play_band_corners(egui::CornerRadius {
+        nw: 4,
+        ne: 4,
+        sw: 4,
+        se: 4,
+    });
+    assert_eq!((corners.nw, corners.ne), (4, 4));
+    assert_eq!((corners.sw, corners.se), (0, 0));
+}
+
+/// The project's name sits inside the last drag zone, one gap short of the
+/// window buttons, and a strip with no room for that gap leaves it undrawn.
+#[test]
+fn the_project_name_fills_the_gap_before_the_window_buttons() {
+    let strip = caption_strip(egui::Rect::from_min_size(
+        egui::pos2(0.0, 0.0),
+        egui::vec2(800.0, 600.0),
+    ));
+    let buttons_left = button_cells(strip)[2].1.min.x;
+    let title = caption_title_rect(strip, 440.0, buttons_left);
+    assert_eq!(title.left(), 440.0 + CAPTION_TITLE_GAP);
+    assert_eq!(title.right(), buttons_left - CAPTION_TITLE_GAP);
+    assert_eq!(title.top(), strip.top());
+    assert_eq!(title.bottom(), strip.bottom());
+    assert_eq!(
+        caption_title_rect(strip, buttons_left - 4.0, buttons_left),
+        egui::Rect::NOTHING,
+        "a strip with no room for the gap draws no name"
+    );
+}

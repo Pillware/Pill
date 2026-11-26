@@ -1336,16 +1336,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "host_project_native"
+name = "host_project_cube_rust"
 version = "0.1.0"
 dependencies = [
+ "glam 0.33.7",
  "pill_core",
  "pill_engine",
- "pill_renderer_api",
  "pill_rendering",
  "pill_spline",
- "serde",
- "tracing",
 ]
 
 [[package]]

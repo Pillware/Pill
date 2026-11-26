@@ -65,6 +65,26 @@ pub struct EguiShellInput {
     pub scale_factor: f32,
     /// Whether the editor window has keyboard focus.
     pub focused: bool,
+    /// Whether the editor window is maximized.
+    ///
+    /// The window has no system frame: the shell draws the title strip and its
+    /// maximize button, so only the executable can say which glyph that button
+    /// shows. A maximized window draws the restore glyph and cannot be resized
+    /// from its edges.
+    pub maximized: bool,
+    /// Whether the shell draws the window's title strip.
+    ///
+    /// The native editor's window has no system frame, so the shell draws the
+    /// window buttons, the drag zones and the resize bands. A frontend whose
+    /// window somebody else owns - the browser editor's page - sets this to
+    /// `false` and draws none of them.
+    pub has_caption: bool,
+    /// The project's own name, as its settings file spells it.
+    ///
+    /// The window has no system title bar, so the strip's right end names the
+    /// project where a title would be. Shared rather than copied per frame: it
+    /// is fixed for the run.
+    pub project_name: std::sync::Arc<str>,
     /// Seconds since the editor started, monotonic.
     pub time: f64,
     /// The editor's smoothed frame rate, for the shell's overlays.
@@ -153,6 +173,9 @@ impl Default for EguiShellInput {
             screen_size: Vector2f::new(1.0, 1.0),
             scale_factor: 1.0,
             focused: true,
+            maximized: false,
+            has_caption: false,
+            project_name: std::sync::Arc::from(""),
             time: 0.0,
             frames_per_second: 0.0,
             events: Vec::new(),

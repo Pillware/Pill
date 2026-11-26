@@ -420,6 +420,13 @@ impl WebEditorApplication {
                     screen_size: logical_size,
                     scale_factor,
                     focused: self.focused,
+                    // The browser's window is the browser's own: the page
+                    // never draws a title strip, so the shell draws none of
+                    // the window buttons or the resize bands, and there is no
+                    // title to name a project in.
+                    maximized: false,
+                    has_caption: false,
+                    project_name: std::sync::Arc::from(""),
                     time: now.duration_since(self.started_at).as_secs_f64(),
                     frames_per_second: self.frames_per_second,
                     // The browser's window is the whole editor, so every event

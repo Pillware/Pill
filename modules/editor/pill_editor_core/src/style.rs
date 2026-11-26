@@ -67,6 +67,8 @@ pub struct Palette {
     pub frame: Color32,
     /// A panel's and tab body's background.
     pub panel: Color32,
+    /// The line along the caption strip's bottom edge while a session runs.
+    pub caption_accent: Color32,
     /// A raised surface: menus, hovered rows, tooltips.
     pub panel_raised: Color32,
     /// A flat control's fill on a panel.
@@ -119,6 +121,7 @@ impl Palette {
         Self {
             frame: to_egui_color(palette.frame),
             panel: to_egui_color(palette.panel),
+            caption_accent: to_egui_color(palette.caption_accent),
             panel_raised: to_egui_color(palette.panel_raised),
             control: to_egui_color(palette.control),
             well: to_egui_color(palette.well),
@@ -199,6 +202,14 @@ pub fn palette() -> Palette {
     read_resolved_theme(|resolved| resolved.palette)
 }
 
+/// The palette a theme records, without installing it.
+///
+/// The executable's window frame follows the theme before any context has
+/// installed it, so it reads the colours from the theme it just resolved.
+pub fn palette_of(theme: &Theme) -> Palette {
+    Palette::from_theme(theme)
+}
+
 /// The theme the editor last installed.
 pub fn current_theme() -> Theme {
     read_resolved_theme(|resolved| resolved.theme.clone())
@@ -224,6 +235,11 @@ pub fn frame() -> Color32 {
 /// A panel's and tab body's background.
 pub fn panel() -> Color32 {
     palette().panel
+}
+
+/// The colour of the line along the caption strip's bottom edge.
+pub fn caption_accent() -> Color32 {
+    palette().caption_accent
 }
 
 /// A raised surface: menus, hovered rows, tooltips.
@@ -380,6 +396,9 @@ pub fn default_theme() -> Theme {
     theme.dark_mode = true;
     theme.palette.frame = Rgba::rgb(18, 18, 20);
     theme.palette.panel = Rgba::rgb(26, 26, 29);
+    // The line the caption shows while a session runs: a plain blue, so it
+    // reads as "live" rather than as the crimson accent the editor uses.
+    theme.palette.caption_accent = Rgba::rgb(79, 139, 255);
     theme.palette.panel_raised = Rgba::rgb(32, 32, 36);
     theme.palette.control = Rgba::rgb(36, 36, 41);
     theme.palette.well = Rgba::rgb(15, 15, 17);
@@ -820,21 +839,20 @@ pub fn apply(context: &Context) {
 // The dock's style
 // =============================================================================
 
-/// The tint the menu bar and the dock's frame take while a game runs.
+/// The colour of the line along the caption strip's bottom edge, while there is
+/// one to draw.
 ///
-/// `None` while the editor is being edited, so the editor looks as it always
-/// did. A paused session takes the stronger colour: a game that is running but
-/// not moving is the state that surprises people.
-pub fn play_tint(theme: &Theme, run_mode: RunMode, paused: bool) -> Option<Color32> {
+/// `None` while the editor is being edited: the caption is plain chrome and
+/// nothing marks it. A running session draws the theme's
+/// [`Palette::caption_accent`] along that edge, which is the one place the
+/// editor says a game is live - everything else keeps the colour the theme
+/// chose. A paused session is still a running one, and the play controls
+/// already say it is paused.
+pub fn caption_line(theme: &Theme, run_mode: RunMode) -> Option<Color32> {
     if run_mode != RunMode::Playing {
         return None;
     }
-    let [red, green, blue, alpha] = if paused {
-        theme.palette.play_tint_paused.0
-    } else {
-        theme.palette.play_tint.0
-    };
-    Some(Color32::from_rgba_unmultiplied(red, green, blue, alpha))
+    Some(Palette::from_theme(theme).caption_accent)
 }
 
 /// The `egui_dock` styling for the shell's `DockArea`.
@@ -1349,20 +1367,18 @@ mod tests {
             "the theme's body font follows it as the fallback"
         );
     }
-    /// The play tint is absent while editing and present while a session runs,
-    /// with the stronger colour once it is paused.
+    /// The caption has a line only while a session runs, and that line is the
+    /// theme's caption accent.
     #[test]
-    fn the_play_tint_appears_only_while_a_session_runs() {
+    fn the_caption_line_appears_only_while_a_session_runs() {
         let theme = default_theme();
-        assert_eq!(play_tint(&theme, RunMode::Editing, false), None);
-        assert_eq!(play_tint(&theme, RunMode::Editing, true), None);
-        let playing = play_tint(&theme, RunMode::Playing, false).expect("a playing tint");
-        let paused = play_tint(&theme, RunMode::Playing, true).expect("a paused tint");
-        assert_ne!(playing, paused, "a paused session reads differently");
-        let [red, green, blue, alpha] = theme.palette.play_tint.0;
+        let palette = Palette::from_theme(&theme);
+        assert_eq!(caption_line(&theme, RunMode::Editing), None);
         assert_eq!(
-            playing,
-            Color32::from_rgba_unmultiplied(red, green, blue, alpha)
+            caption_line(&theme, RunMode::Playing),
+            Some(palette.caption_accent)
         );
+        // A blue line: it marks a live session, not the editor's own accent.
+        assert!(palette.caption_accent.b() > palette.caption_accent.r());
     }
 }

@@ -28,6 +28,10 @@ pub const PLAY_BUTTON_GAP: f32 = 4.0;
 /// [`menubar::MENU_BAR_HEIGHT`] tall and the toolbar is centred in it.
 pub const PLAY_TOOLBAR_TOP: f32 = 4.0;
 
+/// How far the lit band reaches past the play controls on each side, in points,
+/// so the group sits in a block of the strip rather than in an exact outline.
+pub const PLAY_BAND_PADDING: f32 = 8.0;
+
 // =============================================================================
 // Free Functions
 // =============================================================================
@@ -107,8 +111,10 @@ pub fn menu_bar(
                     }
                 }
             });
-            // Step 3: Draw the play controls over the strip, centred, and
-            // remember the group's rectangle so a suite can click it.
+            // Step 3: the lit band the controls sit in while a session
+            // runs, then the controls themselves over the strip, centred. The
+            // group's rectangle is remembered so a suite can click it.
+            play_band(ui, session, viewer);
             play_toolbar(ui, session, viewer);
             // Step 4: Remember which menu is open, and log a change once.
             if let Some(menu) = open_menu {
@@ -124,6 +130,62 @@ pub fn menu_bar(
                 session.open = None;
             }
         });
+}
+
+/// Returns the band a running session lights behind the play controls: the
+/// group's own rectangle, [`PLAY_BAND_PADDING`] wider on each side, and the
+/// caption strip's full height.
+///
+/// It is the same colour as the line along the strip's bottom edge, so the
+/// caption says a game is live in one block rather than two marks.
+#[must_use]
+pub fn play_band_rect(strip: egui::Rect, toolbar: egui::Rect) -> egui::Rect {
+    egui::Rect::from_min_max(
+        egui::pos2(toolbar.left() - PLAY_BAND_PADDING, strip.top()),
+        egui::pos2(toolbar.right() + PLAY_BAND_PADDING, strip.bottom()),
+    )
+}
+
+/// Returns the band's corners: the theme's control radius on the top two, and
+/// square corners at the bottom, where the band meets the line along the
+/// strip's edge.
+///
+/// The top rounding keeps the block from reading as a hard-cut hole in the bar;
+/// the bottom stays square so the band and the line join without a seam.
+#[must_use]
+pub fn play_band_corners(radius: egui::CornerRadius) -> egui::CornerRadius {
+    egui::CornerRadius {
+        nw: radius.nw,
+        ne: radius.ne,
+        sw: 0,
+        se: 0,
+    }
+}
+
+/// Paints the play colour behind the play controls while a session runs.
+///
+/// The strip stays the panel's colour while the editor is being edited; a
+/// running session fills the part of it the controls sit in, so the group reads
+/// as one lit block of the caption bar. The buttons keep their own fills, and
+/// the band sits in the panel's layer, under them. Its width comes from the
+/// group's last placement, so the first frame of a session - before a group has
+/// ever been placed - draws none.
+pub fn play_band(ui: &egui::Ui, session: &MenubarSession, viewer: &EditorTabViewer<'_>) {
+    let Some(colour) =
+        pill_editor_core::style::caption_line(&viewer.snapshot.theme, viewer.snapshot.run_mode)
+    else {
+        return;
+    };
+    let Some(toolbar) = session.geometry.get(&MenubarSlot::Toolbar) else {
+        return;
+    };
+    let strip = caption_strip(ui.ctx().content_rect());
+    // The buttons' own rounding, so the block has the same corners as the
+    // controls standing on it.
+    let corners = play_band_corners(ui.visuals().widgets.inactive.corner_radius);
+    ui.painter()
+        .with_clip_rect(strip)
+        .rect_filled(play_band_rect(strip, toolbar), corners, colour);
 }
 
 /// Draws the play controls centred over the menu bar: Play or Stop, then

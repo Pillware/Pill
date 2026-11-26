@@ -478,6 +478,10 @@ pub struct Palette {
     pub frame: Rgba,
     /// A panel's background.
     pub panel: Rgba,
+    /// The line along the bottom edge of a UI's caption strip while something
+    /// live runs - the editor's caption shows it only while a session plays,
+    /// so the window says "a game is running" and nothing otherwise.
+    pub caption_accent: Rgba,
     /// A surface one step lighter than the panel: a hovered tab, a neutral
     /// button's face, and striped rows.
     pub panel_raised: Rgba,
@@ -519,12 +523,6 @@ pub struct Palette {
     pub log_warn: Rgba,
     /// A log line at `error`.
     pub log_error: Rgba,
-    /// The tint the menu bar and the dock's frame take while a play session
-    /// runs, so the person can see at a glance that the game is live.
-    pub play_tint: Rgba,
-    /// The tint while a running session is paused: the same signal, stronger,
-    /// because a paused game is the state that surprises people.
-    pub play_tint_paused: Rgba,
 }
 
 impl Default for Palette {
@@ -532,6 +530,7 @@ impl Default for Palette {
         Self {
             frame: Rgba::rgb(27, 27, 27),
             panel: Rgba::rgb(32, 32, 32),
+            caption_accent: Rgba::rgb(79, 139, 255),
             panel_raised: Rgba::rgb(42, 42, 42),
             control: Rgba::rgb(47, 49, 52),
             well: Rgba::rgb(17, 17, 17),
@@ -552,8 +551,6 @@ impl Default for Palette {
             log_debug: Rgba::rgb(138, 138, 138),
             log_warn: Rgba::rgb(218, 170, 56),
             log_error: Rgba::rgb(217, 72, 62),
-            play_tint: Rgba::rgb(34, 52, 78),
-            play_tint_paused: Rgba::rgb(72, 56, 24),
         }
     }
 }
@@ -564,6 +561,7 @@ impl Palette {
         Self {
             frame: Rgba::rgb(20, 17, 18),
             panel: Rgba::rgb(20, 17, 18),
+            caption_accent: Rgba::rgb(255, 72, 140),
             panel_raised: Rgba::rgb(34, 29, 31),
             control: Rgba::rgb(34, 29, 31),
             well: Rgba::rgb(10, 8, 9),
@@ -584,8 +582,6 @@ impl Palette {
             log_debug: Rgba::rgb(130, 122, 126),
             log_warn: Rgba::rgb(255, 196, 80),
             log_error: Rgba::rgb(255, 70, 70),
-            play_tint: Rgba::rgb(52, 24, 40),
-            play_tint_paused: Rgba::rgb(96, 60, 20),
         }
     }
 }
@@ -860,8 +856,7 @@ fn merge_palette(palette: &mut Palette, overrides: &PaletteOverrides) -> Result<
         log_debug => "palette.log_debug",
         log_warn => "palette.log_warn",
         log_error => "palette.log_error",
-        play_tint => "palette.play_tint",
-        play_tint_paused => "palette.play_tint_paused",
+        caption_accent => "palette.caption_accent",
     );
     Ok(())
 }
@@ -1288,6 +1283,24 @@ mod tests {
             FontFamilyName::Monospace
         );
         assert!(theme.dark_mode);
+    }
+
+    #[test]
+    fn a_document_sets_the_caption_line_that_marks_a_running_session() {
+        let document =
+            ThemeOverrides::from_yaml_str("palette:\n  caption_accent: \"#334455\"\n").unwrap();
+        let merged = Theme::fallback().merged_with(&document).unwrap();
+        assert_eq!(merged.palette.caption_accent, Rgba::rgb(0x33, 0x44, 0x55));
+        assert_eq!(
+            merged.palette.panel,
+            Theme::fallback().palette.panel,
+            "the other roles keep the base"
+        );
+        assert_eq!(
+            Theme::fallback().palette.caption_accent,
+            Rgba::rgb(79, 139, 255),
+            "the code default is the blue the line shows while a session runs"
+        );
     }
 
     #[test]
