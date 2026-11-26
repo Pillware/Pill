@@ -1158,7 +1158,6 @@ impl EditorWindow {
     /// the one worth another attempt - and it only exists where
     /// DirectComposition does, which is Windows.
     pub(super) fn retry_overlay(&mut self) {
-        if self.no_overlay {}
         #[cfg(windows)]
         self.retry_composition_overlay();
     }

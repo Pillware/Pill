@@ -25,16 +25,31 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  SLANG_VERSION: v2025.24
 
 jobs:
-  windows:
-    runs-on: windows-latest
+  fast:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            slang_asset: '*-windows-x86_64.zip'
+          - os: ubuntu-latest
+            slang_asset: '*-linux-x86_64.zip'
+          - os: macos-latest
+            slang_asset: '*-macos-aarch64.zip'
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: modules
@@ -46,6 +61,35 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: nextest
+
+      - name: Install system dependencies
+        if: runner.os == 'Linux'  # the only OS-specific step
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libasound2-dev libudev-dev \
+            libwayland-dev libxkbcommon-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev
+
+      - name: Install slangc
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLANG_ASSET: ${{ matrix.slang_asset }}
+        run: |
+          download="$RUNNER_TEMP/slang-download"
+          dest="$RUNNER_TOOL_CACHE/slang"
+          gh release download "$SLANG_VERSION" --repo shader-slang/slang \
+            --pattern "$SLANG_ASSET" --dir "$download"
+          archive=$(ls "$download"/*.zip | head -n 1)
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z x -y "$archive" -o"$dest" >/dev/null
+          else
+            unzip -q "$archive" -d "$dest"
+          fi
+          echo "$dest/bin" >> "$GITHUB_PATH"
+
+      - name: Verify slangc
+        run: slangc -v
+
       - name: Install cargo-about
         # The `licenses` step checks every dependency's license against
         # modules/about.toml, and shipping builds write their notices with it.
@@ -53,18 +97,11 @@ jobs:
         with:
           tool: cargo-about
 
-      - name: Install slangc (Linux x86_64)
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release download "$SLANG_VERSION" \
-            --repo shader-slang/slang \
-            --dir /tmp/slang
-          unzip -q /tmp/slang/*.zip -d "$RUNNER_TOOL_CACHE/slang"
-          echo "$RUNNER_TOOL_CACHE/slang/bin" >> "$GITHUB_PATH"
-
-      - name: Verify slangc
-        run: slangc -v
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python dependencies
+        run: python -m pip install pyyaml pillow
 
       - name: verify.py (quick)
         # One step runs the whole gate, so CI cannot drift from the list.
@@ -72,3 +109,4 @@ jobs:
         # its PASS/FAIL table to the job summary; --keep-going reports every
         # failing check, not only the first.
         run: python devops/ci_cd/verify.py --keep-going --quick
+

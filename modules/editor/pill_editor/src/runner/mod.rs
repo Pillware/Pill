@@ -117,7 +117,7 @@ use crate::frontend::EditorError;
 /// The overlay's error, which only the floating posture produces: the
 /// composition one reports through the same type on Windows, so the import is
 /// needed where that posture is built.
-#[cfg(not(windows))]
+#[cfg(all(unix, not(target_os = "macos")))]
 use crate::overlay::OverlayError;
 use crate::overlay::OverlayMode;
 use crate::overlay::OverlaySurface;
@@ -335,7 +335,7 @@ fn choose_display_backend() {
 ///
 /// `event_loop` is what the floating overlay is created from, so Windows - whose
 /// overlay is a composition visual - has nothing to do with it.
-#[cfg_attr(windows, allow(unused_variables))]
+#[cfg_attr(not(all(unix, not(target_os = "macos"))), allow(unused_variables))]
 fn create_overlay(
     event_loop: &ActiveEventLoop,
     no_overlay: bool,
@@ -362,7 +362,9 @@ fn create_overlay(
     // above the editor. Both are transparent where the shell drew nothing, and
     // both take no input of their own, so the two postures read alike from the
     // frontend's side. The line naming the posture is worth keeping on both.
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    return create_window_overlay(instance, adapter, device, window, size);
+    #[cfg(all(unix, not(target_os = "macos")))]
     {
         match create_floating_overlay(event_loop, instance, adapter, device, size) {
             Ok(overlay) => return Some(overlay),
@@ -409,7 +411,7 @@ fn create_overlay(
 /// Returns the reason, which [`create_overlay`] logs before falling back to
 /// the window surface, when the window cannot be created, cannot be made
 /// transparent to the pointer, or has no premultiplied surface to draw into.
-#[cfg(not(windows))]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn create_floating_overlay(
     event_loop: &ActiveEventLoop,
     instance: &wgpu::Instance,
@@ -417,7 +419,6 @@ fn create_floating_overlay(
     device: &wgpu::Device,
     size: (u32, u32),
 ) -> Result<OverlaySurface, OverlayError> {
-    use winit::platform::x11::WindowAttributesExtX11;
     // Step 1: the window. It starts hidden so the first frame can place it
     // before it is ever shown, and it is transparent so the scene shows
     // through wherever the shell drew nothing.
@@ -427,8 +428,12 @@ fn create_floating_overlay(
         .with_decorations(false)
         .with_active(false)
         .with_visible(false)
-        .with_inner_size(LogicalSize::new(size.0 as f64, size.1 as f64))
-        .with_override_redirect(true);
+        .with_inner_size(LogicalSize::new(size.0 as f64, size.1 as f64));
+
+    let attributes = {
+        use winit::platform::x11::WindowAttributesExtX11;
+        attributes.with_override_redirect(true)
+    };
     let window = Arc::new(
         event_loop
             .create_window(attributes)
