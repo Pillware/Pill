@@ -343,7 +343,7 @@ impl Default for MeshImportSettings {
 /// their UV coordinates, then normalizes the two.
 fn calculate_tangent_space(vertices: &mut [MeshVertex], indices: &[u32]) {
     // Step 1: add each triangle's tangent and bitangent to its three corners.
-    for triangle in indices.chunks_exact(3) {
+    for triangle in indices.as_chunks::<3>().0 {
         let [a, b, c] = [
             triangle[0] as usize,
             triangle[1] as usize,

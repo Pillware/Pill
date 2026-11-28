@@ -23,6 +23,7 @@
 //! path would have nothing to point at.
 
 // Current crate
+#[allow(unused_imports)]
 use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 

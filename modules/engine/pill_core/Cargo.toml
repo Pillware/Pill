@@ -167,6 +167,7 @@ ttf-parser = { version = "0.25", features = ["gvar-alloc", "no-std-float"] }
 # one stopped, and the drift check failed. The feature alone costs nothing -
 # it names `kernel32`, which the rest of this tree already links - while the
 # whole version would cost the 68 import libraries above.
+[target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_System_SystemInformation",
 ] }

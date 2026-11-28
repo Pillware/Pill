@@ -23,6 +23,7 @@
 
 // Current crate
 use pill_editor_core::hooks::FieldEditPhase;
+#[allow(unused_imports)]
 use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::tab_inspector::{
     INSPECTOR_VECTOR_FIELD_HEIGHT, INSPECTOR_VECTOR_LABEL_WIDTH,

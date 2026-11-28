@@ -85,7 +85,6 @@ def describe_example(example: Path) -> str:
         return "csharp"
     return "unknown"
 
-
 def run_example(example: Path, timeout_seconds: int) -> tuple[bool, str]:
     """Runs one example headless and reports whether its token appeared."""
     token = f"[{example.name}]"

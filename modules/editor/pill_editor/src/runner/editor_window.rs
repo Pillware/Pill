@@ -98,9 +98,6 @@ pub(super) struct EditorWindow {
     /// the window surface when composition is refused. `None` until it is
     /// created, and left `None` when neither posture works.
     pub(super) overlay: Option<OverlaySurface>,
-    /// `PILL_EDITOR_NO_OVERLAY` asked for the window-surface posture, so the
-    /// composition overlay is never retried.
-    pub(super) no_overlay: bool,
     /// The frame index of the last overlay creation attempt, so the next
     /// retry waits 120 frames from it.
     ///
@@ -767,7 +764,6 @@ impl EditorWindow {
             camera_dirty: vec![true; DEFAULT_SCENE_VIEWS],
             egui_renderer,
             overlay,
-            no_overlay,
             #[cfg(windows)]
             overlay_retry_frame: 0,
             fallback_context: {

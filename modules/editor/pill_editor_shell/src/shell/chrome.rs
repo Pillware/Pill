@@ -22,10 +22,11 @@
 //! The globs below are absolute paths, so a patch crate resolves them too.
 
 // Current crate
-use pill_editor_shell::shell::prelude::*;
 // Unused here on purpose: a patch crate repeats this file's opening lines, so
 // the glob must be present for a patched body that names a sibling in the
 // shell.
+#[allow(unused_imports)]
+use pill_editor_shell::shell::prelude::*;
 #[allow(unused_imports)]
 use pill_editor_shell::shell::*;
 

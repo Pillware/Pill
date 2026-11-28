@@ -43,10 +43,11 @@
 //! would have nothing to point at there.
 
 // Current crate
-use pill_editor_shell::shell::prelude::*;
 // Unused in this build, but kept on purpose: a generated patch replays this
 // file's opening, and any shell sibling its body names resolves through this
 // glob.
+#[allow(unused_imports)]
+use pill_editor_shell::shell::prelude::*;
 #[allow(unused_imports)]
 use pill_editor_shell::shell::*;
 

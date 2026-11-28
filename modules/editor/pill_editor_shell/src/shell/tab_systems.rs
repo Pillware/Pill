@@ -18,6 +18,7 @@
 use pill_engine::pill_hot_fn;
 
 // Current crate
+#[allow(unused_imports)]
 use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 

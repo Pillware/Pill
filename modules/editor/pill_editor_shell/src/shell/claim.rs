@@ -39,10 +39,11 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 // Current crate
-use pill_editor_shell::shell::prelude::*;
 // Deliberately unused in this build. A patch crate replays this file's
 // opening `use` lines, so a patched body that calls a sibling in the shell
 // module finds it through this glob.
+#[allow(unused_imports)]
+use pill_editor_shell::shell::prelude::*;
 #[allow(unused_imports)]
 use pill_editor_shell::shell::*;
 

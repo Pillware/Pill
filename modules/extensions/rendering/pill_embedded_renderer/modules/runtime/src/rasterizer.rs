@@ -201,7 +201,7 @@ impl SceneRasterizer {
             // Step 1: Draw each triangle. A mesh's index list is one triangle
             // per three entries; an entry past the vertex list is skipped
             // rather than read out of bounds.
-            for triangle in mesh.indices.chunks_exact(3) {
+            for triangle in mesh.indices.as_chunks::<3>().0 {
                 let [first_index, second_index, third_index] =
                     [triangle[0], triangle[1], triangle[2]];
                 let (Some(first), Some(second), Some(third)) = (

@@ -213,6 +213,7 @@ impl CargoRustcLine {
         // freeze the editor for as long as that build takes. A separate thread
         // reads stderr because a pipe nobody reads fills up and blocks the
         // compiler.
+        crate::build_runner::prepare_process_tree(&mut command);
         let process_tree = crate::build_runner::create_process_tree();
         let mut child = command
             .arg("-v")
@@ -795,6 +796,19 @@ mod tests {
          -C prefer-dynamic -L 'native=C:\\reg\\windows_x86_64_msvc-0.52.6\\lib'`"
     }
 
+    /// A cargo `deps` directory spelled with the host's separators.
+    ///
+    /// `redirect_extern` reads a file name with the host's path rules, so a
+    /// `D:\...` literal has no file name on Linux and would never be redirected.
+    /// The directory is never created: only the path's shape matters.
+    fn cargo_deps_directory() -> std::path::PathBuf {
+        std::env::temp_dir()
+            .join("proj")
+            .join("target")
+            .join("debug")
+            .join("deps")
+    }
+
     fn parsed_cargo_line() -> CargoRustcLine {
         let invocation = extract_backticked(sample_cargo_line()).expect("backticked command");
         let tokens = tokenize(&invocation);
@@ -1069,39 +1083,51 @@ mod tests {
     #[test]
     fn only_staged_shared_slots_are_redirected() {
         let staged_directory = ScratchDirectory::new("staged_externs_test");
+        let deps_directory = cargo_deps_directory();
         std::fs::write(staged_directory.join("libpill_test.rlib"), b"staged")
             .expect("write staged copy");
 
         // Staged shared slot: redirected.
         let redirected_entry = redirect_extern(
-            "pill_test=D:\\proj\\target\\debug\\deps\\libpill_test.rlib",
+            &format!(
+                "pill_test={}",
+                deps_directory.join("libpill_test.rlib").display()
+            ),
             &staged_directory,
         );
-        assert!(
-            redirected_entry.ends_with("libpill_test.rlib"),
-            "got: {redirected_entry}"
-        );
-        assert!(redirected_entry.starts_with("pill_test="));
-        assert!(
-            redirected_entry.contains("staged_externs_test"),
-            "must point into the staging directory: {redirected_entry}"
+        assert_eq!(
+            redirected_entry,
+            format!(
+                "pill_test={}",
+                staged_directory.join("libpill_test.rlib").display()
+            ),
+            "must point into the staging directory"
         );
 
         // Shared slot with nothing staged: left alone.
-        let unredirected_entry = redirect_extern(
-            "pill_spline=D:\\proj\\target\\debug\\deps\\libpill_spline.rlib",
-            &staged_directory,
+        let unredirected_entry = format!(
+            "pill_spline={}",
+            deps_directory.join("libpill_spline.rlib").display()
         );
-        assert!(
-            unredirected_entry.ends_with("deps\\libpill_spline.rlib"),
-            "got: {unredirected_entry}"
+        assert_eq!(
+            redirect_extern(&unredirected_entry, &staged_directory),
+            unredirected_entry
         );
 
         // Hash-qualified: never redirected, even if a same-named file exists.
-        let hash_qualified_entry =
-            "pill_engine=D:\\proj\\deps\\libpill_engine-190d6c0e2d2eaf24.rlib";
+        std::fs::write(
+            staged_directory.join("libpill_engine-190d6c0e2d2eaf24.rlib"),
+            b"staged",
+        )
+        .expect("write same-named copy");
+        let hash_qualified_entry = format!(
+            "pill_engine={}",
+            deps_directory
+                .join("libpill_engine-190d6c0e2d2eaf24.rlib")
+                .display()
+        );
         assert_eq!(
-            redirect_extern(hash_qualified_entry, &staged_directory),
+            redirect_extern(&hash_qualified_entry, &staged_directory),
             hash_qualified_entry
         );
 
@@ -1164,7 +1190,17 @@ mod tests {
         std::fs::write(staged_directory.join("libpill_test.rlib"), b"staged")
             .expect("write staged copy");
 
-        let line = parsed_cargo_line();
+        // The sample line records a Windows path, which has no file name on
+        // other hosts; give the shared slot a host path so the redirect applies.
+        let mut line = parsed_cargo_line();
+        for argument in &mut line.args {
+            if argument.starts_with("pill_test=") {
+                *argument = format!(
+                    "pill_test={}",
+                    cargo_deps_directory().join("libpill_test.rlib").display()
+                );
+            }
+        }
         let joined = line
             .replay_args(
                 Path::new("patch.rs"),

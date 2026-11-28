@@ -6,9 +6,16 @@ from `editor_step_support`, the log vocabulary from `editor_log_tokens`.
 
 import re
 import json
+import sys
 
-from core import win_clipboard
 from core import log_layout
+
+# The clipboard helpers bind Win32 and refuse to import elsewhere; the
+# clipboard checks below run only where they exist.
+if sys.platform == "win32":
+    from core import win_clipboard
+else:
+    win_clipboard = None
 from core.editor_log_tokens import (
     CLIPBOARD_WRITTEN_TOKEN,
     DOCK_DUMP_PATTERN,
@@ -224,17 +231,20 @@ def run_tail_steps(state: StepState) -> None:
         "the entity re-selected for the copy",
         begin,
     )
-    win_clipboard.clear()
-    begin = session.length()
-    session.send("command editor.copy")
-    session.wait(
-        re.escape(CLIPBOARD_WRITTEN_TOKEN), 30, "the second clipboard write", begin
-    )
-    copied = json.loads(win_clipboard.read_payload())
-    assert copied.get("kind") == "entity", (
-        "the entity copy did not reach the clipboard: {}".format(copied)
-    )
-    print_ok("an entity copy sits on the OS clipboard for the next editor")
+    if win_clipboard is not None:
+        win_clipboard.clear()
+        begin = session.length()
+        session.send("command editor.copy")
+        session.wait(
+            re.escape(CLIPBOARD_WRITTEN_TOKEN), 30, "the second clipboard write", begin
+        )
+        copied = json.loads(win_clipboard.read_payload())
+        assert copied.get("kind") == "entity", (
+            "the entity copy did not reach the clipboard: {}".format(copied)
+        )
+        print_ok("an entity copy sits on the OS clipboard for the next editor")
+    else:
+        print_ok("SKIP the entity copy for the next editor: the clipboard helpers need Windows")
     begin = session.length()
     menu_click(session, "file", "Quit Editor", "Quit Editor")
     session.wait(re.escape(QUIT_REQUESTED_TOKEN), 30, "the quit reached the frontend", begin)

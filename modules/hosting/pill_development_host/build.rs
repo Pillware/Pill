@@ -23,8 +23,9 @@
 //! `release`, so its assertions stay off, yet it builds into
 //! `target/release-with-debug`. `OUT_DIR` always points into the real profile
 //! directory: cargo shapes it as
-//! `<target>/[<triple>/]<profile>/build/<package>-<hash>/out`, so the script
-//! reads the profile from there.
+//! `<target>/[<triple>/]<profile>/build/<package>-<hash>/out`, or as
+//! `.../build/<package>/<hash>/out` under its newer build-directory layout, so
+//! the script reads the profile from there.
 
 // Standard library
 use std::path::{Path, PathBuf};
@@ -68,11 +69,14 @@ fn main() {
 /// Reads the profile directory and the target triple out of `OUT_DIR`.
 ///
 /// `OUT_DIR` has the shape
-/// `<target-root>/[<triple>/]<profile>/build/<package>-<hash>/out`, so the
-/// profile directory is three folders up. The folder above it is the target
-/// root in a native build and the triple in a `--target` build, and its name
-/// decides which. A natively built module loaded into a `--target` host fails
-/// only when it is loaded, with a `LoadLibrary` "procedure not found" error.
+/// `<target-root>/[<triple>/]<profile>/build/<package>-<hash>/out`, or
+/// `.../build/<package>/<hash>/out` under cargo's newer build-directory
+/// layout. The profile directory is the one holding the nearest `build`
+/// folder above `out`, whichever layout cargo used. The folder above it is the
+/// target root in a native build and the triple in a `--target` build, and
+/// its name decides which. A natively built module loaded into a `--target`
+/// host fails only when it is loaded, with a `LoadLibrary` "procedure not
+/// found" error.
 fn out_directory_layout() -> (Option<String>, String) {
     // Step 1: Read `OUT_DIR`; without it there is nothing to report, so
     // return no profile directory and an empty triple.
@@ -80,10 +84,13 @@ fn out_directory_layout() -> (Option<String>, String) {
         return (None, String::new());
     };
 
-    // Step 2: Walk up from `build/<package>-<hash>/out` to the profile
-    // directory and the folder above it.
-    let package_build_directory = out_directory.parent();
-    let build_directory = package_build_directory.and_then(Path::parent);
+    // Step 2: Walk up from `out` to the nearest `build` folder; the profile
+    // directory holds it, and the folder above that is the target root or the
+    // triple.
+    let build_directory = out_directory
+        .ancestors()
+        .skip(1)
+        .find(|ancestor| ancestor.file_name().is_some_and(|name| name == "build"));
     let profile_directory = build_directory.and_then(Path::parent);
     let target_root_directory = profile_directory.and_then(Path::parent);
     let profile_directory_name = profile_directory

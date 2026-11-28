@@ -161,20 +161,29 @@ fn push_short_path(path: &str, output: &mut String) -> bool {
 
 /// The short form of `type_name`, worked out once per distinct name.
 ///
-/// A rewritten name is kept for the rest of the program's life, so it can be
-/// returned as `&'static str`; a name that needs no rewrite maps to itself.
+/// The map keeps its own copy of every key and every result for the rest of
+/// the program's life, so a result can be returned as `&'static str`.
+///
+/// `type_name` lives in the read-only data of the binary that asked, and a hot
+/// reload unmaps a retired project image while this map lives on. A borrowed
+/// key would then be compared against unmapped memory by the next lookup that
+/// probes its bucket, and a borrowed result would dangle in whoever kept it.
 fn interned_short_name(type_name: &'static str) -> &'static str {
-    static SHORT_NAMES: OnceLock<Mutex<HashMap<&'static str, &'static str>>> = OnceLock::new();
+    static SHORT_NAMES: OnceLock<Mutex<HashMap<Box<str>, &'static str>>> = OnceLock::new();
     let mut short_names = SHORT_NAMES
         .get_or_init(Default::default)
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    short_names
-        .entry(type_name)
-        .or_insert_with(|| match crate_qualified_name(type_name) {
-            Cow::Borrowed(unchanged) => unchanged,
-            Cow::Owned(shortened) => Box::leak(shortened.into_boxed_str()),
-        })
+    if let Some(&short_name) = short_names.get(type_name) {
+        return short_name;
+    }
+    let short_name: &'static str = Box::leak(
+        crate_qualified_name(type_name)
+            .into_owned()
+            .into_boxed_str(),
+    );
+    short_names.insert(type_name.into(), short_name);
+    short_name
 }
 
 // =============================================================================
@@ -205,6 +214,25 @@ mod tests {
             stable_type_name::<Vec<crate::ecs::entity::Entity>>(),
             "alloc::Vec<pill_engine::Entity>"
         );
+    }
+
+    /// An interned name never points into the caller's string, even when the
+    /// short form equals it.
+    ///
+    /// The caller's string is a `type_name` in the read-only data of the binary
+    /// that asked, which a hot reload unmaps; the editor crashed on the reload
+    /// after an eviction when the interner kept such strings.
+    #[test]
+    fn an_interned_name_owns_its_text() {
+        let caller_name: &'static str = "some_crate::AlreadyShort";
+        let interned = interned_short_name(caller_name);
+
+        assert_eq!(interned, caller_name);
+        assert!(
+            !std::ptr::eq(interned.as_ptr(), caller_name.as_ptr()),
+            "the interner handed back the caller's own string"
+        );
+        assert!(std::ptr::eq(interned, interned_short_name(caller_name)));
     }
 
     /// A name that is already short is returned as it is, and two calls for

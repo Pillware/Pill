@@ -181,6 +181,7 @@ mod tests {
     fn both_scopes_refuse_paths_outside_the_asset_directory() {
         for scope in [ThemePathScope::Game, ThemePathScope::Editor] {
             assert!(scope.check("../a.theme").is_err());
+            #[cfg(windows)]
             assert!(scope.check("C:/a.theme").is_err());
             assert!(scope.check("/a.theme").is_err());
         }

@@ -777,7 +777,7 @@ mod tests {
     fn the_preview_spheres_faces_turn_outward() {
         let mesh = sphere_mesh();
         let mut checked = 0;
-        for triangle in mesh.indices.chunks_exact(3) {
+        for triangle in mesh.indices.as_chunks::<3>().0 {
             let corner = |index: usize| {
                 glam::Vec3::from_array(mesh.vertices[triangle[index] as usize].position)
             };

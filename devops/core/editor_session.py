@@ -350,6 +350,16 @@ class EditorSession:
         environment = dict(os.environ)
         environment["PROJECT_PATH"] = project or self.project
         environment["LOCALAPPDATA"] = str(self.sandbox)
+        # The editor keeps its state under `%LOCALAPPDATA%` on Windows and
+        # under `$XDG_STATE_HOME` elsewhere; both point at the sandbox, so no
+        # session reads the user's own layout, preferences or recovery file.
+        environment["XDG_STATE_HOME"] = str(self.sandbox)
+        # A scripted `click x y` is in physical pixels, while the UI rectangles
+        # the suites click (menus, toolbox rows, badges) are logged in egui
+        # points, so the two agree only at a scale factor of 1. Under X11 winit
+        # guesses the factor from the display; pin it so a HiDPI machine clicks
+        # where a 100% Windows desktop does.
+        environment["WINIT_X11_SCALE_FACTOR"] = "1"
         if scripted:
             self.commands_path.write_text(
                 "# {} suite: {}\n".format(self.suite, self.session), encoding="utf-8"

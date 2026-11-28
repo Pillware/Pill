@@ -218,7 +218,8 @@ impl UiRasterizer {
                     let end = start.saturating_add(*index_count as usize);
                     for triangle in list.indices
                         [start.min(list.indices.len())..end.min(list.indices.len())]
-                        .chunks_exact(3)
+                        .as_chunks::<3>()
+                        .0
                     {
                         let corners = [
                             list.vertices.get(triangle[0] as usize),

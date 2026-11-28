@@ -98,7 +98,6 @@ pub use caption::window_button;
 pub use caption::CaptionButton;
 pub use caption::CAPTION_ACCENT_HEIGHT;
 pub use caption::CAPTION_BUTTON_WIDTH;
-pub use caption::CAPTION_CLOSE_HOVER;
 pub use caption::CAPTION_DRAG_ZONE_MIN;
 pub use caption::CAPTION_GLYPH_SIDE;
 pub use caption::CAPTION_RESIZE_BORDER;

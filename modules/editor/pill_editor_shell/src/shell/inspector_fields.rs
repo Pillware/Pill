@@ -28,6 +28,7 @@
 
 // Current crate
 use pill_editor_core::hooks::FieldEditPhase;
+#[allow(unused_imports)]
 use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 

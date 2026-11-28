@@ -47,6 +47,9 @@ PIXEL_TOLERANCE = 2
 BURST_STEPS = 30
 BURST_RESIZE_ALLOWANCE = BURST_STEPS + 2
 
+# How long the editor may take to draw its next frame during the burst.
+FRAME_SETTLE_SECONDS = 2.0
+
 user32 = ctypes.windll.user32
 user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
 user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
@@ -123,6 +126,22 @@ def wait_for_window_rect(hwnd: int, expected_width: int, expected_height: int) -
 def resize_window(hwnd: int, width: int, height: int) -> None:
     """Asks the OS for one window size, the way a platform-driven drag does."""
     user32.SetWindowPos(hwnd, None, 0, 0, width, height, 0x0002 | 0x0004 | 0x0010)
+
+
+def wait_for_next_frame(session: EditorSession) -> None:
+    """Waits until the editor draws one more frame.
+
+    The resize burst paces its size changes with it, so each change lands in a
+    frame of its own the way a platform-driven drag arrives, however slow the
+    machine is.
+    """
+    start = shell_frame(session)
+    deadline = time.monotonic() + FRAME_SETTLE_SECONDS
+    while shell_frame(session) <= start:
+        assert time.monotonic() < deadline, "the editor drew no frame within {}s".format(
+            FRAME_SETTLE_SECONDS
+        )
+        time.sleep(0.02)
 
 
 def drag_band(session: EditorSession, start: tuple, end: tuple, label: str) -> None:
@@ -263,7 +282,7 @@ def _drive_resize_steps(session: EditorSession) -> None:
     begin = session.length()
     for step in range(BURST_STEPS):
         resize_window(hwnd, width + step * 4, height + step * 2)
-        time.sleep(0.016)
+        wait_for_next_frame(session)
     burst_text = session.text()[begin:]
     surface_resizes = burst_text.count(SCENE_SURFACE_RESIZED_TOKEN)
     settled = wait_for_window_rect(

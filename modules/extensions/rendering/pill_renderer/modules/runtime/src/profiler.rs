@@ -410,7 +410,7 @@ impl Profiler {
                     warn_readback("timestamps");
                 }
                 let mut timings = Vec::new();
-                for (pair_index, pair) in ticks.chunks_exact(2).enumerate() {
+                for (pair_index, pair) in ticks.as_chunks::<2>().0.iter().enumerate() {
                     if let Some(Some(span)) = record.spans.get(pair_index) {
                         span.upload(pair[0] as i64, pair[1] as i64);
                     }

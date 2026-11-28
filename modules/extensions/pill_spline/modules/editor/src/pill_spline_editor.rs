@@ -895,8 +895,13 @@ mod tests {
         let spline = full
             .get_component_mut::<Spline>(entity)
             .expect("the spline");
-        for index in 0..pill_spline::MAX_CONTROL_POINTS {
-            spline.control_points[index] = Vector3f::new(index as f32, 0.0, 0.0);
+        for (index, point) in spline
+            .control_points
+            .iter_mut()
+            .enumerate()
+            .take(pill_spline::MAX_CONTROL_POINTS)
+        {
+            *point = Vector3f::new(index as f32, 0.0, 0.0);
         }
         spline.control_point_count = pill_spline::MAX_CONTROL_POINTS as u32;
         assert_eq!(

@@ -24,6 +24,7 @@
 //! menu title or a play control is never taken for a window drag.
 
 // Current crate
+#[allow(unused_imports)]
 use pill_editor_shell::shell::prelude::*;
 use pill_editor_shell::shell::*;
 
@@ -55,10 +56,6 @@ pub const CAPTION_TITLE_GAP: f32 = 10.0;
 
 /// How tall the accent line along the strip's bottom edge is, in points.
 pub const CAPTION_ACCENT_HEIGHT: f32 = 5.0;
-
-/// The fill the close button takes while the pointer is over it: the red the
-/// platform's own close button uses.
-pub const CAPTION_CLOSE_HOVER: egui::Color32 = egui::Color32::from_rgb(0xC4, 0x2B, 0x1C);
 
 // =============================================================================
 // Types
@@ -409,14 +406,18 @@ pub fn window_button(
     // The wash stays on while the button is held, like the platform's own, so a
     // press dragged off the button still reads as pressed.
     let pointer = response.hovered() || response.is_pointer_button_down_on();
-    // Step 1: the wash. Close turns the platform's red; the other two lift one
-    // step of the theme's own button fill.
+    // Step 1: the wash. Close turns the theme's danger colour with the strong
+    // text on it, like the platform's red close button; the other two lift one
+    // step of the theme's own button fill. No wash at rest.
     let (wash, tint) = match (button, pointer) {
-        (CaptionButton::Close, true) => (CAPTION_CLOSE_HOVER, egui::Color32::WHITE),
-        (_, true) => (visuals.widgets.hovered.weak_bg_fill, text),
-        (_, false) => (egui::Color32::TRANSPARENT, text),
+        (CaptionButton::Close, true) => (
+            Some(pill_editor_core::style::danger()),
+            pill_editor_core::style::text_strong(),
+        ),
+        (_, true) => (Some(visuals.widgets.hovered.weak_bg_fill), text),
+        (_, false) => (None, text),
     };
-    if wash != egui::Color32::TRANSPARENT {
+    if let Some(wash) = wash {
         ui.painter().rect_filled(rect, 0.0, wash);
     }
     // Step 2: the glyph, drawn rather than set in a font so it matches the

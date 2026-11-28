@@ -19,10 +19,11 @@
 //! egui's context (see the reload-safety contract in `pill_editor_core`).
 
 // Current crate
-use pill_editor_shell::shell::prelude::*;
 // Nothing in this file uses this import, but it has to stay: a patch crate
 // copies this file's top-level `use` lines, and a sibling function the body
 // names resolves through them.
+#[allow(unused_imports)]
+use pill_editor_shell::shell::prelude::*;
 #[allow(unused_imports)]
 use pill_editor_shell::shell::*;
 

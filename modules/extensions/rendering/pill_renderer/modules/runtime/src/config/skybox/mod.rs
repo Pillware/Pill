@@ -56,15 +56,18 @@ use crate::config::ShaderSourceRecord;
 
 config_shader_file!(
     /// The skybox vertex stage: a fullscreen triangle at the far plane.
-    SKYBOX_VERTEX, "shaders/skybox/skybox_vertex.wgsl"
+    SKYBOX_VERTEX,
+    "shaders/skybox/skybox_vertex.wgsl"
 );
 config_shader_file!(
     /// The fragment stage that samples an equirectangular panorama.
-    EQUIRECT_FRAGMENT, "shaders/skybox/skybox_equirect_fragment.wgsl"
+    EQUIRECT_FRAGMENT,
+    "shaders/skybox/skybox_equirect_fragment.wgsl"
 );
 config_shader_file!(
     /// The fragment stage that samples a cubemap.
-    CUBEMAP_FRAGMENT, "shaders/skybox/skybox_cubemap_fragment.wgsl"
+    CUBEMAP_FRAGMENT,
+    "shaders/skybox/skybox_cubemap_fragment.wgsl"
 );
 
 /// The asset name of the skybox shader that samples an equirectangular

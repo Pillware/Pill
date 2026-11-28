@@ -13,10 +13,10 @@ with the steps that stay in `main`.
 
 import json
 import re
+import sys
 import time
 from pathlib import Path
 
-from core import win_clipboard
 from core import log_layout
 from core.editor_log_tokens import EDITOR_WINDOW_CREATED_TOKEN
 from core.editor_session import EditorSession
@@ -76,6 +76,13 @@ from core.editor_log_tokens import (
 
 
 from editor_step_support import print_ok
+
+# The clipboard helpers bind Win32 and refuse to import elsewhere; the
+# clipboard checks below run only where they exist.
+if sys.platform == "win32":
+    from core import win_clipboard
+else:
+    win_clipboard = None
 
 
 def run_lifecycle_steps(session: EditorSession, binary: Path, project: str) -> None:
@@ -141,19 +148,21 @@ def step_11_layout_survives_restart(
     # clipboard, so it is checked here as well: a payload another program
     # replaced reports itself, instead of surfacing as a timeout a minute into
     # the restarted editor.
-    leftover = win_clipboard.read_payload()
-    assert leftover and json.loads(leftover).get("kind") == "entity", (
-        "the entity copy did not survive the quit: payload={!r} text={!r}".format(
-            leftover, win_clipboard.read_text()
+    entity_payload = None
+    if win_clipboard is not None:
+        leftover = win_clipboard.read_payload()
+        assert leftover and json.loads(leftover).get("kind") == "entity", (
+            "the entity copy did not survive the quit: payload={!r} text={!r}".format(
+                leftover, win_clipboard.read_text()
+            )
         )
-    )
-    # The bytes the first editor wrote, kept for the paste below: the clipboard
-    # is machine-global, and the restart takes long enough (three sessions'
-    # worth of startup) that another program can replace the payload in
-    # between. Restoring the copy the first editor wrote keeps the step about
-    # the payload crossing a process boundary rather than about the machine
-    # staying quiet.
-    entity_payload = leftover
+        # The bytes the first editor wrote, kept for the paste below: the
+        # clipboard is machine-global, and the restart takes long enough (three
+        # sessions' worth of startup) that another program can replace the
+        # payload in between. Restoring the copy the first editor wrote keeps
+        # the step about the payload crossing a process boundary rather than
+        # about the machine staying quiet.
+        entity_payload = leftover
     restart = EditorSession(
         "egui",
         "restart",
@@ -206,74 +215,78 @@ def step_11_layout_survives_restart(
         # The clipboard crossed the process boundary: the
         # session above copied an entity onto the OS clipboard, and this
         # editor - a different process - pastes it as one recorded step.
-        entities_here = len(
-            re.findall(
-                re.escape(ENTITY_ROW_TOKEN),
-                restart.request(
-                    "dump entities",
-                    re.escape(ENTITIES_DUMP_TOKEN),
-                    60,
-                    "the restarted editor's entity list",
-                ),
-            )
-        )
-        begin = restart.length()
-        # The payload is put back when something else took the clipboard while
-        # the restart was starting; without this the paste reports a decode
-        # failure from a program the suite never asked, one step from the end.
-        current = win_clipboard.read_payload()
-        if current != entity_payload:
-            win_clipboard.write_payload(entity_payload)
-            print_ok(
-                "the clipboard was restored for the restart: {!r}".format(
-                    (current or "")[:80]
+        if entity_payload is not None:
+            entities_here = len(
+                re.findall(
+                    re.escape(ENTITY_ROW_TOKEN),
+                    restart.request(
+                        "dump entities",
+                        re.escape(ENTITIES_DUMP_TOKEN),
+                        60,
+                        "the restarted editor's entity list",
+                    ),
                 )
             )
-        restart.send("command editor.paste")
-        restart.wait(
-            log_layout.message_then_fields_pattern(re.escape(CLIPBOARD_PASTED_TOKEN), r'\s+kind="entity"'),
-            60,
-            "the pasted entity",
-            begin,
-        )
-        pasted = len(
-            re.findall(
-                re.escape(ENTITY_ROW_TOKEN),
-                restart.request(
-                    "dump entities",
-                    re.escape(ENTITIES_DUMP_TOKEN),
-                    60,
-                    "the entity list after the paste",
-                ),
+            begin = restart.length()
+            # The payload is put back when something else took the clipboard
+            # while the restart was starting; without this the paste reports a
+            # decode failure from a program the suite never asked, one step
+            # from the end.
+            current = win_clipboard.read_payload()
+            if current != entity_payload:
+                win_clipboard.write_payload(entity_payload)
+                print_ok(
+                    "the clipboard was restored for the restart: {!r}".format(
+                        (current or "")[:80]
+                    )
+                )
+            restart.send("command editor.paste")
+            restart.wait(
+                log_layout.message_then_fields_pattern(re.escape(CLIPBOARD_PASTED_TOKEN), r'\s+kind="entity"'),
+                60,
+                "the pasted entity",
+                begin,
             )
-        )
-        assert pasted == entities_here + 1, (
-            "the paste did not add exactly one entity: {} vs {}".format(
-                pasted, entities_here
+            pasted = len(
+                re.findall(
+                    re.escape(ENTITY_ROW_TOKEN),
+                    restart.request(
+                        "dump entities",
+                        re.escape(ENTITIES_DUMP_TOKEN),
+                        60,
+                        "the entity list after the paste",
+                    ),
+                )
             )
-        )
-        begin = restart.length()
-        restart.send("command editor.undo")
-        restart.wait(
-            re.escape(HISTORY_UNDO_TOKEN), 30, "the pasted entity's undo", begin
-        )
-        restored = len(
-            re.findall(
-                re.escape(ENTITY_ROW_TOKEN),
-                restart.request(
-                    "dump entities",
-                    re.escape(ENTITIES_DUMP_TOKEN),
-                    60,
-                    "the entity list after the undo",
-                ),
+            assert pasted == entities_here + 1, (
+                "the paste did not add exactly one entity: {} vs {}".format(
+                    pasted, entities_here
+                )
             )
-        )
-        assert restored == entities_here, (
-            "the undo did not remove the pasted entity: {} vs {}".format(
-                restored, entities_here
+            begin = restart.length()
+            restart.send("command editor.undo")
+            restart.wait(
+                re.escape(HISTORY_UNDO_TOKEN), 30, "the pasted entity's undo", begin
             )
-        )
-        print_ok("an entity copied in one editor pasted into another")
+            restored = len(
+                re.findall(
+                    re.escape(ENTITY_ROW_TOKEN),
+                    restart.request(
+                        "dump entities",
+                        re.escape(ENTITIES_DUMP_TOKEN),
+                        60,
+                        "the entity list after the undo",
+                    ),
+                )
+            )
+            assert restored == entities_here, (
+                "the undo did not remove the pasted entity: {} vs {}".format(
+                    restored, entities_here
+                )
+            )
+            print_ok("an entity copied in one editor pasted into another")
+        else:
+            print_ok("SKIP the cross-process paste: the clipboard helpers need Windows")
 
         # Leave through the scripted channel's own quit: the first click of a
         # freshly started session goes to focusing its window, and the menu's

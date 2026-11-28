@@ -123,7 +123,7 @@ pub fn ray_hits_mesh(ray: &Ray, mesh: &Mesh, transform: &TransformComponent) -> 
 
     // Step 2: Test every triangle, keeping the closest hit.
     let mut closest: Option<f32> = None;
-    for triangle in mesh.indices.chunks_exact(3) {
+    for triangle in mesh.indices.as_chunks::<3>().0 {
         let corners = [
             Vec3::from_array(mesh.vertices[triangle[0] as usize].position),
             Vec3::from_array(mesh.vertices[triangle[1] as usize].position),

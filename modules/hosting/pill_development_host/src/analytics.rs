@@ -511,13 +511,11 @@ pub(crate) fn process_memory(pid: Option<u32>) -> Option<(u64, u64)> {
         for line in content.lines() {
             if let Some(value) = line.strip_prefix("VmRSS:") {
                 current_kb = value
-                    .trim()
                     .split_whitespace()
                     .next()
                     .and_then(|value| value.parse::<u64>().ok());
             } else if let Some(value) = line.strip_prefix("VmHWM:") {
                 peak_kb = value
-                    .trim()
                     .split_whitespace()
                     .next()
                     .and_then(|value| value.parse::<u64>().ok());
